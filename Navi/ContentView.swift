@@ -8,17 +8,42 @@
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @State private var paneManager = PaneManager()
+    @State private var settings = SettingsManager.shared
+    @State private var showingSettings = false
 
-#Preview {
-    ContentView()
+    var body: some View {
+        SplitPaneView(pane: paneManager.rootPane, paneManager: paneManager)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    HStack(spacing: 6) {
+                        Button(action: {}) {
+                            Image(systemName: "sidebar.leading")
+                                .font(.system(size: 13))
+                        }
+                        .controlSize(.small)
+
+                        Button(action: {}) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 13))
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                ToolbarItem(placement: .automatic) {
+                    Button(action: { showingSettings = true }) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 13))
+                    }
+                    .controlSize(.small)
+                }
+            }
+            .environment(paneManager)
+            .environment(settings)
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+                    .environment(settings)
+            }
+    }
 }

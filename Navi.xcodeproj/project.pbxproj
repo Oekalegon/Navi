@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */; };
+		C77AEC1A2FD06CD300D555A3 /* AstrophotoKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC192FD06CD300D555A3 /* AstrophotoKit */; };
+		C77AEC1C2FD06CD300D555A3 /* AstroKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1B2FD06CD300D555A3 /* AstroKit */; };
+		C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1D2FD06CD300D555A3 /* VSOP */; };
+		C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = C79ED7062FCCE3B20035ED86 /* MarkdownUI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C78BF8322FCC656B00C2CEFA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +60,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */,
+				C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */,
+				C77AEC1C2FD06CD300D555A3 /* AstroKit in Frameworks */,
+				C77AEC1A2FD06CD300D555A3 /* AstrophotoKit in Frameworks */,
+				C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +91,7 @@
 				C78BF8262FCC656900C2CEFA /* Navi */,
 				C78BF8342FCC656B00C2CEFA /* NaviTests */,
 				C78BF83E2FCC656B00C2CEFA /* NaviUITests */,
+				C79ED7052FCCE3B20035ED86 /* Frameworks */,
 				C78BF8252FCC656900C2CEFA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +104,13 @@
 				C78BF83B2FCC656B00C2CEFA /* NaviUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C79ED7052FCCE3B20035ED86 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +133,11 @@
 			);
 			name = Navi;
 			packageProductDependencies = (
+				C79ED7062FCCE3B20035ED86 /* MarkdownUI */,
+				C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */,
+				C77AEC192FD06CD300D555A3 /* AstrophotoKit */,
+				C77AEC1B2FD06CD300D555A3 /* AstroKit */,
+				C77AEC1D2FD06CD300D555A3 /* VSOP */,
 			);
 			productName = Navi;
 			productReference = C78BF8242FCC656900C2CEFA /* Navi.app */;
@@ -195,6 +221,11 @@
 			);
 			mainGroup = C78BF81B2FCC656900C2CEFA;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */,
+				C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */,
+				C79ED7042FCCE31A0035ED86 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C78BF8252FCC656900C2CEFA /* Products */;
 			projectDirPath = "";
@@ -398,10 +429,21 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J2S9726G2L;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -426,14 +468,26 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Navi/Navi.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J2S9726G2L;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -573,6 +627,56 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstrophotoKit;
+		};
+		C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstroKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C79ED7042FCCE31A0035ED86 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */;
+			productName = AstrophotoArchiveKit;
+		};
+		C77AEC192FD06CD300D555A3 /* AstrophotoKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */;
+			productName = AstrophotoKit;
+		};
+		C77AEC1B2FD06CD300D555A3 /* AstroKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
+			productName = AstroKit;
+		};
+		C77AEC1D2FD06CD300D555A3 /* VSOP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
+			productName = VSOP;
+		};
+		C79ED7062FCCE3B20035ED86 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C79ED7042FCCE31A0035ED86 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = C78BF81C2FCC656900C2CEFA /* Project object */;
 }

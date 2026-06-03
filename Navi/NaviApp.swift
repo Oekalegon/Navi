@@ -13,5 +13,6 @@ struct NaviApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 }

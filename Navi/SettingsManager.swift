@@ -1,0 +1,129 @@
+//
+//  SettingsManager.swift
+//  Navi
+//
+//  Created by Dieudonné Willems on 31/05/2026.
+//
+
+import Foundation
+import Security
+import OSLog
+import Observation
+
+@Observable
+class SettingsManager {
+    static let shared = SettingsManager()
+    private let logger = Logger(subsystem: "org.oekalegon.Navi", category: "SettingsManager")
+
+    var apiKey: String = "" {
+        didSet { saveAPIKey(apiKey) }
+    }
+    var archivePath: String {
+        didSet { UserDefaults.standard.set(archivePath, forKey: "archivePath") }
+    }
+    var mcpPath: String {
+        didSet { UserDefaults.standard.set(mcpPath, forKey: "mcpPath") }
+    }
+
+    private let keychainService = "com.navi.anthropic"
+    private let keychainAccount = "api-key"
+
+    private init() {
+        let savedPath = UserDefaults.standard.string(forKey: "archivePath")
+        let envPath = ProcessInfo.processInfo.environment["ASTROARCHIVE_PATH"]
+        self.archivePath = savedPath ?? envPath ?? ""
+
+        let sandboxHome = NSHomeDirectory()
+        let username: String
+        if sandboxHome.contains("/Library/Containers/") {
+            let components = sandboxHome.components(separatedBy: "/")
+            if let userIndex = components.firstIndex(of: "Users"), userIndex + 1 < components.count {
+                username = components[userIndex + 1]
+            } else {
+                username = NSUserName()
+            }
+        } else {
+            username = NSUserName()
+        }
+
+        let defaultMCPPath = "/Users/\(username)/.local/bin/astrokit-mcp"
+
+        if let savedMCPPath = UserDefaults.standard.string(forKey: "mcpPath") {
+            if savedMCPPath.contains("/Library/Containers/") {
+                logger.info("Clearing old sandboxed MCP path: \(savedMCPPath)")
+                UserDefaults.standard.removeObject(forKey: "mcpPath")
+                self.mcpPath = defaultMCPPath
+            } else if FileManager.default.fileExists(atPath: savedMCPPath) {
+                self.mcpPath = savedMCPPath
+            } else {
+                logger.info("Saved MCP path doesn't exist: \(savedMCPPath)")
+                UserDefaults.standard.removeObject(forKey: "mcpPath")
+                self.mcpPath = defaultMCPPath
+            }
+        } else {
+            self.mcpPath = defaultMCPPath
+        }
+
+        logger.info("Initialized MCP path: \(self.mcpPath)")
+
+        // Load API key last — didSet won't fire during init because the property
+        // isn't fully initialised yet when the assignment happens in init bodies.
+        // We suppress the keychain write by assigning directly via _apiKey access
+        // is not possible with @Observable, so we use a temporary workaround:
+        // load into a local, assign, then the didSet will fire but keychain write
+        // is idempotent (writing the same value is harmless).
+        self.apiKey = loadAPIKey() ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ?? ""
+    }
+
+    private func saveAPIKey(_ key: String) {
+        let data = key.data(using: .utf8)!
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecValueData as String: data
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func loadAPIKey() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func clearAPIKey() { apiKey = "" }
+
+    // MARK: - Security-Scoped Bookmarks
+
+    func saveMCPBookmark(_ url: URL) {
+        guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        UserDefaults.standard.set(data, forKey: "mcpBookmark")
+        logger.info("Saved MCP bookmark for: \(url.path)")
+    }
+
+    func saveArchiveBookmark(_ url: URL) {
+        guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        UserDefaults.standard.set(data, forKey: "archiveBookmark")
+        logger.info("Saved archive bookmark for: \(url.path)")
+    }
+
+    func loadMCPBookmark() -> URL? { loadBookmark(key: "mcpBookmark") }
+    func loadArchiveBookmark() -> URL? { loadBookmark(key: "archiveBookmark") }
+
+    private func loadBookmark(key: String) -> URL? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        var isStale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale),
+              !isStale else { return nil }
+        return url
+    }
+}
