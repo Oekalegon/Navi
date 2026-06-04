@@ -47,11 +47,7 @@ final class ArchiveManager {
 
         do {
             let config = ArchiveConfiguration(rootURL: URL(fileURLWithPath: archivePath))
-            // Open the SQLite connection off the main actor — iCloud archives may block.
-            let newArchive = try await Task.detached(priority: .userInitiated) {
-                try Archive(configuration: config)
-            }.value
-            archive = newArchive
+            archive = try Archive(configuration: config)
             isConnected = true
             errorMessage = nil
             logger.info("Archive connected at: \(archivePath)")

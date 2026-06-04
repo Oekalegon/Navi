@@ -31,7 +31,10 @@ class SettingsManager {
     private init() {
         let savedPath = UserDefaults.standard.string(forKey: "archivePath")
         let envPath = ProcessInfo.processInfo.environment["ASTROARCHIVE_PATH"]
-        self.archivePath = savedPath ?? envPath ?? ""
+        let configFilePath = ("~/.config/astrophotokit/archive_path" as NSString).expandingTildeInPath
+        let configPath = try? String(contentsOfFile: configFilePath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.archivePath = savedPath ?? envPath ?? configPath ?? ""
         self.dataPath = UserDefaults.standard.string(forKey: "dataPath") ?? ""
 
         // Load API key last — didSet won't fire during init because the property

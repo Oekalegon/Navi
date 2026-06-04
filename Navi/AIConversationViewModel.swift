@@ -108,7 +108,15 @@ class AIConversationViewModel {
             return
         }
         do {
-            let archiveTools = archiveManager.availableTools
+            // ArchiveToolDefinitions uses "inputSchema" (MCP wire format);
+            // the Claude API requires "input_schema".
+            let archiveTools = archiveManager.availableTools.map { tool -> [String: Any] in
+                [
+                    "name": tool["name"] as? String ?? "",
+                    "description": tool["description"] as? String ?? "",
+                    "input_schema": tool["inputSchema"] as? [String: Any] ?? [:]
+                ]
+            }
             let allTools = localTools + archiveTools
 
             logger.info("Tools: \(allTools.count) (\(self.localTools.count) local + \(archiveTools.count) archive, connected: \(self.archiveManager.isConnected))")

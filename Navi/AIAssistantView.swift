@@ -13,6 +13,7 @@ struct AIAssistantView: View {
     @Environment(PaneManager.self) private var paneManager
     @Environment(SettingsManager.self) private var settings
     @State private var viewModel = AIConversationViewModel(apiKey: "")
+    @State private var archiveManager = ArchiveManager.shared
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -47,6 +48,21 @@ struct AIAssistantView: View {
                                 Text("No API Key Set")
                                     .font(.headline)
                                 Text("Click the gear icon in the toolbar to add your Anthropic API key")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                            .padding(.horizontal)
+                        } else if let archiveError = archiveManager.errorMessage {
+                            VStack(spacing: 12) {
+                                Image(systemName: "externaldrive.badge.exclamationmark")
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(.orange)
+                                Text("Archive Not Connected")
+                                    .font(.headline)
+                                Text(archiveError)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
