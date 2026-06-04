@@ -159,10 +159,13 @@ struct ArchiveNSTableView: NSViewRepresentable {
         return scrollView
     }
 
+    private static let iconColumnID = NSUserInterfaceItemIdentifier("__type_icon__")
+
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let tableView = scrollView.documentView as? NSTableView else { return }
         let currentColumns = tableView.tableColumns.map { $0.identifier.rawValue }
-        if currentColumns != content.columns {
+        let expectedColumns = [Self.iconColumnID.rawValue] + content.columns
+        if currentColumns != expectedColumns {
             for col in tableView.tableColumns { tableView.removeTableColumn(col) }
             addColumns(to: tableView, columns: content.columns)
         }
@@ -170,6 +173,14 @@ struct ArchiveNSTableView: NSViewRepresentable {
     }
 
     private func addColumns(to tableView: NSTableView, columns: [String]) {
+        let iconCol = NSTableColumn(identifier: Self.iconColumnID)
+        iconCol.title = ""
+        iconCol.width = 24
+        iconCol.minWidth = 24
+        iconCol.maxWidth = 24
+        iconCol.resizingMask = []
+        tableView.addTableColumn(iconCol)
+
         for column in columns {
             let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column))
             col.title = column
@@ -215,6 +226,12 @@ struct ArchiveNSTableView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            guard let columnID = tableColumn?.identifier else { return nil }
+
+            if columnID == ArchiveNSTableView.iconColumnID {
+                return makeIconCell(for: sortedRows[row])
+            }
+
             let id = NSUserInterfaceItemIdentifier("cell")
             let cell: NSTextField
             if let reused = tableView.makeView(withIdentifier: id, owner: nil) as? NSTextField {
@@ -228,9 +245,73 @@ struct ArchiveNSTableView: NSViewRepresentable {
                 cell.lineBreakMode = .byTruncatingTail
                 cell.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
             }
-            let columnKey = tableColumn?.identifier.rawValue ?? ""
-            cell.stringValue = sortedRows[row].values[columnKey] ?? ""
+            cell.stringValue = sortedRows[row].values[columnID.rawValue] ?? ""
             return cell
+        }
+
+        private func makeIconCell(for row: ArchiveRow) -> NSView {
+            let imageView = NSImageView(image: typeIcon(for: row))
+            imageView.imageAlignment = .alignCenter
+            return imageView
+        }
+
+        // A frameset of light frames also has type="light", but uniquely has a numeric
+        // "frames" count field. Individual frames don't have that field.
+        // Framesets have a numeric "frames" count; individual frames and masters do not.
+        private func isFrameset(_ row: ArchiveRow) -> Bool {
+            row.values["frames"].flatMap(Int.init) != nil
+        }
+
+        private func typeIcon(for row: ArchiveRow) -> NSImage {
+            if isFrameset(row) {
+                let type = row.values["type"]?.lowercased() ?? ""
+                if type == "light" {
+                    return icon("rectangle.fill.on.rectangle.fill", colors: [.labelColor])
+                }
+                return icon("rectangle.on.rectangle", colors: [.secondaryLabelColor])
+            }
+
+            let type    = row.values["type"]?.lowercased()  ?? ""
+            let stacked = row.values["level"]?.lowercased() == "stacked"
+
+            switch type {
+            case "light":
+                let symbol = stacked ? "sparkles.rectangle.stack.fill" : "star.rectangle.fill"
+                // Two-colour palette: fill colour + contrasting star cutout
+                return icon(symbol, colors: [.textBackgroundColor, .labelColor])
+            case "dark", "flat", "bias", "darkflat", "dark-flat":
+                return icon(stacked ? "rectangle.stack" : "rectangle", colors: [.secondaryLabelColor])
+            default:
+                return icon("rectangle", colors: [.secondaryLabelColor])
+            }
+        }
+
+        private func icon(_ symbolName: String, colors: [NSColor]) -> NSImage {
+            let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+                .applying(NSImage.SymbolConfiguration(paletteColors: colors))
+            return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) ?? NSImage()
+        }
+
+        private func compositeIcon(base: String, badge: String) -> NSImage {
+            NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+                let color = NSColor.secondaryLabelColor
+                let baseConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+                NSImage(systemSymbolName: base, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(baseConfig)?
+                    .draw(in: rect)
+
+                let badgeSize = CGFloat(6)
+                let badgeConfig = NSImage.SymbolConfiguration(pointSize: 5, weight: .bold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+                NSImage(systemSymbolName: badge, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(badgeConfig)?
+                    .draw(in: NSRect(x: (rect.width - badgeSize) / 2,
+                                    y: (rect.height - badgeSize) / 2,
+                                    width: badgeSize, height: badgeSize))
+                return true
+            }
         }
     }
 }

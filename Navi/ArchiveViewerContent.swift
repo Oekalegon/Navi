@@ -28,6 +28,8 @@ struct ArchiveViewerContent {
 
     // MARK: - Public entry point
 
+    private static let hiddenColumns: Set<String> = ["id"]
+
     static func parse(toolName: String, content: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
 
@@ -35,31 +37,37 @@ struct ArchiveViewerContent {
         if let data = content.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) {
             if let array = json as? [[String: Any]], !array.isEmpty {
-                return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: array)
+                return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: array).hidingColumns()
             }
             if let obj = json as? [String: Any] {
                 for key in ["frames", "framesets", "results", "items", "data", "objects"] {
                     if let array = obj[key] as? [[String: Any]], !array.isEmpty {
-                        return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: array)
+                        return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: array).hidingColumns()
                     }
                 }
-                return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: [obj])
+                return makeJSONTable(title: title, toolName: toolName, rawContent: content, array: [obj]).hidingColumns()
             }
         }
 
         // 2. Try fixed-width table (TextTable output: ─ separator line)
         if let parsed = parseFixedWidthTable(toolName: toolName, title: title, content: content) {
-            return parsed
+            return parsed.hidingColumns()
         }
 
         // 3. Try brace-line format:  { key: value, key: value }
         if let parsed = parseBraceLines(toolName: toolName, title: title, content: content) {
-            return parsed
+            return parsed.hidingColumns()
         }
 
         // 4. Fallback: raw text
         return ArchiveViewerContent(title: title, toolName: toolName, rawContent: content,
                                     columns: [], rows: [], isTable: false)
+    }
+
+    private func hidingColumns() -> ArchiveViewerContent {
+        var copy = self
+        copy.columns = columns.filter { !Self.hiddenColumns.contains($0) }
+        return copy
     }
 
     // MARK: - Fixed-width table parser
@@ -270,6 +278,7 @@ struct ArchiveViewerContent {
         case "archive_frameset_list":    return "Framesets"
         case "archive_frameset_quality": return "Quality Measurements"
         case "archive_frameset_get":     return "Frameset Members"
+        case "archive_search":           return "Search Results"
         case "archive_find":             return "Search Results"
         case "archive_get":              return "Frame Details"
         case "archive_list_objects":     return "Objects"

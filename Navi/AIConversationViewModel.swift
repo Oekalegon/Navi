@@ -22,13 +22,59 @@ class AIConversationViewModel {
     var toolCallStatus: String?
 
     var claudeService: ClaudeService
-    // Expose selectedModel so views can bind to it without chaining through claudeService.
     var selectedModel: ClaudeModel {
         get { claudeService.selectedModel }
         set { claudeService.selectedModel = newValue }
     }
 
-    private let mcpManager = AstroKitMCPManager.shared
+    var paneManager: PaneManager?
+
+    private let archiveManager = ArchiveManager.shared
+    private let maxToolRounds = 10
+
+    // MARK: - System prompt
+
+    private let systemPrompt = """
+        You are an AI astrophotography assistant running inside Navi, a macOS app for managing \
+        astrophotography archives and viewing astronomical images.
+
+        The app has three panels:
+        - AI Assistant (this panel): your chat interface with the user
+        - Archive Browser: displays archive query results as a sortable table
+        - FITS Viewer: renders FITS astronomical images with adjustable stretch controls
+
+        The archive stores individual frames and framesets. Each frame has:
+        - type: light (science frames), dark, flat, bias
+        - level: raw or stacked (stacked = master calibration frame or integrated light stack)
+        - file: absolute path to the FITS file on disk (pass this directly to open_fits_viewer)
+
+        You have access to AstroKit archive tools to search and manage the archive. \
+        You also have the open_fits_viewer tool to display any FITS file in the viewer panel. \
+        When the user asks to view, open, display, or inspect a FITS file or image, use \
+        open_fits_viewer. If you don't have the file path yet, query the archive first \
+        (e.g. archive_search, archive_get) to retrieve it, then open it.
+        """
+
+    // MARK: - Local tools
+
+    private let localTools: [[String: Any]] = [
+        [
+            "name": "open_fits_viewer",
+            "description": "Opens a FITS image file in the app's built-in FITS viewer panel. Use this when the user asks to view, display, open, or inspect a FITS file or astronomical image. If the file path is not yet known, first query the archive to find the frame.",
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "path": [
+                        "type": "string",
+                        "description": "Absolute file path to the FITS file on disk"
+                    ] as [String: Any]
+                ],
+                "required": ["path"]
+            ] as [String: Any]
+        ]
+    ]
+
+    // MARK: - Init
 
     init(apiKey: String) {
         self.claudeService = ClaudeService(apiKey: apiKey)
@@ -38,7 +84,7 @@ class AIConversationViewModel {
         self.claudeService = ClaudeService(apiKey: apiKey)
     }
 
-    private let maxToolRounds = 10
+    // MARK: - Messaging
 
     func sendMessage() {
         guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -62,22 +108,15 @@ class AIConversationViewModel {
             return
         }
         do {
-            let tools = mcpManager.availableTools.map { tool -> [String: Any] in
-                [
-                    "name": tool["name"] as? String ?? "",
-                    "description": tool["description"] as? String ?? "",
-                    "input_schema": tool["inputSchema"] as? [String: Any] ?? [:]
-                ]
-            }
+            let archiveTools = archiveManager.availableTools
+            let allTools = localTools + archiveTools
 
-            logger.info("Available MCP tools count: \(tools.count)")
-            if tools.isEmpty {
-                logger.warning("No MCP tools available — connected: \(self.mcpManager.isConnected)")
-            }
+            logger.info("Tools: \(allTools.count) (\(self.localTools.count) local + \(archiveTools.count) archive, connected: \(self.archiveManager.isConnected))")
 
             let response = try await claudeService.sendMessage(
                 apiMessages: apiConversation,
-                tools: tools.isEmpty ? nil : tools
+                tools: allTools.isEmpty ? nil : allTools,
+                system: systemPrompt
             )
 
             if !response.toolUses.isEmpty {
@@ -107,48 +146,22 @@ class AIConversationViewModel {
                     messages.append(msg)
                     let messageId = msg.id
 
-                    do {
-                        let result = try await mcpManager.callTool(name: toolUse.name, arguments: toolUse.input)
+                    let (resultText, isError) = await executeToolCall(toolUse)
 
-                        var contentText = ""
-                        if let content = result["content"] as? [Any] {
-                            for item in content {
-                                if let block = item as? [String: Any],
-                                   let text = block["text"] as? String {
-                                    contentText += text
-                                }
-                            }
-                        }
+                    toolResultBlocks.append([
+                        "type": "tool_result",
+                        "tool_use_id": toolUse.id,
+                        "is_error": isError,
+                        "content": resultText
+                    ])
 
-                        toolResultBlocks.append([
-                            "type": "tool_result",
-                            "tool_use_id": toolUse.id,
-                            "content": contentText
-                        ])
-
-                        if let idx = messages.firstIndex(where: { $0.id == messageId }) {
-                            messages[idx] = Message(
-                                id: messageId, role: "assistant", content: contentText,
-                                messageType: .toolResult(
-                                    toolName: toolUse.name,
-                                    resultSummary: String(contentText.prefix(100)),
-                                    fullContent: contentText))
-                        }
-                    } catch {
-                        toolResultBlocks.append([
-                            "type": "tool_result",
-                            "tool_use_id": toolUse.id,
-                            "is_error": true,
-                            "content": error.localizedDescription
-                        ])
-                        if let idx = messages.firstIndex(where: { $0.id == messageId }) {
-                            messages[idx] = Message(
-                                id: messageId, role: "assistant", content: error.localizedDescription,
-                                messageType: .toolResult(
-                                    toolName: toolUse.name,
-                                    resultSummary: "Error: \(error.localizedDescription)",
-                                    fullContent: ""))
-                        }
+                    if let idx = messages.firstIndex(where: { $0.id == messageId }) {
+                        messages[idx] = Message(
+                            id: messageId, role: "assistant", content: resultText,
+                            messageType: .toolResult(
+                                toolName: toolUse.name,
+                                resultSummary: isError ? "Error: \(resultText)" : String(resultText.prefix(100)),
+                                fullContent: isError ? "" : resultText))
                     }
                 }
 
@@ -169,6 +182,28 @@ class AIConversationViewModel {
             errorMessage = error.localizedDescription
             isLoading = false
             toolCallStatus = nil
+        }
+    }
+
+    // Returns (resultText, isError). Local tools are handled here; MCP tools are forwarded.
+    private func executeToolCall(_ toolUse: ToolUse) async -> (String, Bool) {
+        switch toolUse.name {
+        case "open_fits_viewer":
+            guard let path = toolUse.input["path"] as? String, !path.isEmpty else {
+                return ("No file path provided.", true)
+            }
+            let url = URL(fileURLWithPath: path)
+            paneManager?.showFITSViewer(url: url)
+            logger.info("Opening FITS viewer: \(path)")
+            return ("Opened \(url.lastPathComponent) in the FITS viewer.", false)
+
+        default:
+            do {
+                let result = try await archiveManager.callTool(name: toolUse.name, arguments: toolUse.input)
+                return (result, false)
+            } catch {
+                return (error.localizedDescription, true)
+            }
         }
     }
 

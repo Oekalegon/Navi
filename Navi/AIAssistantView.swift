@@ -155,15 +155,14 @@ struct AIAssistantView: View {
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear {
             viewModel.updateAPIKey(settings.apiKey)
-            Task {
-                await AstroKitMCPManager.shared.connect(
-                    mcpPath: settings.mcpPath,
-                    archivePath: settings.archivePath.isEmpty ? nil : settings.archivePath
-                )
-            }
+            viewModel.paneManager = paneManager
+            Task { await ArchiveManager.shared.connect(archivePath: settings.archivePath) }
         }
         .onChange(of: settings.apiKey) {
             viewModel.updateAPIKey(settings.apiKey)
+        }
+        .onChange(of: settings.archivePath) {
+            Task { await ArchiveManager.shared.connect(archivePath: settings.archivePath) }
         }
     }
 }

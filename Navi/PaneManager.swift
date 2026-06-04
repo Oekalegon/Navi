@@ -30,12 +30,14 @@ class PaneManager {
         return pane.children?.compactMap { findPane(ofType: type, in: $0) }.first
     }
 
-    func splitPane(_ pane: SplitPane, direction: SplitDirection, newPaneType: PaneType) {
+    func splitPane(_ pane: SplitPane, direction: SplitDirection,
+                   newPaneType: PaneType, newPanePreferredWidth: CGFloat? = nil) {
         guard pane.children == nil else { return }
         pane.direction = direction
         let existing = SplitPane(type: pane.paneType)
         existing.preferredWidth = pane.preferredWidth
         let newPane = SplitPane(type: newPaneType)
+        newPane.preferredWidth = newPanePreferredWidth
         pane.children = [existing, newPane]
         pane.paneType = .empty
         pane.preferredWidth = nil
@@ -54,8 +56,9 @@ class PaneManager {
         if findPane(ofType: .archiveViewer, in: rootPane) != nil { return }
         if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .archiveViewer
+            empty.preferredWidth = 500
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
-            splitPane(ai, direction: .horizontal, newPaneType: .archiveViewer)
+            splitPane(ai, direction: .horizontal, newPaneType: .archiveViewer, newPanePreferredWidth: 500)
         }
     }
 

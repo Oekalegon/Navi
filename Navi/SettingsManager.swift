@@ -21,8 +21,8 @@ class SettingsManager {
     var archivePath: String {
         didSet { UserDefaults.standard.set(archivePath, forKey: "archivePath") }
     }
-    var mcpPath: String {
-        didSet { UserDefaults.standard.set(mcpPath, forKey: "mcpPath") }
+    var dataPath: String {
+        didSet { UserDefaults.standard.set(dataPath, forKey: "dataPath") }
     }
 
     private let keychainService = "com.navi.anthropic"
@@ -32,39 +32,7 @@ class SettingsManager {
         let savedPath = UserDefaults.standard.string(forKey: "archivePath")
         let envPath = ProcessInfo.processInfo.environment["ASTROARCHIVE_PATH"]
         self.archivePath = savedPath ?? envPath ?? ""
-
-        let sandboxHome = NSHomeDirectory()
-        let username: String
-        if sandboxHome.contains("/Library/Containers/") {
-            let components = sandboxHome.components(separatedBy: "/")
-            if let userIndex = components.firstIndex(of: "Users"), userIndex + 1 < components.count {
-                username = components[userIndex + 1]
-            } else {
-                username = NSUserName()
-            }
-        } else {
-            username = NSUserName()
-        }
-
-        let defaultMCPPath = "/Users/\(username)/.local/bin/astrokit-mcp"
-
-        if let savedMCPPath = UserDefaults.standard.string(forKey: "mcpPath") {
-            if savedMCPPath.contains("/Library/Containers/") {
-                logger.info("Clearing old sandboxed MCP path: \(savedMCPPath)")
-                UserDefaults.standard.removeObject(forKey: "mcpPath")
-                self.mcpPath = defaultMCPPath
-            } else if FileManager.default.fileExists(atPath: savedMCPPath) {
-                self.mcpPath = savedMCPPath
-            } else {
-                logger.info("Saved MCP path doesn't exist: \(savedMCPPath)")
-                UserDefaults.standard.removeObject(forKey: "mcpPath")
-                self.mcpPath = defaultMCPPath
-            }
-        } else {
-            self.mcpPath = defaultMCPPath
-        }
-
-        logger.info("Initialized MCP path: \(self.mcpPath)")
+        self.dataPath = UserDefaults.standard.string(forKey: "dataPath") ?? ""
 
         // Load API key last — didSet won't fire during init because the property
         // isn't fully initialised yet when the assignment happens in init bodies.
@@ -104,11 +72,13 @@ class SettingsManager {
 
     // MARK: - Security-Scoped Bookmarks
 
-    func saveMCPBookmark(_ url: URL) {
+    func saveDataBookmark(_ url: URL) {
         guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
-        UserDefaults.standard.set(data, forKey: "mcpBookmark")
-        logger.info("Saved MCP bookmark for: \(url.path)")
+        UserDefaults.standard.set(data, forKey: "dataBookmark")
+        logger.info("Saved data bookmark for: \(url.path)")
     }
+
+    func loadDataBookmark() -> URL? { loadBookmark(key: "dataBookmark") }
 
     func saveArchiveBookmark(_ url: URL) {
         guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
@@ -116,7 +86,6 @@ class SettingsManager {
         logger.info("Saved archive bookmark for: \(url.path)")
     }
 
-    func loadMCPBookmark() -> URL? { loadBookmark(key: "mcpBookmark") }
     func loadArchiveBookmark() -> URL? { loadBookmark(key: "archiveBookmark") }
 
     private func loadBookmark(key: String) -> URL? {

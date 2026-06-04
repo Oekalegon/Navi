@@ -68,7 +68,8 @@ class ClaudeService {
         self.apiKey = apiKey
     }
 
-    func sendMessage(apiMessages: [[String: Any]], tools: [[String: Any]]? = nil) async throws -> ClaudeResponse {
+    func sendMessage(apiMessages: [[String: Any]], tools: [[String: Any]]? = nil,
+                     system: String? = nil) async throws -> ClaudeResponse {
         var request = URLRequest(url: URL(string: apiURL)!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -80,6 +81,10 @@ class ClaudeService {
             "max_tokens": 4096,
             "messages": apiMessages
         ]
+
+        if let system = system, !system.isEmpty {
+            requestBody["system"] = system
+        }
 
         if let tools = tools, !tools.isEmpty {
             requestBody["tools"] = tools

@@ -58,40 +58,6 @@ struct SettingsView: View {
             .cornerRadius(8)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("MCP Server Path").font(.headline)
-                Text("Path to the AstrophotoKit MCP executable")
-                    .font(.caption).foregroundStyle(.secondary)
-
-                HStack {
-                    TextField("/Users/username/.local/bin/astrokit-mcp", text: $settings.mcpPath)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Browse...") {
-                        let panel = NSOpenPanel()
-                        panel.allowsMultipleSelection = false
-                        panel.canChooseDirectories = false
-                        panel.canChooseFiles = true
-                        panel.message = "Select the astrokit-mcp executable"
-                        panel.showsHiddenFiles = true
-                        panel.treatsFilePackagesAsDirectories = true
-                        let homeDir = FileManager.default.homeDirectoryForCurrentUser
-                        let localBin = homeDir.appendingPathComponent(".local/bin")
-                        panel.directoryURL = FileManager.default.fileExists(atPath: localBin.path) ? localBin : homeDir
-                        if panel.runModal() == .OK, let url = panel.url {
-                            if url.startAccessingSecurityScopedResource() {
-                                settings.saveMCPBookmark(url)
-                                settings.mcpPath = url.path
-                                url.stopAccessingSecurityScopedResource()
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
-
-            VStack(alignment: .leading, spacing: 12) {
                 Text("Archive Path").font(.headline)
                 Text("Path to your AstroArchive database")
                     .font(.caption).foregroundStyle(.secondary)
@@ -121,6 +87,36 @@ struct SettingsView: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
 
+            VStack(alignment: .leading, spacing: 12) {
+                Text("FITS Data Directory").font(.headline)
+                Text("Root folder containing your FITS image files")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                HStack {
+                    TextField("/path/to/FITS/data", text: $settings.dataPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Browse...") {
+                        let panel = NSOpenPanel()
+                        panel.allowsMultipleSelection = false
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.message = "Select the root folder of your FITS data"
+                        panel.showsHiddenFiles = true
+                        if panel.runModal() == .OK, let url = panel.url {
+                            if url.startAccessingSecurityScopedResource() {
+                                settings.saveDataBookmark(url)
+                                settings.dataPath = url.path
+                                url.stopAccessingSecurityScopedResource()
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+
             Spacer()
 
             HStack {
@@ -134,7 +130,7 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 500, height: 400)
+        .frame(width: 500, height: 460)
         .onAppear { apiKeyInput = settings.apiKey }
     }
 }
