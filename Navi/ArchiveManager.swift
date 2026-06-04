@@ -19,6 +19,7 @@ final class ArchiveManager {
     var errorMessage: String?
 
     private var archive: Archive?
+    private var archiveBookmarkURL: URL?
     private let logger = Logger(subsystem: "com.navi.app", category: "Archive")
     private let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -31,15 +32,26 @@ final class ArchiveManager {
     // MARK: - Connection
 
     func connect(archivePath: String) async {
+        disconnect()
         guard !archivePath.isEmpty else {
-            isConnected = false
             errorMessage = "Archive path not configured. Set it in Settings."
             return
         }
+
+        // Restore sandbox access for the archive directory via its security-scoped bookmark.
+        if let url = SettingsManager.shared.loadArchiveBookmark() {
+            archiveBookmarkURL = url
+            archiveBookmarkURL?.startAccessingSecurityScopedResource()
+            logger.info("Archive security scope started: \(url.path)")
+        }
+
         do {
-            let rootURL = URL(fileURLWithPath: archivePath)
-            let config = ArchiveConfiguration(rootURL: rootURL)
-            archive = try Archive(configuration: config)
+            let config = ArchiveConfiguration(rootURL: URL(fileURLWithPath: archivePath))
+            // Open the SQLite connection off the main actor — iCloud archives may block.
+            let newArchive = try await Task.detached(priority: .userInitiated) {
+                try Archive(configuration: config)
+            }.value
+            archive = newArchive
             isConnected = true
             errorMessage = nil
             logger.info("Archive connected at: \(archivePath)")
@@ -53,6 +65,8 @@ final class ArchiveManager {
     func disconnect() {
         archive = nil
         isConnected = false
+        archiveBookmarkURL?.stopAccessingSecurityScopedResource()
+        archiveBookmarkURL = nil
     }
 
     // MARK: - Tools exposed to Claude
