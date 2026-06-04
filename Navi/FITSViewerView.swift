@@ -16,6 +16,8 @@ struct FITSViewerView: View {
     @State private var fitsImage: FITSImage?
     @State private var loadError: String?
     @State private var isLoading = false
+    @State private var frameType: String = ""
+    @State private var frameLevel: String = "raw"
 
     @State private var zoom: Float = 1.0
     @State private var panOffset: SIMD2<Float> = SIMD2<Float>(0, 0)
@@ -39,8 +41,10 @@ struct FITSViewerView: View {
 
     private var headerBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "photo")
-                .foregroundStyle(.secondary)
+            Image(systemName: frameTypeSymbolName(
+                    type: frameType.isEmpty ? "light" : frameType,
+                    level: frameLevel))
+                .foregroundStyle(frameType.isEmpty || frameType.lowercased() == "light" ? .primary : .secondary)
                 .font(.system(size: 14))
             Text(paneManager.fitsURL?.lastPathComponent ?? "FITS Viewer")
                 .font(.headline)
@@ -139,22 +143,29 @@ struct FITSViewerView: View {
 
     private func loadFITS() async {
         guard let url = paneManager.fitsURL else { return }
-        await MainActor.run { isLoading = true; loadError = nil; fitsImage = nil }
+        isLoading = true; loadError = nil; fitsImage = nil
+        frameType = ""; frameLevel = "raw"
+
+        // Look up frame metadata from the archive for the correct header icon.
+        if let info = await ArchiveManager.shared.frameTypeInfo(filePath: url.path) {
+            frameType = info.type
+            frameLevel = info.level
+        }
+
         do {
             let loaded = try await Task.detached(priority: .userInitiated) {
                 let file = try FITSFile(path: url.path)
                 return try file.readFITSImage()
             }.value
-            await MainActor.run {
-                fitsImage = loaded
-                blackPoint = loaded.originalMinValue
-                whitePoint = loaded.originalMaxValue
-                zoom = 1.0
-                panOffset = SIMD2<Float>(0, 0)
-                isLoading = false
-            }
+            fitsImage = loaded
+            blackPoint = loaded.originalMinValue
+            whitePoint = loaded.originalMaxValue
+            zoom = 1.0
+            panOffset = SIMD2<Float>(0, 0)
+            isLoading = false
         } catch {
-            await MainActor.run { loadError = error.localizedDescription; isLoading = false }
+            loadError = error.localizedDescription
+            isLoading = false
         }
     }
 }

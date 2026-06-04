@@ -7,6 +7,22 @@
 
 import Foundation
 
+/// Returns the SF Symbol name for a frame or frameset based on its type and processing level.
+func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) -> String {
+    let stacked = level.lowercased() == "stacked"
+    if isFrameset {
+        return type.lowercased() == "light" ? "rectangle.fill.on.rectangle.fill" : "rectangle.on.rectangle"
+    }
+    switch type.lowercased() {
+    case "light":
+        return stacked ? "sparkles.rectangle.stack.fill" : "star.rectangle.fill"
+    case "dark", "flat", "bias", "darkflat", "dark-flat":
+        return stacked ? "rectangle.stack" : "rectangle"
+    default:
+        return "star.rectangle.fill"
+    }
+}
+
 struct ArchiveRow: Identifiable {
     let id = UUID()
     var values: [String: String]

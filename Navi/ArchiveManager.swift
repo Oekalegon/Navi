@@ -69,6 +69,11 @@ final class ArchiveManager {
 
     var availableTools: [[String: Any]] { ArchiveToolDefinitions.all }
 
+    func frameTypeInfo(filePath: String) async -> (type: String, level: String)? {
+        guard let frame = try? await archive?.frame(filePath: filePath) else { return nil }
+        return (frame.frameType, frame.processingLevel.rawValue)
+    }
+
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
         guard let archive else { throw ArchiveManagerError.notConnected }
         return try await dispatch(name: name, arguments: arguments, archive: archive)

@@ -263,27 +263,15 @@ struct ArchiveNSTableView: NSViewRepresentable {
         }
 
         private func typeIcon(for row: ArchiveRow) -> NSImage {
-            if isFrameset(row) {
-                let type = row.values["type"]?.lowercased() ?? ""
-                if type == "light" {
-                    return icon("rectangle.fill.on.rectangle.fill", colors: [.labelColor])
-                }
-                return icon("rectangle.on.rectangle", colors: [.secondaryLabelColor])
-            }
+            let type  = row.values["type"]?.lowercased()  ?? ""
+            let level = row.values["level"]?.lowercased() ?? "raw"
+            let symbol = frameTypeSymbolName(type: type, level: level, isFrameset: isFrameset(row))
 
-            let type    = row.values["type"]?.lowercased()  ?? ""
-            let stacked = row.values["level"]?.lowercased() == "stacked"
-
-            switch type {
-            case "light":
-                let symbol = stacked ? "sparkles.rectangle.stack.fill" : "star.rectangle.fill"
-                // Two-colour palette: fill colour + contrasting star cutout
-                return icon(symbol, colors: [.textBackgroundColor, .labelColor])
-            case "dark", "flat", "bias", "darkflat", "dark-flat":
-                return icon(stacked ? "rectangle.stack" : "rectangle", colors: [.secondaryLabelColor])
-            default:
-                return icon("rectangle", colors: [.secondaryLabelColor])
-            }
+            let isLight = type == "light"
+            let colors: [NSColor] = isLight
+                ? [.textBackgroundColor, .labelColor]
+                : [.secondaryLabelColor]
+            return icon(symbol, colors: colors)
         }
 
         private func icon(_ symbolName: String, colors: [NSColor]) -> NSImage {
