@@ -7,6 +7,7 @@
 
 import Foundation
 import AstrophotoArchiveKit
+import AstrophotoKit
 import OSLog
 import Observation
 
@@ -72,6 +73,25 @@ final class ArchiveManager {
     func frameTypeInfo(filePath: String) async -> (type: String, level: String)? {
         guard let frame = try? await archive?.frame(filePath: filePath) else { return nil }
         return (frame.frameType, frame.processingLevel.rawValue)
+    }
+
+    func archivedFrame(filePath: String) async -> ArchivedFrame? {
+        try? await archive?.frame(filePath: filePath)
+    }
+
+    func updateStretchSettings(
+        _ settings: StretchSettings?,
+        sliderBlackNorm: Float,
+        sliderWhiteNorm: Float,
+        id: UUID
+    ) async throws {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        try await archive.updateStretchSettings(
+            settings,
+            sliderBlackNorm: sliderBlackNorm,
+            sliderWhiteNorm: sliderWhiteNorm,
+            id: id
+        )
     }
 
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
