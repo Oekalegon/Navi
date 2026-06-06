@@ -28,6 +28,13 @@ struct ContentView: View {
                                 .font(.system(size: 13))
                         }
                         .controlSize(.small)
+
+                        Button(action: { paneManager.showArchivePane() }) {
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 13))
+                        }
+                        .controlSize(.small)
+                        .help("Open Archive Pane")
                     }
                 }
 

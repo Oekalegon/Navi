@@ -59,8 +59,7 @@ class PaneManager {
 
     // Archive viewer prefers a wide/horizontal layout: find the widest leaf and split it
     // vertically (top/bottom) so the archive takes the full available width.
-    func showArchiveViewer(content: ArchiveViewerContent) {
-        archiveContent = content
+    func showArchivePane() {
         if findPane(ofType: .archiveViewer, in: rootPane) != nil { return }
         guard let target = widestLeafPane(in: rootPane) else { return }
         if target.paneType == .empty {
@@ -68,6 +67,11 @@ class PaneManager {
         } else {
             splitPane(target, direction: .vertical, newPaneType: .archiveViewer)
         }
+    }
+
+    func showArchiveViewer(content: ArchiveViewerContent) {
+        archiveContent = content
+        showArchivePane()
     }
 
     // FITS viewer splits the archive viewer vertically with FITS on top.
