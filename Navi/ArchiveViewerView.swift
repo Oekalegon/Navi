@@ -12,6 +12,7 @@ struct ArchiveViewerView: View {
     var pane: SplitPane
     @Environment(PaneManager.self) private var paneManager
     @State private var showRaw = false
+    @State private var isLoadingRecent = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,10 @@ struct ArchiveViewerView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            guard paneManager.archiveContent == nil else { return }
+            await loadRecentFrames()
+        }
     }
 
     private var headerBar: some View {
@@ -33,6 +38,16 @@ struct ArchiveViewerView: View {
                 .font(.headline)
 
             Spacer()
+
+            Button {
+                Task { await loadRecentFrames() }
+            } label: {
+                Image(systemName: "clock")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingRecent)
+            .help("Show recent frames")
 
             if let content = paneManager.archiveContent {
                 Text(content.toolName)
@@ -112,6 +127,22 @@ struct ArchiveViewerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private func loadRecentFrames() async {
+        guard !isLoadingRecent else { return }
+        isLoadingRecent = true
+        defer { isLoadingRecent = false }
+        do {
+            let result = try await ArchiveManager.shared.callTool(
+                name: "archive_recent",
+                arguments: [:]
+            )
+            let content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
+            paneManager.archiveContent = content
+        } catch {
+            // Archive not connected or unavailable — leave content as-is
+        }
     }
 }
 
