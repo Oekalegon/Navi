@@ -76,7 +76,12 @@ final class ArchiveManager {
     }
 
     func archivedFrame(filePath: String) async -> ArchivedFrame? {
-        try? await archive?.frame(filePath: filePath)
+        do {
+            return try await archive?.frame(filePath: filePath)
+        } catch {
+            logger.error("Failed to fetch archived frame at \(filePath): \(error)")
+            return nil
+        }
     }
 
     func updateStretchSettings(
