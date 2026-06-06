@@ -189,6 +189,8 @@ struct FITSViewerView: View {
 
     private func loadFITS() async {
         guard let url = paneManager.fitsURL else { return }
+        saveTask?.cancel()
+        saveTask = nil
         isLoading = true; loadError = nil; fitsImage = nil
         frameType = ""; frameLevel = "raw"
         currentFrameID = nil; stretchSettings = .identity
@@ -250,7 +252,6 @@ struct StretchPopover: View {
                 showNormalized: true,
                 blackPoint: effectiveBP,
                 whitePoint: effectiveWP,
-                showFullRange: true,
                 useLogScale: false
             )
 
