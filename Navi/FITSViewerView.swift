@@ -80,7 +80,8 @@ struct FITSViewerView: View {
                             .foregroundStyle(isRejected ? .white : rejectColor, rejectColor)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(isTogglingRejection)
                 .help(isRejected ? "Click to unreject" : "Click to reject")
             }

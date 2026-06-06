@@ -15,7 +15,6 @@ struct ArchiveViewerView: View {
     @State private var isLoadingRecent = false
     @State private var selectedRow: ArchiveRow? = nil
     @State private var isRejecting = false
-    @State private var showRejectConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,29 +41,29 @@ struct ArchiveViewerView: View {
 
             Spacer()
 
-            let canReject = selectedRow != nil
-                && selectedRow?.values["rejected"] != "true"
+            let isRowRejected = selectedRow?.values["rejected"] == "true"
+            let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
+            let rejectColor: Color = isRowRejected ? .red : Color(nsColor: .tertiaryLabelColor)
 
             Button {
-                showRejectConfirm = true
+                Task { await toggleRejection() }
             } label: {
-                Image(systemName: "xmark.diamond.fill")
-                    .font(.system(size: 12))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, canReject ? .red : Color(nsColor: .disabledControlTextColor))
-            }
-            .buttonStyle(.plain)
-            .disabled(!canReject || isRejecting)
-            .help("Reject selected frame")
-            .confirmationDialog("Reject this frame?", isPresented: $showRejectConfirm) {
-                Button("Reject", role: .destructive) {
-                    Task { await rejectSelectedFrame() }
+                Label {
+                    Text("Reject")
+                        .font(.system(size: 12))
+                        .foregroundStyle(rejectColor)
+                } icon: {
+                    Image(systemName: "xmark.diamond.fill")
+                        .font(.system(size: 12))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(isRowRejected ? .white : rejectColor, rejectColor)
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("The frame will be marked as rejected. This cannot be undone from the Archive view.")
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!canToggleReject || isRejecting)
+            .help(isRowRejected ? "Click to unreject" : "Reject selected frame")
 
             Button {
                 Task { await loadRecentFrames() }
@@ -176,20 +175,19 @@ struct ArchiveViewerView: View {
         }
     }
 
-    private func rejectSelectedFrame() async {
-        guard let row = selectedRow, let id = row.values["id"], !id.isEmpty else { return }
+    private func toggleRejection() async {
+        guard let row = selectedRow, let id = row.values["id"], !id.isEmpty,
+              let uuid = UUID(uuidString: id) else { return }
+        let target = row.values["rejected"] != "true"
         isRejecting = true
         defer { isRejecting = false }
         do {
-            _ = try await ArchiveManager.shared.callTool(
-                name: "archive_reject",
-                arguments: ["id": id]
-            )
-            // Update the row in-place so the icon reflects the change immediately
+            try await ArchiveManager.shared.setRejected(target, id: uuid)
+            let value = target ? "true" : "false"
             if let idx = paneManager.archiveContent?.rows.firstIndex(where: { $0.values["id"] == id }) {
-                paneManager.archiveContent?.rows[idx].values["rejected"] = "true"
+                paneManager.archiveContent?.rows[idx].values["rejected"] = value
             }
-            selectedRow = nil
+            selectedRow?.values["rejected"] = value
         } catch {
             // Silently fail — archive may be disconnected
         }
