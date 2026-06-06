@@ -15,6 +15,7 @@ class SplitPane: Identifiable {
     var direction: SplitDirection?
     var paneType: PaneType
     var preferredWidth: CGFloat?
+    var preferredHeight: CGFloat?
 
     init(type: PaneType = .aiAssistant) {
         self.paneType = type

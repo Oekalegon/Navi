@@ -24,6 +24,7 @@ struct SplitPaneView: View {
                 VSplitView {
                     ForEach(children) { child in
                         SplitPaneView(pane: child, paneManager: paneManager)
+                            .frame(idealHeight: child.preferredHeight)
                     }
                 }
             }

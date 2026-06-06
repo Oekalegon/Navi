@@ -31,16 +31,22 @@ class PaneManager {
     }
 
     func splitPane(_ pane: SplitPane, direction: SplitDirection,
-                   newPaneType: PaneType, newPanePreferredWidth: CGFloat? = nil) {
+                   newPaneType: PaneType,
+                   newPanePreferredWidth: CGFloat? = nil,
+                   newPanePreferredHeight: CGFloat? = nil,
+                   prepend: Bool = false) {
         guard pane.children == nil else { return }
         pane.direction = direction
         let existing = SplitPane(type: pane.paneType)
         existing.preferredWidth = pane.preferredWidth
+        existing.preferredHeight = pane.preferredHeight
         let newPane = SplitPane(type: newPaneType)
         newPane.preferredWidth = newPanePreferredWidth
-        pane.children = [existing, newPane]
+        newPane.preferredHeight = newPanePreferredHeight
+        pane.children = prepend ? [newPane, existing] : [existing, newPane]
         pane.paneType = .empty
         pane.preferredWidth = nil
+        pane.preferredHeight = nil
     }
 
     func showContent(type: PaneType, splitFrom sourcePane: SplitPane, direction: SplitDirection) {
@@ -51,24 +57,46 @@ class PaneManager {
         }
     }
 
+    // Archive viewer prefers a wide/horizontal layout: find the widest leaf and split it
+    // vertically (top/bottom) so the archive takes the full available width.
     func showArchiveViewer(content: ArchiveViewerContent) {
         archiveContent = content
         if findPane(ofType: .archiveViewer, in: rootPane) != nil { return }
-        if let empty = findPane(ofType: .empty, in: rootPane) {
-            empty.paneType = .archiveViewer
-            empty.preferredWidth = 500
-        } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
-            splitPane(ai, direction: .horizontal, newPaneType: .archiveViewer, newPanePreferredWidth: 500)
+        guard let target = widestLeafPane(in: rootPane) else { return }
+        if target.paneType == .empty {
+            target.paneType = .archiveViewer
+        } else {
+            splitPane(target, direction: .vertical, newPaneType: .archiveViewer)
         }
     }
 
+    // FITS viewer splits the archive viewer vertically with FITS on top.
+    // Falls back to an empty pane or a horizontal split of the AI pane.
     func showFITSViewer(url: URL) {
         fitsURL = url
         if findPane(ofType: .fitsViewer, in: rootPane) != nil { return }
-        if let empty = findPane(ofType: .empty, in: rootPane) {
+        if let archive = findPane(ofType: .archiveViewer, in: rootPane) {
+            splitPane(archive, direction: .vertical, newPaneType: .fitsViewer, prepend: true)
+        } else if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .fitsViewer
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)
         }
+    }
+
+    // Widest leaf: nil preferredWidth sorts last (treated as ∞ — takes remaining space).
+    private func widestLeafPane(in pane: SplitPane) -> SplitPane? {
+        if pane.isLeaf { return pane }
+        return pane.children?
+            .compactMap { widestLeafPane(in: $0) }
+            .max { ($0.preferredWidth ?? .greatestFiniteMagnitude) < ($1.preferredWidth ?? .greatestFiniteMagnitude) }
+    }
+
+    // Tallest leaf: nil preferredHeight sorts last (treated as ∞ — takes remaining space).
+    private func tallestLeafPane(in pane: SplitPane) -> SplitPane? {
+        if pane.isLeaf { return pane }
+        return pane.children?
+            .compactMap { tallestLeafPane(in: $0) }
+            .max { ($0.preferredHeight ?? .greatestFiniteMagnitude) < ($1.preferredHeight ?? .greatestFiniteMagnitude) }
     }
 }
