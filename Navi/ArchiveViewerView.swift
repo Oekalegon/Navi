@@ -173,6 +173,11 @@ struct ArchiveViewerView: View {
                 paneManager.archiveContent?.rows[idx].values["rejected"] = value
             }
             selectedRow?.values["rejected"] = value
+            // Keep FITS viewer in sync if it is showing this frame
+            let rowPath = row.values["file"] ?? row.values["path"] ?? ""
+            if !rowPath.isEmpty, paneManager.fitsURL?.path == rowPath {
+                paneManager.fitsFrameRejected = target
+            }
         } catch {
             // Silently fail — archive may be disconnected
         }
@@ -282,9 +287,13 @@ struct ArchiveNSTableView: NSViewRepresentable {
         }
 
         func update(content: ArchiveViewerContent, tableView: NSTableView) {
+            let previousSelection = tableView.selectedRow
             self.content = content
             self.sortedRows = content.rows
             tableView.reloadData()
+            if previousSelection >= 0 && previousSelection < sortedRows.count {
+                tableView.selectRowIndexes(IndexSet(integer: previousSelection), byExtendingSelection: false)
+            }
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {

@@ -13,6 +13,7 @@ class PaneManager {
     var rootPane: SplitPane
     var archiveContent: ArchiveViewerContent?
     var fitsURL: URL?
+    var fitsFrameRejected: Bool = false
 
     init() {
         let aiPane = SplitPane(type: .aiAssistant)

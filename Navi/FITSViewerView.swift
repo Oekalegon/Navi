@@ -29,7 +29,6 @@ struct FITSViewerView: View {
     @State private var originalMax: Float = 1.0
     @State private var stretchSettings: StretchSettings = .identity
     @State private var currentFrameID: UUID? = nil
-    @State private var isRejected = false
     @State private var isTogglingRejection = false
     @State private var showingStretch = false
     @State private var saveTask: Task<Void, Never>? = nil
@@ -66,7 +65,7 @@ struct FITSViewerView: View {
             Spacer()
             if currentFrameID != nil {
                 RejectToggleButton(
-                    isRejected: isRejected,
+                    isRejected: paneManager.fitsFrameRejected,
                     isDisabled: isTogglingRejection
                 ) { Task { await toggleRejection() } }
             }
@@ -203,10 +202,10 @@ struct FITSViewerView: View {
         guard let id = currentFrameID, !isTogglingRejection else { return }
         isTogglingRejection = true
         defer { isTogglingRejection = false }
-        let target = !isRejected
+        let target = !paneManager.fitsFrameRejected
         do {
             try await ArchiveManager.shared.setRejected(target, id: id)
-            isRejected = target
+            paneManager.fitsFrameRejected = target
         } catch {
             logger.error("Failed to toggle rejection: \(error)")
         }
@@ -218,7 +217,7 @@ struct FITSViewerView: View {
         saveTask = nil
         isLoading = true; loadError = nil; fitsImage = nil
         frameType = ""; frameLevel = "raw"
-        currentFrameID = nil; isRejected = false; stretchSettings = .identity
+        currentFrameID = nil; paneManager.fitsFrameRejected = false; stretchSettings = .identity
 
         let frame = await ArchiveManager.shared.archivedFrame(filePath: url.path)
         if let frame {
@@ -226,7 +225,7 @@ struct FITSViewerView: View {
             frameLevel = frame.processingLevel.rawValue
             stretchSettings = frame.stretchSettings ?? .identity
             currentFrameID = frame.id
-            isRejected = frame.rejected
+            paneManager.fitsFrameRejected = frame.rejected
         }
 
         do {
