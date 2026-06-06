@@ -151,10 +151,7 @@ struct FITSViewerView: View {
     }
 
     private func effectivePoint(_ sliderValue: Float, min: Float, max: Float) -> Float {
-        let range = max - min
-        guard range > 0 else { return sliderValue }
-        let norm = (sliderValue - min) / range
-        return min + stretchSettings.effective(sliderNorm: norm) * range
+        applyStretch(sliderValue, min: min, max: max, stretch: stretchSettings)
     }
 
     private func scheduleSave() {
@@ -224,6 +221,12 @@ struct FITSViewerView: View {
     }
 }
 
+private func applyStretch(_ sliderValue: Float, min: Float, max: Float, stretch: StretchSettings) -> Float {
+    let range = max - min
+    guard range > 0 else { return sliderValue }
+    return min + stretch.effective(sliderNorm: (sliderValue - min) / range) * range
+}
+
 struct StretchPopover: View {
     let fitsImage: FITSImage?
     @Binding var blackPoint: Float
@@ -236,10 +239,7 @@ struct StretchPopover: View {
     private var effectiveWP: Float { effective(whitePoint) }
 
     private func effective(_ sliderValue: Float) -> Float {
-        let range = originalMax - originalMin
-        guard range > 0 else { return sliderValue }
-        let norm = (sliderValue - originalMin) / range
-        return originalMin + stretchSettings.effective(sliderNorm: norm) * range
+        applyStretch(sliderValue, min: originalMin, max: originalMax, stretch: stretchSettings)
     }
 
     var body: some View {
