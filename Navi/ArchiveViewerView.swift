@@ -13,6 +13,9 @@ struct ArchiveViewerView: View {
     @Environment(PaneManager.self) private var paneManager
     @State private var showRaw = false
     @State private var isLoadingRecent = false
+    @State private var selectedRow: ArchiveRow? = nil
+    @State private var isRejecting = false
+    @State private var showRejectConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +41,30 @@ struct ArchiveViewerView: View {
                 .font(.headline)
 
             Spacer()
+
+            let canReject = selectedRow != nil
+                && selectedRow?.values["rejected"] != "true"
+                && selectedRow?.values["frames"].flatMap(Int.init) == nil
+
+            Button {
+                showRejectConfirm = true
+            } label: {
+                Image(systemName: "xmark.diamond.fill")
+                    .font(.system(size: 12))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, canReject ? .red : Color(nsColor: .disabledControlTextColor))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canReject || isRejecting)
+            .help("Reject selected frame")
+            .confirmationDialog("Reject this frame?", isPresented: $showRejectConfirm) {
+                Button("Reject", role: .destructive) {
+                    Task { await rejectSelectedFrame() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The frame will be marked as rejected. This cannot be undone from the Archive view.")
+            }
 
             Button {
                 Task { await loadRecentFrames() }
@@ -92,12 +119,16 @@ struct ArchiveViewerView: View {
             } else if content.rows.isEmpty {
                 emptyState("No results returned by \(content.toolName)")
             } else {
-                ArchiveTableView(content: content, onRowDoubleClicked: { [paneManager] row in
-                    let filePath = row.values["file"] ?? row.values["path"]
-                    if let filePath, !filePath.isEmpty {
-                        paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
+                ArchiveTableView(
+                    content: content,
+                    onRowSelected: { selectedRow = $0 },
+                    onRowDoubleClicked: { [paneManager] row in
+                        let filePath = row.values["file"] ?? row.values["path"]
+                        if let filePath, !filePath.isEmpty {
+                            paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
+                        }
                     }
-                })
+                )
             }
         } else {
             emptyState("Use 'Browse in Archive' on a tool result to view data here")
@@ -144,15 +175,35 @@ struct ArchiveViewerView: View {
             // Archive not connected or unavailable — leave content as-is
         }
     }
+
+    private func rejectSelectedFrame() async {
+        guard let row = selectedRow, let id = row.values["id"], !id.isEmpty else { return }
+        isRejecting = true
+        defer { isRejecting = false }
+        do {
+            _ = try await ArchiveManager.shared.callTool(
+                name: "archive_reject",
+                arguments: ["id": id]
+            )
+            // Update the row in-place so the icon reflects the change immediately
+            if let idx = paneManager.archiveContent?.rows.firstIndex(where: { $0.values["id"] == id }) {
+                paneManager.archiveContent?.rows[idx].values["rejected"] = "true"
+            }
+            selectedRow = nil
+        } catch {
+            // Silently fail — archive may be disconnected
+        }
+    }
 }
 
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
+    var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            ArchiveNSTableView(content: content, onRowDoubleClicked: onRowDoubleClicked)
+            ArchiveNSTableView(content: content, onRowSelected: onRowSelected, onRowDoubleClicked: onRowDoubleClicked)
 
             Divider()
 
@@ -171,6 +222,7 @@ struct ArchiveTableView: View {
 
 struct ArchiveNSTableView: NSViewRepresentable {
     let content: ArchiveViewerContent
+    var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(content: content) }
@@ -210,6 +262,7 @@ struct ArchiveNSTableView: NSViewRepresentable {
             addColumns(to: tableView, columns: content.columns)
         }
         context.coordinator.update(content: content, tableView: tableView)
+        context.coordinator.onRowSelected = onRowSelected
         context.coordinator.onRowDoubleClicked = onRowDoubleClicked
     }
 
@@ -237,6 +290,7 @@ struct ArchiveNSTableView: NSViewRepresentable {
     class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         private var content: ArchiveViewerContent
         private var sortedRows: [ArchiveRow]
+        var onRowSelected: ((ArchiveRow?) -> Void)?
         var onRowDoubleClicked: ((ArchiveRow) -> Void)?
 
         init(content: ArchiveViewerContent) {
@@ -248,6 +302,12 @@ struct ArchiveNSTableView: NSViewRepresentable {
             self.content = content
             self.sortedRows = content.rows
             tableView.reloadData()
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard let tableView = notification.object as? NSTableView else { return }
+            let row = tableView.selectedRow
+            onRowSelected?(row >= 0 && row < sortedRows.count ? sortedRows[row] : nil)
         }
 
         @objc func rowDoubleClicked(_ sender: NSTableView) {
