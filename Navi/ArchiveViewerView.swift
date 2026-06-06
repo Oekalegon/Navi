@@ -411,13 +411,12 @@ struct RejectToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label {
-                Text("Reject")
-            } icon: {
+            HStack(spacing: 4) {
                 Image(systemName: "xmark.diamond.fill")
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(isRejected ? Color.white : Color.primary,
                                      isRejected ? Color.red   : Color.primary)
+                Text("Reject")
             }
             .font(.system(size: 12))
             .padding(.horizontal, 7)
