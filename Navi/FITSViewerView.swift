@@ -65,25 +65,10 @@ struct FITSViewerView: View {
                 .lineLimit(1)
             Spacer()
             if currentFrameID != nil {
-                let rejectColor: Color = isRejected ? .red : Color(nsColor: .tertiaryLabelColor)
-                Button {
-                    Task { await toggleRejection() }
-                } label: {
-                    Label {
-                        Text("Reject")
-                            .font(.system(size: 12))
-                            .foregroundStyle(rejectColor)
-                    } icon: {
-                        Image(systemName: "xmark.diamond.fill")
-                            .font(.system(size: 12))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(isRejected ? .white : rejectColor, rejectColor)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isTogglingRejection)
-                .help(isRejected ? "Click to unreject" : "Click to reject")
+                RejectToggleButton(
+                    isRejected: isRejected,
+                    isDisabled: isTogglingRejection
+                ) { Task { await toggleRejection() } }
             }
 
             if fitsImage != nil {

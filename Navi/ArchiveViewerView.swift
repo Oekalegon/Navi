@@ -44,26 +44,11 @@ struct ArchiveViewerView: View {
             let isRowRejected = selectedRow?.values["rejected"] == "true"
             let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
-            let rejectColor: Color = isRowRejected ? .red : Color(nsColor: .tertiaryLabelColor)
 
-            Button {
-                Task { await toggleRejection() }
-            } label: {
-                Label {
-                    Text("Reject")
-                        .font(.system(size: 12))
-                        .foregroundStyle(rejectColor)
-                } icon: {
-                    Image(systemName: "xmark.diamond.fill")
-                        .font(.system(size: 12))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(isRowRejected ? .white : rejectColor, rejectColor)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!canToggleReject || isRejecting)
-            .help(isRowRejected ? "Click to unreject" : "Reject selected frame")
+            RejectToggleButton(
+                isRejected: isRowRejected,
+                isDisabled: !canToggleReject || isRejecting
+            ) { Task { await toggleRejection() } }
 
             Button {
                 Task { await loadRecentFrames() }
@@ -414,5 +399,40 @@ struct ArchiveNSTableView: NSViewRepresentable {
                 return true
             }
         }
+    }
+}
+
+/// Bordered toggle button used in both the Archive viewer and FITS viewer toolbars.
+/// Clear background + border when not rejected; grey fill + border when rejected.
+struct RejectToggleButton: View {
+    let isRejected: Bool
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("Reject")
+            } icon: {
+                Image(systemName: "xmark.diamond.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(isRejected ? Color.white : Color.primary,
+                                     isRejected ? Color.red   : Color.primary)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isRejected ? Color(nsColor: .controlColor) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .help(isRejected ? "Click to unreject" : "Reject frame")
     }
 }
