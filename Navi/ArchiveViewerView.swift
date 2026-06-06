@@ -311,6 +311,13 @@ struct ArchiveNSTableView: NSViewRepresentable {
         }
 
         private func typeIcon(for row: ArchiveRow) -> NSImage {
+            if row.values["rejected"] == "true" {
+                return icon("xmark.diamond.fill", colors: [.white, .systemRed])
+            }
+            if row.values["excluded"] == "true" {
+                return icon("xmark.diamond.fill", colors: [.black, .systemYellow])
+            }
+
             let type  = row.values["type"]?.lowercased()  ?? ""
             let level = row.values["level"]?.lowercased() ?? "raw"
             let symbol = frameTypeSymbolName(type: type, level: level, isFrameset: isFrameset(row))
