@@ -29,6 +29,8 @@ struct FITSViewerView: View {
     @State private var originalMax: Float = 1.0
     @State private var stretchSettings: StretchSettings = .identity
     @State private var currentFrameID: UUID? = nil
+    @State private var isRejected = false
+    @State private var isTogglingRejection = false
     @State private var showingStretch = false
     @State private var saveTask: Task<Void, Never>? = nil
     private let logger = Logger(subsystem: "com.navi.app", category: "FITSViewer")
@@ -62,6 +64,23 @@ struct FITSViewerView: View {
                 .font(.headline)
                 .lineLimit(1)
             Spacer()
+            if currentFrameID != nil {
+                Button {
+                    Task { await toggleRejection() }
+                } label: {
+                    Image(systemName: "xmark.diamond.fill")
+                        .font(.system(size: 12))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(
+                            isRejected ? .white : Color(nsColor: .tertiaryLabelColor),
+                            isRejected ? .red   : Color(nsColor: .tertiaryLabelColor)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(isTogglingRejection)
+                .help(isRejected ? "Unreject frame" : "Reject frame")
+            }
+
             if fitsImage != nil {
                 Button {
                     showingStretch.toggle()
@@ -190,13 +209,26 @@ struct FITSViewerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private func toggleRejection() async {
+        guard let id = currentFrameID, !isTogglingRejection else { return }
+        isTogglingRejection = true
+        defer { isTogglingRejection = false }
+        let target = !isRejected
+        do {
+            try await ArchiveManager.shared.setRejected(target, id: id)
+            isRejected = target
+        } catch {
+            logger.error("Failed to toggle rejection: \(error)")
+        }
+    }
+
     private func loadFITS() async {
         guard let url = paneManager.fitsURL else { return }
         saveTask?.cancel()
         saveTask = nil
         isLoading = true; loadError = nil; fitsImage = nil
         frameType = ""; frameLevel = "raw"
-        currentFrameID = nil; stretchSettings = .identity
+        currentFrameID = nil; isRejected = false; stretchSettings = .identity
 
         let frame = await ArchiveManager.shared.archivedFrame(filePath: url.path)
         if let frame {
@@ -204,6 +236,7 @@ struct FITSViewerView: View {
             frameLevel = frame.processingLevel.rawValue
             stretchSettings = frame.stretchSettings ?? .identity
             currentFrameID = frame.id
+            isRejected = frame.rejected
         }
 
         do {

@@ -99,6 +99,15 @@ final class ArchiveManager {
         )
     }
 
+    func setRejected(_ rejected: Bool, id: UUID) async throws {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        if rejected {
+            try await archive.reject(id: id, reason: nil)
+        } else {
+            try await archive.unreject(id: id)
+        }
+    }
+
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
         guard let archive else { throw ArchiveManagerError.notConnected }
         return try await dispatch(name: name, arguments: arguments, archive: archive)
