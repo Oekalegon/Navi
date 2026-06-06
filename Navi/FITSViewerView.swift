@@ -86,7 +86,7 @@ struct FITSViewerView: View {
                     zoom = 1.0
                     panOffset = SIMD2<Float>(0, 0)
                 } label: {
-                    Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
+                    Image(systemName: "arrow.down.backward.and.arrow.up.forward.square")
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
