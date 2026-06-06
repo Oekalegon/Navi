@@ -12,6 +12,7 @@ struct ArchiveViewerView: View {
     var pane: SplitPane
     @Environment(PaneManager.self) private var paneManager
     @State private var showRaw = false
+    @State private var isLoadingRecent = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,10 @@ struct ArchiveViewerView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            guard paneManager.archiveContent == nil else { return }
+            await loadRecentFrames()
+        }
     }
 
     private var headerBar: some View {
@@ -33,6 +38,16 @@ struct ArchiveViewerView: View {
                 .font(.headline)
 
             Spacer()
+
+            Button {
+                Task { await loadRecentFrames() }
+            } label: {
+                Image(systemName: "clock")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingRecent)
+            .help("Show recent frames")
 
             if let content = paneManager.archiveContent {
                 Text(content.toolName)
@@ -77,7 +92,12 @@ struct ArchiveViewerView: View {
             } else if content.rows.isEmpty {
                 emptyState("No results returned by \(content.toolName)")
             } else {
-                ArchiveTableView(content: content)
+                ArchiveTableView(content: content, onRowDoubleClicked: { [paneManager] row in
+                    let filePath = row.values["file"] ?? row.values["path"]
+                    if let filePath, !filePath.isEmpty {
+                        paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
+                    }
+                })
             }
         } else {
             emptyState("Use 'Browse in Archive' on a tool result to view data here")
@@ -108,14 +128,31 @@ struct ArchiveViewerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
+
+    private func loadRecentFrames() async {
+        guard !isLoadingRecent else { return }
+        isLoadingRecent = true
+        defer { isLoadingRecent = false }
+        do {
+            let result = try await ArchiveManager.shared.callTool(
+                name: "archive_recent",
+                arguments: [:]
+            )
+            let content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
+            paneManager.archiveContent = content
+        } catch {
+            // Archive not connected or unavailable — leave content as-is
+        }
+    }
 }
 
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
+    var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            ArchiveNSTableView(content: content)
+            ArchiveNSTableView(content: content, onRowDoubleClicked: onRowDoubleClicked)
 
             Divider()
 
@@ -134,6 +171,7 @@ struct ArchiveTableView: View {
 
 struct ArchiveNSTableView: NSViewRepresentable {
     let content: ArchiveViewerContent
+    var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(content: content) }
 
@@ -147,6 +185,8 @@ struct ArchiveNSTableView: NSViewRepresentable {
         tableView.allowsMultipleSelection = false
         tableView.columnAutoresizingStyle = .sequentialColumnAutoresizingStyle
         tableView.rowHeight = 20
+        tableView.target = context.coordinator
+        tableView.doubleAction = #selector(Coordinator.rowDoubleClicked(_:))
 
         addColumns(to: tableView, columns: content.columns)
 
@@ -170,6 +210,7 @@ struct ArchiveNSTableView: NSViewRepresentable {
             addColumns(to: tableView, columns: content.columns)
         }
         context.coordinator.update(content: content, tableView: tableView)
+        context.coordinator.onRowDoubleClicked = onRowDoubleClicked
     }
 
     private func addColumns(to tableView: NSTableView, columns: [String]) {
@@ -196,6 +237,7 @@ struct ArchiveNSTableView: NSViewRepresentable {
     class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         private var content: ArchiveViewerContent
         private var sortedRows: [ArchiveRow]
+        var onRowDoubleClicked: ((ArchiveRow) -> Void)?
 
         init(content: ArchiveViewerContent) {
             self.content = content
@@ -206,6 +248,12 @@ struct ArchiveNSTableView: NSViewRepresentable {
             self.content = content
             self.sortedRows = content.rows
             tableView.reloadData()
+        }
+
+        @objc func rowDoubleClicked(_ sender: NSTableView) {
+            let row = sender.clickedRow
+            guard row >= 0, row < sortedRows.count else { return }
+            onRowDoubleClicked?(sortedRows[row])
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { sortedRows.count }
