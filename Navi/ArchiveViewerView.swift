@@ -402,6 +402,25 @@ struct ArchiveNSTableView: NSViewRepresentable {
     }
 }
 
+private struct RejectButtonStyle: ButtonStyle {
+    let isRejected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isRejected ? Color(nsColor: .controlColor) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+    }
+}
+
 /// Bordered toggle button used in both the Archive viewer and FITS viewer toolbars.
 /// Clear background + border when not rejected; grey fill + border when rejected.
 struct RejectToggleButton: View {
@@ -419,18 +438,8 @@ struct RejectToggleButton: View {
                 Text("Reject")
             }
             .font(.system(size: 12))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isRejected ? Color(nsColor: .controlColor) : .clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
-            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RejectButtonStyle(isRejected: isRejected))
         .disabled(isDisabled)
         .help(isRejected ? "Click to unreject" : "Reject frame")
     }
