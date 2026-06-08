@@ -423,8 +423,7 @@ struct RejectToggleButton: View {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.diamond.fill")
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(isRejected ? Color.white : Color.primary,
-                                     isRejected ? Color.red   : Color.primary)
+                    .foregroundStyle(Color.white, isRejected ? Color.red : Color.primary)
                 Text("Reject")
             }
             .font(.system(size: 12))
