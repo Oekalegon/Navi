@@ -206,6 +206,12 @@ struct FITSViewerView: View {
         do {
             try await ArchiveManager.shared.setRejected(target, id: id)
             paneManager.fitsFrameRejected = target
+            // Keep archive table row in sync
+            let idStr = id.uuidString
+            let value = target ? "true" : "false"
+            if let idx = paneManager.archiveContent?.rows.firstIndex(where: { $0.values["id"] == idStr }) {
+                paneManager.archiveContent?.rows[idx].values["rejected"] = value
+            }
         } catch {
             logger.error("Failed to toggle rejection: \(error)")
         }

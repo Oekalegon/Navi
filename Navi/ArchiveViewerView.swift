@@ -41,7 +41,10 @@ struct ArchiveViewerView: View {
 
             Spacer()
 
-            let isRowRejected = selectedRow?.values["rejected"] == "true"
+            let selectedID = selectedRow?.values["id"]
+            let isRowRejected = selectedID.flatMap { id in
+                paneManager.archiveContent?.rows.first(where: { $0.values["id"] == id })?.values["rejected"]
+            } == "true"
             let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
 
