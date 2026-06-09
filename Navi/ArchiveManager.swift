@@ -359,8 +359,10 @@ final class ArchiveManager {
         if f.stacked, let beg = f.sessionBeg {
             let end = f.sessionEnd ?? beg
             d["date"] = tableDate.string(from: beg) + " – " + tableDate.string(from: end)
+        } else if let obsDate = f.timestamp ?? f.fileDate {
+            d["date"] = tableDate.string(from: obsDate)
         } else {
-            d["date"] = tableDate.string(from: f.timestamp ?? f.fileDate ?? f.addedAt)
+            d["date"] = "—"
         }
         if let v = f.exposureTime        { d["exp"] = v }
         if let v = f.starCount           { d["stars"] = v }
