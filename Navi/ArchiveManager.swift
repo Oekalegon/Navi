@@ -356,7 +356,12 @@ final class ArchiveManager {
         if let v = f.objectName          { d["object"] = v }
         if let v = f.filter              { d["filter"] = v }
         if let v = f.camera              { d["camera"] = v }
-        if let v = f.timestamp ?? f.fileDate { d["date"] = tableDate.string(from: v) }
+        if f.stacked, let beg = f.sessionBeg {
+            let end = f.sessionEnd ?? beg
+            d["date"] = tableDate.string(from: beg) + " – " + tableDate.string(from: end)
+        } else {
+            d["date"] = tableDate.string(from: f.timestamp ?? f.fileDate ?? f.addedAt)
+        }
         if let v = f.exposureTime        { d["exp"] = v }
         if let v = f.starCount           { d["stars"] = v }
         if let v = f.medianFWHM          { d["fwhm"] = v }
@@ -378,8 +383,12 @@ final class ArchiveManager {
         if let v = fs.filter         { d["filter"] = v }
         if let v = fs.camera         { d["camera"] = v }
         if let v = fs.exposureTime   { d["exp"] = v }
-        if let v = fs.dateFrom       { d["date_from"] = iso.string(from: v) }
-        if let v = fs.dateTo         { d["date_to"] = iso.string(from: v) }
+        if let from = fs.dateFrom {
+            let to = fs.dateTo ?? from
+            d["date"] = tableDate.string(from: from) + " – " + tableDate.string(from: to)
+        } else {
+            d["date"] = tableDate.string(from: fs.createdAt)
+        }
         if let v = fs.medianFWHM     { d["fwhm"] = v }
         if let v = fs.medianStarCount { d["stars"] = v }
         return d
