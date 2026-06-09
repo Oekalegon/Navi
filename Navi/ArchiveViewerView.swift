@@ -806,7 +806,10 @@ struct ArchiveFilterSheet: View {
                         ForEach(visible, id: \.self) { obj in
                             Toggle(isOn: Binding(
                                 get: { filter.objects.contains(obj) },
-                                set: { if $0 { filter.objects.insert(obj) } else { filter.objects.remove(obj) } }
+                                set: { checked in
+                                    guard checked != filter.objects.contains(obj) else { return }
+                                    if checked { filter.objects.insert(obj) } else { filter.objects.remove(obj) }
+                                }
                             )) { Text(obj).font(.callout) }
                             .toggleStyle(.checkbox)
                         }
@@ -883,7 +886,10 @@ struct ArchiveFilterSheet: View {
             HStack {
                 Toggle("From", isOn: Binding(
                     get: { filter.dateFrom != nil },
-                    set: { filter.dateFrom = $0 ? Calendar.current.date(byAdding: .month, value: -3, to: Date()) : nil }
+                    set: { enabled in
+                        guard enabled != (filter.dateFrom != nil) else { return }
+                        filter.dateFrom = enabled ? Calendar.current.date(byAdding: .month, value: -3, to: Date()) : nil
+                    }
                 ))
                 .toggleStyle(.checkbox).frame(width: 50, alignment: .leading)
                 if filter.dateFrom != nil {
@@ -894,7 +900,10 @@ struct ArchiveFilterSheet: View {
             HStack {
                 Toggle("To", isOn: Binding(
                     get: { filter.dateTo != nil },
-                    set: { filter.dateTo = $0 ? Date() : nil }
+                    set: { enabled in
+                        guard enabled != (filter.dateTo != nil) else { return }
+                        filter.dateTo = enabled ? Date() : nil
+                    }
                 ))
                 .toggleStyle(.checkbox).frame(width: 50, alignment: .leading)
                 if filter.dateTo != nil {
@@ -1055,6 +1064,8 @@ struct ColumnsPopover: View {
                         Toggle(isOn: Binding(
                             get: { !settings.hiddenColumns.contains(col) },
                             set: { show in
+                                let visible = !settings.hiddenColumns.contains(col)
+                                guard show != visible else { return }
                                 if show { settings.hiddenColumns.remove(col) }
                                 else    { settings.hiddenColumns.insert(col) }
                                 settings.save()
