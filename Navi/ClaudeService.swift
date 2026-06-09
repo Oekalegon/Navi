@@ -11,7 +11,7 @@ import Observation
 enum MessageType {
     case text
     case toolUse(toolName: String, arguments: [String: Any])
-    case toolResult(toolName: String, resultSummary: String, fullContent: String)
+    case toolResult(toolName: String, resultSummary: String, fullContent: String, arguments: [String: Any])
 }
 
 struct Message: Identifiable, Codable {

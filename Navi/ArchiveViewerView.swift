@@ -15,10 +15,19 @@ struct ArchiveViewerView: View {
     @State private var isLoadingRecent = false
     @State private var selectedRow: ArchiveRow? = nil
     @State private var isRejecting = false
-
+    @State private var showingFilter = false
+    private var filterBinding: Binding<ArchiveFilter> {
+        Binding(get: { paneManager.archiveFilter }, set: { paneManager.archiveFilter = $0 })
+    }
+    @State private var filterBase: ArchiveViewerContent? = nil
+    @State private var isLoadingFilter = false
     var body: some View {
         VStack(spacing: 0) {
             headerBar
+            if paneManager.archiveFilter.isActive {
+                Divider()
+                filterChipsBar
+            }
             Divider()
             contentArea
         }
@@ -28,23 +37,61 @@ struct ArchiveViewerView: View {
             guard paneManager.archiveContent == nil else { return }
             await loadRecentFrames()
         }
+        .task(id: paneManager.archiveFilter) {
+            await refreshFilterBase()
+        }
+        .sheet(isPresented: $showingFilter) {
+            ArchiveFilterSheet(filter: filterBinding)
+        }
+    }
+
+    private var filterChipsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(paneManager.archiveFilter.activeCategories, id: \.self) { category in
+                    ActiveFilterChip(
+                        category: category.rawValue,
+                        label: paneManager.archiveFilter.chipLabel(for: category)
+                    ) { paneManager.archiveFilter.clear(category) }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .frame(maxWidth: .infinity)
     }
 
     private var headerBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: paneManager.archiveContent?.iconName ?? "archivebox")
-                .foregroundStyle(.secondary)
+            let isFilterActive = paneManager.archiveFilter.isActive
+            Image(systemName: isFilterActive
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : (paneManager.archiveContent?.iconName ?? "archivebox"))
+                .foregroundStyle(isFilterActive ? Color.accentColor : Color.secondary)
                 .font(.system(size: 14))
 
-            Text(paneManager.archiveContent?.title ?? "Archive Browser")
+            Text(isFilterActive ? "Filter Results"
+                 : (paneManager.archiveContent?.title ?? "Archive Browser"))
                 .font(.headline)
 
             Spacer()
 
-            let selectedID = selectedRow?.values["id"]
-            let isRowRejected = selectedID.flatMap { id in
-                paneManager.archiveContent?.rows.first(where: { $0.values["id"] == id })?.values["rejected"]
-            } == "true"
+            if !showRaw {
+                Button {
+                    showingFilter.toggle()
+                } label: {
+                    Image(systemName: isFilterActive
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(isFilterActive ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isFilterActive ? "Filter active — click to edit" : "Filter")
+            }
+
+            let isRowRejected = selectedRow?.values["rejected"] == "true"
             let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
 
@@ -63,7 +110,7 @@ struct ArchiveViewerView: View {
             .disabled(isLoadingRecent)
             .help("Show recent frames")
 
-            if let content = paneManager.archiveContent {
+            if !isFilterActive, let content = paneManager.archiveContent {
                 Text(content.toolName)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -72,7 +119,7 @@ struct ArchiveViewerView: View {
                     .background(Color.secondary.opacity(0.1))
                     .cornerRadius(4)
 
-                if content.isTable {
+                if content.isTable && !showRaw {
                     Toggle(isOn: $showRaw) {
                         Image(systemName: "doc.plaintext")
                             .font(.system(size: 12))
@@ -100,7 +147,9 @@ struct ArchiveViewerView: View {
 
     @ViewBuilder
     private var contentArea: some View {
-        if let content = paneManager.archiveContent {
+        if paneManager.archiveFilter.isActive {
+            filterContentArea
+        } else if let content = paneManager.archiveContent {
             if showRaw || !content.isTable {
                 rawView(content: content)
             } else if content.rows.isEmpty {
@@ -120,6 +169,61 @@ struct ArchiveViewerView: View {
         } else {
             emptyState("Use 'Browse in Archive' on a tool result to view data here")
         }
+    }
+
+    @ViewBuilder
+    private var filterContentArea: some View {
+        if isLoadingFilter {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Searching archive…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let base = filterBase {
+            let filtered = base.filtered(by: paneManager.archiveFilter)
+            if filtered.rows.isEmpty {
+                filterEmptyState()
+            } else {
+                ArchiveTableView(
+                    content: filtered,
+                    totalRows: base.rows.count,
+                    onRowSelected: { selectedRow = $0 },
+                    onRowDoubleClicked: { [paneManager] row in
+                        let filePath = row.values["file"] ?? row.values["path"]
+                        if let filePath, !filePath.isEmpty {
+                            paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
+                        }
+                    }
+                )
+            }
+        } else {
+            emptyState("Archive not connected")
+        }
+    }
+
+    private func refreshFilterBase() async {
+        await Task.yield()
+        let f = paneManager.archiveFilter
+        guard f.isActive else {
+            filterBase = nil
+            isLoadingFilter = false
+            return
+        }
+        isLoadingFilter = true
+        do {
+            var args: [String: Any] = ["kind": f.kind ?? "both"]
+            if !f.types.isEmpty { args["frame_types"] = Array(f.types) }
+            if let lvl = f.processingLevel { args["processing_level"] = lvl }
+            let result = try await ArchiveManager.shared.callTool(name: "archive_search", arguments: args)
+            guard !Task.isCancelled else { return }
+            filterBase = ArchiveViewerContent.parse(toolName: "archive_search", content: result)
+        } catch {
+            guard !Task.isCancelled else { return }
+            filterBase = nil
+        }
+        if !Task.isCancelled { isLoadingFilter = false }
     }
 
     private func rawView(content: ArchiveViewerContent) -> some View {
@@ -142,6 +246,21 @@ struct ArchiveViewerView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func filterEmptyState() -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+            Text("No rows match the current filter")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Button("Clear Filter") { paneManager.archiveFilter = ArchiveFilter() }
+                .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -175,6 +294,9 @@ struct ArchiveViewerView: View {
             if let idx = paneManager.archiveContent?.rows.firstIndex(where: { $0.values["id"] == id }) {
                 paneManager.archiveContent?.rows[idx].values["rejected"] = value
             }
+            if let idx = filterBase?.rows.firstIndex(where: { $0.values["id"] == id }) {
+                filterBase?.rows[idx].values["rejected"] = value
+            }
             selectedRow?.values["rejected"] = value
             // Keep FITS viewer in sync if it is showing this frame
             let rowPath = row.values["file"] ?? row.values["path"] ?? ""
@@ -189,17 +311,22 @@ struct ArchiveViewerView: View {
 
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
+    var totalRows: Int? = nil
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
     var body: some View {
+        let total = totalRows ?? content.rows.count
+        let count = content.rows.count
         VStack(spacing: 0) {
             ArchiveNSTableView(content: content, onRowSelected: onRowSelected, onRowDoubleClicked: onRowDoubleClicked)
 
             Divider()
 
             HStack {
-                Text("\(content.rows.count) \(content.rows.count == 1 ? "row" : "rows")")
+                Text(count == total
+                     ? "\(count) \(count == 1 ? "row" : "rows")"
+                     : "\(count) of \(total) rows")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -410,6 +537,334 @@ struct ArchiveNSTableView: NSViewRepresentable {
                                     width: badgeSize, height: badgeSize))
                 return true
             }
+        }
+    }
+}
+
+struct ActiveFilterChip: View {
+    let category: String
+    let label: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("\(category): \(label)")
+                .font(.caption)
+                .lineLimit(1)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color.accentColor.opacity(0.1))
+        .foregroundStyle(Color.accentColor)
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 0.5))
+    }
+}
+
+struct ArchiveFilterSheet: View {
+    @Binding var filter: ArchiveFilter
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedCategory: FilterCategory = .object
+    @State private var allObjects: [String] = []
+    @State private var isLoadingObjects = false
+    @State private var objectSearch = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Sheet header
+            HStack {
+                Text("Filter Archive")
+                    .font(.headline)
+                Spacer()
+                if filter.isActive {
+                    Button("Clear All") { filter = ArchiveFilter() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Done") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
+
+            // Two-column layout
+            HStack(spacing: 0) {
+                // Sidebar
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(FilterCategory.allCases, id: \.self) { cat in
+                        HStack(spacing: 8) {
+                            Label(cat.rawValue, systemImage: cat.icon)
+                                .font(.callout)
+                            Spacer()
+                            if filter.isActive(for: cat) {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(selectedCategory == cat
+                            ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedCategory = cat }
+                    }
+                    Spacer()
+                }
+                .padding(8)
+                .frame(width: 180)
+                .background(Color(nsColor: .controlBackgroundColor))
+
+                Divider()
+
+                // Detail panel
+                VStack(alignment: .leading, spacing: 0) {
+                    // Category header
+                    HStack {
+                        Text(selectedCategory.rawValue)
+                            .font(.title3).fontWeight(.semibold)
+                        Spacer()
+                        if filter.isActive(for: selectedCategory) {
+                            Button("Clear") { filter.clear(selectedCategory) }
+                                .buttonStyle(.plain)
+                                .font(.callout)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+
+                    Divider()
+
+                    categoryDetail
+                        .padding(16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+        .frame(width: 560, height: 400)
+        .task { await loadObjects() }
+    }
+
+    @ViewBuilder
+    private var categoryDetail: some View {
+        switch selectedCategory {
+        case .object:    objectDetail
+        case .frameType: frameTypeDetail
+        case .kind:      kindDetail
+        case .level:     levelDetail
+        case .date:      dateDetail
+        case .quality:   qualityDetail
+        }
+    }
+
+    // MARK: Object
+    private var objectDetail: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Search", text: $objectSearch)
+                .textFieldStyle(.roundedBorder)
+
+            let visible = objectSearch.isEmpty ? allObjects
+                : allObjects.filter { $0.localizedCaseInsensitiveContains(objectSearch) }
+
+            if isLoadingObjects {
+                ProgressView("Loading objects…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if visible.isEmpty {
+                Text(allObjects.isEmpty ? "No objects in archive" : "No objects match \"\(objectSearch)\"")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(visible, id: \.self) { obj in
+                            Toggle(isOn: Binding(
+                                get: { filter.objects.contains(obj) },
+                                set: { if $0 { filter.objects.insert(obj) } else { filter.objects.remove(obj) } }
+                            )) { Text(obj).font(.callout) }
+                            .toggleStyle(.checkbox)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    // MARK: Frame Type
+    private var frameTypeDetail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Select frame types to include")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach(["light", "dark", "flat", "bias", "darkflat"], id: \.self) { type in
+                    FilterChip(label: type.capitalized, isSelected: filter.types.contains(type)) {
+                        if filter.types.contains(type) { filter.types.remove(type) }
+                        else { filter.types.insert(type) }
+                    }
+                }
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: Kind
+    private var kindDetail: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Show in results")
+                .font(.callout).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+                get: { filter.kind ?? "both" },
+                set: { new in
+                    let resolved: String? = new == "both" ? nil : new
+                    if filter.kind != resolved { filter.kind = resolved }
+                }
+            )) {
+                Text("Frames and framesets").tag("both")
+                Text("Frames only").tag("frames")
+                Text("Framesets only").tag("framesets")
+            }
+            .pickerStyle(.radioGroup)
+            Spacer()
+        }
+    }
+
+    // MARK: Processing Level
+    private var levelDetail: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Processing level")
+                .font(.callout).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+                get: { filter.processingLevel ?? "all" },
+                set: { new in
+                    let resolved: String? = new == "all" ? nil : new
+                    if filter.processingLevel != resolved { filter.processingLevel = resolved }
+                }
+            )) {
+                Text("All levels").tag("all")
+                Text("Raw").tag("raw")
+                Text("Stacked").tag("stacked")
+                Text("Stretched").tag("stretched")
+            }
+            .pickerStyle(.radioGroup)
+            Spacer()
+        }
+    }
+
+    // MARK: Date
+    private var dateDetail: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Toggle("From", isOn: Binding(
+                    get: { filter.dateFrom != nil },
+                    set: { filter.dateFrom = $0 ? Calendar.current.date(byAdding: .month, value: -3, to: Date()) : nil }
+                ))
+                .toggleStyle(.checkbox).frame(width: 50, alignment: .leading)
+                if filter.dateFrom != nil {
+                    DatePicker("", selection: Binding(get: { filter.dateFrom! }, set: { filter.dateFrom = $0 }),
+                               displayedComponents: .date).labelsHidden()
+                }
+            }
+            HStack {
+                Toggle("To", isOn: Binding(
+                    get: { filter.dateTo != nil },
+                    set: { filter.dateTo = $0 ? Date() : nil }
+                ))
+                .toggleStyle(.checkbox).frame(width: 50, alignment: .leading)
+                if filter.dateTo != nil {
+                    DatePicker("", selection: Binding(get: { filter.dateTo! }, set: { filter.dateTo = $0 }),
+                               displayedComponents: .date).labelsHidden()
+                }
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: Quality
+    private var qualityDetail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Empty fields are ignored")
+                .font(.caption).foregroundStyle(.secondary)
+            QualityRangeRow(label: "FWHM",  min: $filter.minFWHM,  max: $filter.maxFWHM)
+            QualityRangeRow(label: "SNR",   min: $filter.minSNR,   max: $filter.maxSNR)
+            QualityRangeRow(label: "Stars", min: $filter.minStars, max: $filter.maxStars)
+            Spacer()
+        }
+    }
+
+    private func loadObjects() async {
+        isLoadingObjects = true
+        defer { isLoadingObjects = false }
+        do {
+            let result = try await ArchiveManager.shared.callTool(name: "archive_list_objects", arguments: [:])
+            let parsed = ArchiveViewerContent.parse(toolName: "archive_list_objects", content: result)
+            let names = parsed.rows.compactMap { row -> String? in
+                let n = row.values["name"] ?? row.values["object"] ?? ""
+                return n.isEmpty ? nil : n
+            }
+            let sorted = Array(Set(names)).sorted()
+            if !sorted.isEmpty { allObjects = sorted }
+        } catch {}
+    }
+}
+
+private struct FilterChip: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(isSelected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.1))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct QualityRangeRow: View {
+    let label: String
+    @Binding var min: String
+    @Binding var max: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.callout)
+                .frame(width: 44, alignment: .leading)
+            Text("≥")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("", text: $min)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 54)
+                .font(.callout)
+            Text("≤")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("", text: $max)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 54)
+                .font(.callout)
         }
     }
 }

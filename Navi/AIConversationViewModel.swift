@@ -169,7 +169,8 @@ class AIConversationViewModel {
                             messageType: .toolResult(
                                 toolName: toolUse.name,
                                 resultSummary: isError ? "Error: \(resultText)" : String(resultText.prefix(100)),
-                                fullContent: isError ? "" : resultText))
+                                fullContent: isError ? "" : resultText,
+                                arguments: toolUse.input))
                     }
                 }
 

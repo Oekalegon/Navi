@@ -213,8 +213,8 @@ struct MessageBubble: View {
             switch messageType {
             case .toolUse(let toolName, _):
                 ToolUseCard(toolName: toolName)
-            case .toolResult(let toolName, let summary, let fullContent):
-                ToolResultCard(toolName: toolName, summary: summary, fullContent: fullContent)
+            case .toolResult(let toolName, let summary, let fullContent, let arguments):
+                ToolResultCard(toolName: toolName, summary: summary, fullContent: fullContent, arguments: arguments)
             case .text:
                 AssistantMessageView(content: message.content)
             }
@@ -262,6 +262,7 @@ struct ToolResultCard: View {
     let toolName: String
     let summary: String
     let fullContent: String
+    let arguments: [String: Any]
     @Environment(PaneManager.self) private var paneManager
 
     private var isArchiveTool: Bool { toolName.hasPrefix("archive_") }
@@ -311,6 +312,7 @@ struct ToolResultCard: View {
 
     private func openArchiveBrowser() {
         let content = ArchiveViewerContent.parse(toolName: toolName, content: fullContent)
-        paneManager.showArchiveViewer(content: content)
+        let filter = ArchiveFilter.from(toolName: toolName, arguments: arguments)
+        paneManager.showArchiveViewer(content: content, filter: filter)
     }
 }

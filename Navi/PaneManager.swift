@@ -12,6 +12,7 @@ import Observation
 class PaneManager {
     var rootPane: SplitPane
     var archiveContent: ArchiveViewerContent?
+    var archiveFilter: ArchiveFilter = ArchiveFilter()
     var fitsURL: URL?
     var fitsFrameRejected: Bool = false
 
@@ -70,8 +71,9 @@ class PaneManager {
         }
     }
 
-    func showArchiveViewer(content: ArchiveViewerContent) {
+    func showArchiveViewer(content: ArchiveViewerContent, filter: ArchiveFilter = ArchiveFilter()) {
         archiveContent = content
+        archiveFilter = filter
         showArchivePane()
     }
 

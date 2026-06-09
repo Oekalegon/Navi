@@ -274,7 +274,7 @@ struct ArchiveViewerContent {
                                     columns: orderedColumns, rows: rows, isTable: true)
     }
 
-    private static func jsonValueString(_ val: Any) -> String {
+    static func jsonValueString(_ val: Any) -> String {
         if let str = val as? String { return str }
         if let num = val as? NSNumber { return num.stringValue }
         if let nested = val as? [String: Any],
@@ -284,6 +284,15 @@ struct ArchiveViewerContent {
            let data = try? JSONSerialization.data(withJSONObject: arr),
            let str = String(data: data, encoding: .utf8) { return str }
         return "\(val)"
+    }
+
+    // MARK: - Filtering
+
+    func filtered(by filter: ArchiveFilter) -> ArchiveViewerContent {
+        guard filter.isActive else { return self }
+        var copy = self
+        copy.rows = filter.apply(to: rows)
+        return copy
     }
 
     // MARK: - Title
@@ -306,5 +315,171 @@ struct ArchiveViewerContent {
         case "archive_remove":           return "Removed Frame"
         default: return toolName.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
         }
+    }
+}
+
+// MARK: - Filter categories
+
+enum FilterCategory: String, CaseIterable, Hashable {
+    case object    = "Object"
+    case frameType = "Frame Type"
+    case kind      = "Kind"
+    case level     = "Processing Level"
+    case date      = "Date"
+    case quality   = "Quality"
+
+    var icon: String {
+        switch self {
+        case .object:    return "star"
+        case .frameType: return "square.stack"
+        case .kind:      return "rectangle.on.rectangle"
+        case .level:     return "slider.horizontal.3"
+        case .date:      return "calendar"
+        case .quality:   return "chart.bar"
+        }
+    }
+}
+
+// MARK: - Filter
+
+struct ArchiveFilter: Equatable {
+    var objects: Set<String>     = []
+    var types: Set<String>       = []
+    var kind: String?            = nil   // nil = both | "frames" | "framesets"
+    var processingLevel: String? = nil   // nil = all  | "raw" | "stacked" | "stretched"
+    var minFWHM: String  = ""
+    var maxFWHM: String  = ""
+    var minSNR: String   = ""
+    var maxSNR: String   = ""
+    var minStars: String = ""
+    var maxStars: String = ""
+    var dateFrom: Date?  = nil
+    var dateTo: Date?    = nil
+
+    var isActive: Bool {
+        !objects.isEmpty || !types.isEmpty ||
+        kind != nil || processingLevel != nil ||
+        !minFWHM.isEmpty || !maxFWHM.isEmpty ||
+        !minSNR.isEmpty  || !maxSNR.isEmpty  ||
+        !minStars.isEmpty || !maxStars.isEmpty ||
+        dateFrom != nil || dateTo != nil
+    }
+
+    func isActive(for category: FilterCategory) -> Bool {
+        switch category {
+        case .object:    return !objects.isEmpty
+        case .frameType: return !types.isEmpty
+        case .kind:      return kind != nil
+        case .level:     return processingLevel != nil
+        case .date:      return dateFrom != nil || dateTo != nil
+        case .quality:   return !minFWHM.isEmpty || !maxFWHM.isEmpty ||
+                                !minSNR.isEmpty   || !maxSNR.isEmpty  ||
+                                !minStars.isEmpty || !maxStars.isEmpty
+        }
+    }
+
+    var activeCategories: [FilterCategory] {
+        FilterCategory.allCases.filter { isActive(for: $0) }
+    }
+
+    func chipLabel(for category: FilterCategory) -> String {
+        switch category {
+        case .object:
+            return objects.sorted().joined(separator: ", ")
+        case .frameType:
+            return types.sorted().map { $0.capitalized }.joined(separator: ", ")
+        case .kind:
+            switch kind {
+            case "frames":    return "Frames"
+            case "framesets": return "Framesets"
+            default:          return ""
+            }
+        case .level:
+            return processingLevel?.capitalized ?? ""
+        case .date:
+            let df = DateFormatter(); df.dateStyle = .short
+            var parts: [String] = []
+            if let d = dateFrom { parts.append("from \(df.string(from: d))") }
+            if let d = dateTo   { parts.append("to \(df.string(from: d))") }
+            return parts.joined(separator: " – ")
+        case .quality:
+            var parts: [String] = []
+            if !minFWHM.isEmpty  { parts.append("FWHM ≥ \(minFWHM)") }
+            if !maxFWHM.isEmpty  { parts.append("FWHM ≤ \(maxFWHM)") }
+            if !minSNR.isEmpty   { parts.append("SNR ≥ \(minSNR)") }
+            if !maxSNR.isEmpty   { parts.append("SNR ≤ \(maxSNR)") }
+            if !minStars.isEmpty { parts.append("Stars ≥ \(minStars)") }
+            if !maxStars.isEmpty { parts.append("Stars ≤ \(maxStars)") }
+            return parts.joined(separator: ", ")
+        }
+    }
+
+    mutating func clear(_ category: FilterCategory) {
+        switch category {
+        case .object:    objects = []
+        case .frameType: types = []
+        case .kind:      kind = nil
+        case .level:     processingLevel = nil
+        case .date:      dateFrom = nil; dateTo = nil
+        case .quality:   minFWHM = ""; maxFWHM = ""; minSNR = ""; maxSNR = ""
+                         minStars = ""; maxStars = ""
+        }
+    }
+
+    func apply(to rows: [ArchiveRow]) -> [ArchiveRow] {
+        rows.filter { row in
+            if !objects.isEmpty, !objects.contains(row.values["object"] ?? "") { return false }
+            if !types.isEmpty, !types.contains((row.values["type"] ?? "").lowercased()) { return false }
+            if let k = kind {
+                let isFrameset = row.values["frames"].flatMap(Int.init) != nil
+                if k == "frames"    && isFrameset  { return false }
+                if k == "framesets" && !isFrameset { return false }
+            }
+            if let lvl = processingLevel,
+               (row.values["level"] ?? "").lowercased() != lvl.lowercased() { return false }
+            if let min = Double(minFWHM), let v = row.values["fwhm"].flatMap(Double.init), v < min { return false }
+            if let max = Double(maxFWHM), let v = row.values["fwhm"].flatMap(Double.init), v > max { return false }
+            if let min = Double(minSNR),  let v = row.values["snr"].flatMap(Double.init),  v < min { return false }
+            if let max = Double(maxSNR),  let v = row.values["snr"].flatMap(Double.init),  v > max { return false }
+            if let min = Int(minStars),   let v = row.values["stars"].flatMap(Int.init),   v < min { return false }
+            if let max = Int(maxStars),   let v = row.values["stars"].flatMap(Int.init),   v > max { return false }
+            let cal = Calendar.current
+            if let from = dateFrom, let str = row.values["date"], let d = ArchiveFilter.parseDate(str),
+               cal.startOfDay(for: d) < cal.startOfDay(for: from) { return false }
+            if let to = dateTo, let str = row.values["date"], let d = ArchiveFilter.parseDate(str),
+               cal.startOfDay(for: d) > cal.startOfDay(for: to) { return false }
+            return true
+        }
+    }
+
+    private static let dateFormatters: [DateFormatter] = ["yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ssZ"].map {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = $0
+        return f
+    }
+
+    static func parseDate(_ str: String) -> Date? {
+        for f in dateFormatters { if let d = f.date(from: str) { return d } }
+        return nil
+    }
+
+    static func from(toolName: String, arguments: [String: Any]) -> ArchiveFilter {
+        var f = ArchiveFilter()
+        if let obj = arguments["object_name"] as? String, !obj.isEmpty {
+            f.objects = [obj]
+        }
+        if let types = arguments["frame_types"] as? [String], !types.isEmpty {
+            f.types = Set(types.map { $0.lowercased() })
+        }
+        if let kind = arguments["kind"] as? String, kind == "frames" || kind == "framesets" {
+            f.kind = kind
+        }
+        if let level = arguments["processing_level"] as? String, !level.isEmpty {
+            f.processingLevel = level
+        } else if let stacked = arguments["stacked"] as? Bool, stacked {
+            f.processingLevel = "stacked"
+        }
+        return f
     }
 }
