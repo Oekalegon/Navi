@@ -383,7 +383,7 @@ final class ArchiveManager {
             "type": fs.frameType,
             "level": fs.processingLevel.rawValue,
             "frames": fs.frameCount,
-            "created": iso.string(from: fs.createdAt)
+            "added": iso.string(from: fs.createdAt)
         ]
         if let v = fs.objectName     { d["object"] = v }
         if let v = fs.filter         { d["filter"] = v }

@@ -418,13 +418,10 @@ struct ArchiveTableView: View {
     }
 
     private static func columnTitle(for column: String) -> String {
-        switch column {
-        case "fwhm": return "FWHM"
-        case "snr":  return "SNR"
-        case "ecc":  return "Ecc"
-        case "exp":  return "Exp"
-        default:     return column.capitalized
-        }
+        ArchiveColumnSettings.groups
+            .flatMap { $0.entries }
+            .first { $0.key == column }?
+            .label ?? column.capitalized
     }
 
     private static func formatted(_ value: String, column: String) -> String {
@@ -913,9 +910,8 @@ final class ArchiveColumnSettings {
             ColumnEntry(key: "camera", label: "Camera"),
         ]),
         ColumnGroup(id: "archive", header: "Archive", entries: [
-            ColumnEntry(key: "added",   label: "Added Date"),
-            ColumnEntry(key: "created", label: "Created Date"),
-            ColumnEntry(key: "frames",  label: "Number of Frames"),
+            ColumnEntry(key: "added",  label: "Added"),
+            ColumnEntry(key: "frames", label: "Number of Frames"),
         ]),
         ColumnGroup(id: "file", header: "File", entries: [
             ColumnEntry(key: "file", label: "File"),
