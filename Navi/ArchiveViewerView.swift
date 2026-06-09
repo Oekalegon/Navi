@@ -16,6 +16,8 @@ struct ArchiveViewerView: View {
     @State private var selectedRow: ArchiveRow? = nil
     @State private var isRejecting = false
     @State private var showingFilter = false
+    @State private var showingColumnsPopover = false
+    @State private var columnSettings = ArchiveColumnSettings()
     private var filterBinding: Binding<ArchiveFilter> {
         Binding(get: { paneManager.archiveFilter }, set: { paneManager.archiveFilter = $0 })
     }
@@ -91,6 +93,19 @@ struct ArchiveViewerView: View {
                 .help(isFilterActive ? "Filter active — click to edit" : "Filter")
             }
 
+            if currentContent?.isTable == true {
+                Button { showingColumnsPopover.toggle() } label: {
+                    Image(systemName: "tablecells")
+                        .font(.system(size: 12))
+                        .foregroundStyle(columnSettings.hiddenColumns.isEmpty ? Color.secondary : Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help("Configure visible columns")
+                .popover(isPresented: $showingColumnsPopover, arrowEdge: .bottom) {
+                    ColumnsPopover(available: currentContent?.columns ?? [], settings: columnSettings)
+                }
+            }
+
             let isRowRejected = selectedRow?.values["rejected"] == "true"
             let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
@@ -157,6 +172,7 @@ struct ArchiveViewerView: View {
             } else {
                 ArchiveTableView(
                     content: content,
+                    columnSettings: columnSettings,
                     onRowSelected: { selectedRow = $0 },
                     onRowDoubleClicked: { [paneManager] row in
                         let filePath = row.values["file"] ?? row.values["path"]
@@ -189,6 +205,7 @@ struct ArchiveViewerView: View {
                 ArchiveTableView(
                     content: filtered,
                     totalRows: base.rows.count,
+                    columnSettings: columnSettings,
                     onRowSelected: { selectedRow = $0 },
                     onRowDoubleClicked: { [paneManager] row in
                         let filePath = row.values["file"] ?? row.values["path"]
@@ -249,6 +266,10 @@ struct ArchiveViewerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private var currentContent: ArchiveViewerContent? {
+        paneManager.archiveFilter.isActive ? filterBase : paneManager.archiveContent
     }
 
     private func filterEmptyState() -> some View {
@@ -312,6 +333,7 @@ struct ArchiveViewerView: View {
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
     var totalRows: Int? = nil
+    let columnSettings: ArchiveColumnSettings
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
@@ -319,7 +341,12 @@ struct ArchiveTableView: View {
         let total = totalRows ?? content.rows.count
         let count = content.rows.count
         VStack(spacing: 0) {
-            ArchiveNSTableView(content: content, onRowSelected: onRowSelected, onRowDoubleClicked: onRowDoubleClicked)
+            ArchiveNSTableView(
+                content: content,
+                columnSettings: columnSettings,
+                onRowSelected: onRowSelected,
+                onRowDoubleClicked: onRowDoubleClicked
+            )
 
             Divider()
 
@@ -340,10 +367,13 @@ struct ArchiveTableView: View {
 
 struct ArchiveNSTableView: NSViewRepresentable {
     let content: ArchiveViewerContent
+    let columnSettings: ArchiveColumnSettings
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(content: content) }
+    private var displayColumns: [String] { columnSettings.visibleColumns(from: content.columns) }
+
+    func makeCoordinator() -> Coordinator { Coordinator(content: content, columnSettings: columnSettings) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let tableView = NSTableView()
@@ -358,7 +388,19 @@ struct ArchiveNSTableView: NSViewRepresentable {
         tableView.target = context.coordinator
         tableView.doubleAction = #selector(Coordinator.rowDoubleClicked(_:))
 
-        addColumns(to: tableView, columns: content.columns)
+        addColumns(to: tableView, columns: displayColumns)
+        applyWidths(to: tableView, coordinator: context.coordinator)
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.columnDidMove(_:)),
+            name: NSTableView.columnDidMoveNotification,
+            object: tableView)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.columnDidResize(_:)),
+            name: NSTableView.columnDidResizeNotification,
+            object: tableView)
 
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
@@ -374,14 +416,26 @@ struct ArchiveNSTableView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let tableView = scrollView.documentView as? NSTableView else { return }
         let currentColumns = tableView.tableColumns.map { $0.identifier.rawValue }
-        let expectedColumns = [Self.iconColumnID.rawValue] + content.columns
+        let expectedColumns = [Self.iconColumnID.rawValue] + displayColumns
         if currentColumns != expectedColumns {
             for col in tableView.tableColumns { tableView.removeTableColumn(col) }
-            addColumns(to: tableView, columns: content.columns)
+            addColumns(to: tableView, columns: displayColumns)
+            applyWidths(to: tableView, coordinator: context.coordinator)
         }
         context.coordinator.update(content: content, tableView: tableView)
         context.coordinator.onRowSelected = onRowSelected
         context.coordinator.onRowDoubleClicked = onRowDoubleClicked
+        context.coordinator.columnSettings = columnSettings
+    }
+
+    private func applyWidths(to tableView: NSTableView, coordinator: Coordinator) {
+        coordinator.isApplyingSettings = true
+        for col in tableView.tableColumns where col.identifier != Self.iconColumnID {
+            if let w = columnSettings.columnWidths[col.identifier.rawValue] {
+                col.width = CGFloat(w)
+            }
+        }
+        coordinator.isApplyingSettings = false
     }
 
     private func addColumns(to tableView: NSTableView, columns: [String]) {
@@ -395,13 +449,40 @@ struct ArchiveNSTableView: NSViewRepresentable {
 
         for column in columns {
             let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column))
-            col.title = column
-            col.width = 140
-            col.minWidth = 60
-            col.maxWidth = 400
+            col.title = Self.columnTitle(for: column)
+            let (width, minWidth) = Self.columnSizing(for: column)
+            col.width = width
+            col.minWidth = minWidth
+            col.maxWidth = 600
             col.sortDescriptorPrototype = NSSortDescriptor(key: column, ascending: true,
                 selector: #selector(NSString.localizedStandardCompare(_:)))
             tableView.addTableColumn(col)
+        }
+    }
+
+    private static func columnTitle(for column: String) -> String {
+        switch column {
+        case "fwhm":  return "FWHM"
+        case "snr":   return "SNR"
+        case "ecc":   return "Ecc"
+        case "exp":   return "Exp"
+        default:      return column.capitalized
+        }
+    }
+
+    private static func columnSizing(for column: String) -> (width: CGFloat, minWidth: CGFloat) {
+        switch column {
+        case "type", "level", "filter":          return (70,  50)
+        case "diagnostic":                       return (140, 70)
+        case "exp", "fwhm", "ecc", "frames":    return (60,  44)
+        case "stars":                            return (56,  44)
+        case "date":                             return (130, 80)
+        case "added", "created":                 return (150, 90)
+        case "object", "target":                 return (110, 60)
+        case "name":                             return (160, 80)
+        case "camera":                           return (130, 70)
+        case "file", "path":                     return (260, 100)
+        default:                                 return (100, 50)
         }
     }
 
@@ -410,10 +491,30 @@ struct ArchiveNSTableView: NSViewRepresentable {
         private var sortedRows: [ArchiveRow]
         var onRowSelected: ((ArchiveRow?) -> Void)?
         var onRowDoubleClicked: ((ArchiveRow) -> Void)?
+        var columnSettings: ArchiveColumnSettings
+        var isApplyingSettings = false
 
-        init(content: ArchiveViewerContent) {
+        init(content: ArchiveViewerContent, columnSettings: ArchiveColumnSettings) {
             self.content = content
             self.sortedRows = content.rows
+            self.columnSettings = columnSettings
+        }
+
+        @objc func columnDidMove(_ notification: Notification) {
+            guard let tableView = notification.object as? NSTableView else { return }
+            let order = tableView.tableColumns
+                .map { $0.identifier.rawValue }
+                .filter { $0 != ArchiveNSTableView.iconColumnID.rawValue }
+            columnSettings.columnOrder = order
+            columnSettings.save()
+        }
+
+        @objc func columnDidResize(_ notification: Notification) {
+            guard !isApplyingSettings,
+                  let col = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+                  col.identifier != ArchiveNSTableView.iconColumnID else { return }
+            columnSettings.columnWidths[col.identifier.rawValue] = Double(col.width)
+            columnSettings.save()
         }
 
         func update(content: ArchiveViewerContent, tableView: NSTableView) {
@@ -475,8 +576,21 @@ struct ArchiveNSTableView: NSViewRepresentable {
                 cell.lineBreakMode = .byTruncatingTail
                 cell.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
             }
-            cell.stringValue = sortedRows[row].values[columnID.rawValue] ?? ""
+            cell.stringValue = formatted(sortedRows[row].values[columnID.rawValue] ?? "", column: columnID.rawValue)
             return cell
+        }
+
+        private func formatted(_ value: String, column: String) -> String {
+            switch column {
+            case "fwhm":
+                if let d = Double(value) { return String(format: "%.1f", d) }
+            case "ecc":
+                if let d = Double(value) { return String(format: "%.2f", d) }
+            case "type", "level":
+                return value.capitalized
+            default: break
+            }
+            return value
         }
 
         private func makeIconCell(for row: ArchiveRow) -> NSView {
@@ -709,7 +823,7 @@ struct ArchiveFilterSheet: View {
             Text("Select frame types to include")
                 .font(.callout).foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                ForEach(["light", "dark", "flat", "bias", "darkflat"], id: \.self) { type in
+                ForEach(["light", "dark", "flat", "bias", "darkflat", "diagnostic"], id: \.self) { type in
                     FilterChip(label: type.capitalized, isSelected: filter.types.contains(type)) {
                         if filter.types.contains(type) { filter.types.remove(type) }
                         else { filter.types.insert(type) }
@@ -866,6 +980,95 @@ private struct QualityRangeRow: View {
                 .frame(width: 54)
                 .font(.callout)
         }
+    }
+}
+
+@Observable
+final class ArchiveColumnSettings {
+    var hiddenColumns: Set<String> = []
+    var columnOrder: [String] = []
+    var columnWidths: [String: Double] = [:]
+
+    private static let key = "archiveViewer.columnSettings"
+
+    init() { load() }
+
+    func visibleColumns(from available: [String]) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for col in columnOrder where available.contains(col) && !hiddenColumns.contains(col) {
+            result.append(col); seen.insert(col)
+        }
+        for col in available where !seen.contains(col) && !hiddenColumns.contains(col) {
+            result.append(col)
+        }
+        return result
+    }
+
+    func save() {
+        let dict: [String: Any] = [
+            "hiddenColumns": Array(hiddenColumns),
+            "columnOrder": columnOrder,
+            "columnWidths": columnWidths
+        ]
+        UserDefaults.standard.set(dict, forKey: Self.key)
+    }
+
+    private func load() {
+        guard let dict = UserDefaults.standard.dictionary(forKey: Self.key) else { return }
+        if let v = dict["hiddenColumns"] as? [String] { hiddenColumns = Set(v) }
+        if let v = dict["columnOrder"]   as? [String] { columnOrder = v }
+        if let v = dict["columnWidths"]  as? [String: Double] { columnWidths = v }
+    }
+}
+
+struct ColumnsPopover: View {
+    let available: [String]
+    let settings: ArchiveColumnSettings
+
+    private var allColumns: [String] {
+        let inOrder = settings.columnOrder.filter { available.contains($0) }
+        let rest    = available.filter { !settings.columnOrder.contains($0) }
+        return inOrder + rest
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Columns").font(.headline)
+                Spacer()
+                if !settings.hiddenColumns.isEmpty {
+                    Button("Show All") { settings.hiddenColumns.removeAll(); settings.save() }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(allColumns, id: \.self) { col in
+                        Toggle(isOn: Binding(
+                            get: { !settings.hiddenColumns.contains(col) },
+                            set: { show in
+                                if show { settings.hiddenColumns.remove(col) }
+                                else    { settings.hiddenColumns.insert(col) }
+                                settings.save()
+                            }
+                        )) { Text(col).font(.callout) }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+        .frame(width: 180)
     }
 }
 
