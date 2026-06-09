@@ -104,7 +104,7 @@ struct ArchiveViewerView: View {
                 .buttonStyle(.plain)
                 .help("Configure visible columns")
                 .popover(isPresented: $showingColumnsPopover, arrowEdge: .bottom) {
-                    ColumnsPopover(available: currentContent?.columns ?? [], settings: columnSettings)
+                    ColumnsPopover(settings: columnSettings)
                 }
             }
 
@@ -877,16 +877,71 @@ private struct QualityRangeRow: View {
     }
 }
 
+struct ColumnEntry {
+    let key: String
+    let label: String
+}
+
+struct ColumnGroup: Identifiable {
+    let id: String
+    let header: String
+    let entries: [ColumnEntry]
+}
+
 @Observable
 final class ArchiveColumnSettings {
     var hiddenColumns: Set<String> = []
+
+    static let groups: [ColumnGroup] = [
+        ColumnGroup(id: "observation", header: "Observation", entries: [
+            ColumnEntry(key: "name",   label: "Name"),
+            ColumnEntry(key: "object", label: "Object"),
+            ColumnEntry(key: "date",   label: "Observation Date"),
+        ]),
+        ColumnGroup(id: "properties", header: "Properties", entries: [
+            ColumnEntry(key: "type",   label: "Type"),
+            ColumnEntry(key: "filter", label: "Filter"),
+            ColumnEntry(key: "level",  label: "Level"),
+            ColumnEntry(key: "exp",    label: "Exposure"),
+        ]),
+        ColumnGroup(id: "quality", header: "Quality", entries: [
+            ColumnEntry(key: "fwhm",  label: "FWHM"),
+            ColumnEntry(key: "ecc",   label: "Eccentricity"),
+            ColumnEntry(key: "stars", label: "Number of Stars"),
+        ]),
+        ColumnGroup(id: "equipment", header: "Equipment", entries: [
+            ColumnEntry(key: "camera", label: "Camera"),
+        ]),
+        ColumnGroup(id: "archive", header: "Archive", entries: [
+            ColumnEntry(key: "added",   label: "Added Date"),
+            ColumnEntry(key: "created", label: "Created Date"),
+            ColumnEntry(key: "frames",  label: "Number of Frames"),
+        ]),
+        ColumnGroup(id: "file", header: "File", entries: [
+            ColumnEntry(key: "file", label: "File"),
+        ]),
+    ]
+
+    static var standardColumns: [String] {
+        groups.flatMap { $0.entries.map { $0.key } }
+    }
 
     private static let key = "archiveViewer.columnSettings"
 
     init() { load() }
 
     func visibleColumns(from available: [String]) -> [String] {
-        available.filter { !hiddenColumns.contains($0) }
+        var result: [String] = []
+        var seen = Set<String>()
+        // Standard columns always appear in group order (unless hidden)
+        for col in Self.standardColumns where !hiddenColumns.contains(col) {
+            result.append(col); seen.insert(col)
+        }
+        // Any extra columns from data that aren't in the standard set
+        for col in available where !seen.contains(col) && !hiddenColumns.contains(col) {
+            result.append(col)
+        }
+        return result
     }
 
     func save() {
@@ -904,7 +959,6 @@ final class ArchiveColumnSettings {
 }
 
 struct ColumnsPopover: View {
-    let available: [String]
     let settings: ArchiveColumnSettings
 
     var body: some View {
@@ -925,27 +979,36 @@ struct ColumnsPopover: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(available, id: \.self) { col in
-                        Toggle(isOn: Binding(
-                            get: { !settings.hiddenColumns.contains(col) },
-                            set: { show in
-                                let visible = !settings.hiddenColumns.contains(col)
-                                guard show != visible else { return }
-                                if show { settings.hiddenColumns.remove(col) }
-                                else    { settings.hiddenColumns.insert(col) }
-                                settings.save()
-                            }
-                        )) { Text(col).font(.callout) }
-                        .toggleStyle(.checkbox)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(ArchiveColumnSettings.groups) { group in
+                        Text(group.header.uppercased())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 10)
+                            .padding(.bottom, 3)
+                        ForEach(group.entries, id: \.key) { entry in
+                            Toggle(isOn: Binding(
+                                get: { !settings.hiddenColumns.contains(entry.key) },
+                                set: { show in
+                                    let visible = !settings.hiddenColumns.contains(entry.key)
+                                    guard show != visible else { return }
+                                    if show { settings.hiddenColumns.remove(entry.key) }
+                                    else    { settings.hiddenColumns.insert(entry.key) }
+                                    settings.save()
+                                }
+                            )) { Text(entry.label).font(.callout) }
+                            .toggleStyle(.checkbox)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 2)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
         }
-        .frame(width: 180)
+        .frame(width: 210)
     }
 }
 
