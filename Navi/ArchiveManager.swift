@@ -81,6 +81,10 @@ final class ArchiveManager {
         return (frame.frameType, frame.processingLevel.rawValue)
     }
 
+    func isFrameRejected(filePath: String) async -> Bool? {
+        return await archivedFrame(filePath: filePath)?.rejected
+    }
+
     func archivedFrame(filePath: String) async -> ArchivedFrame? {
         do {
             return try await archive?.frame(filePath: filePath)
@@ -186,7 +190,7 @@ final class ArchiveManager {
 
     private func archiveRecent(_ args: [String: Any], archive: Archive) async throws -> String {
         let limit = args["limit"] as? Int ?? 15
-        let frames = try await archive.recentFrames(limit: limit)
+        let frames = try await archive.recentFrames(limit: limit, rejectionFilter: .includeAll)
         return try encodeJSON(frames.map { frameDict($0) })
     }
 
@@ -368,7 +372,7 @@ final class ArchiveManager {
         if let v = f.starCount           { d["stars"] = v }
         if let v = f.medianFWHM          { d["fwhm"] = v }
         if let v = f.medianEccentricity  { d["ecc"] = v }
-        if f.rejected                    { d["rejected"] = true }
+        if f.rejected                    { d["rejected"] = "true" }
         return d
     }
 

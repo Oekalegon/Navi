@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import OSLog
 
 struct ArchiveViewerView: View {
     var pane: SplitPane
@@ -15,6 +16,7 @@ struct ArchiveViewerView: View {
     @State private var isLoadingRecent = false
     @State private var selectedRow: ArchiveRow? = nil
     @State private var isRejecting = false
+    private let logger = Logger(subsystem: "com.navi.app", category: "ArchiveViewer")
     @State private var showingFilter = false
     @State private var showingColumnsPopover = false
     @State private var columnSettings = ArchiveColumnSettings()
@@ -304,7 +306,8 @@ struct ArchiveViewerView: View {
     }
 
     private func toggleRejection() async {
-        guard let row = selectedRow, let id = row.values["id"], !id.isEmpty,
+        guard let row = selectedRow,
+              let id = row.values["id"], !id.isEmpty,
               let uuid = UUID(uuidString: id) else { return }
         let target = row.values["rejected"] != "true"
         isRejecting = true
@@ -312,20 +315,24 @@ struct ArchiveViewerView: View {
         do {
             try await ArchiveManager.shared.setRejected(target, id: uuid)
             let value = target ? "true" : "false"
-            if let idx = paneManager.archiveContent?.rows.firstIndex(where: { $0.values["id"] == id }) {
-                paneManager.archiveContent?.rows[idx].values["rejected"] = value
+            // Explicit copy → mutate → reassign to guarantee @Observable and @State notifications fire
+            if var content = paneManager.archiveContent,
+               let idx = content.rows.firstIndex(where: { $0.values["id"] == id }) {
+                content.rows[idx].values["rejected"] = value
+                paneManager.archiveContent = content
             }
-            if let idx = filterBase?.rows.firstIndex(where: { $0.values["id"] == id }) {
-                filterBase?.rows[idx].values["rejected"] = value
+            if var base = filterBase,
+               let idx = base.rows.firstIndex(where: { $0.values["id"] == id }) {
+                base.rows[idx].values["rejected"] = value
+                filterBase = base
             }
             selectedRow?.values["rejected"] = value
-            // Keep FITS viewer in sync if it is showing this frame
             let rowPath = row.values["file"] ?? row.values["path"] ?? ""
             if !rowPath.isEmpty, paneManager.fitsURL?.path == rowPath {
                 paneManager.fitsFrameRejected = target
             }
         } catch {
-            // Silently fail — archive may be disconnected
+            logger.error("toggleRejection failed: \(error)")
         }
     }
 }
@@ -337,16 +344,62 @@ struct ArchiveTableView: View {
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
 
+    @State private var selectionID: ArchiveRow.ID? = nil
+    @State private var sortOrder: [ColumnComparator] = []
+    @State private var lastTapRowID: ArchiveRow.ID? = nil
+    @State private var lastTapTime: Date = .distantPast
+
+    private var displayColumns: [String] { columnSettings.visibleColumns(from: content.columns) }
+
+    private var sortedRows: [ArchiveRow] {
+        sortOrder.isEmpty ? content.rows : content.rows.sorted(using: sortOrder)
+    }
+
+    private func cellTapped(_ row: ArchiveRow) {
+        let now = Date()
+        if lastTapRowID == row.id, now.timeIntervalSince(lastTapTime) < 0.4 {
+            onRowDoubleClicked?(row)
+            lastTapRowID = nil
+        } else {
+            selectionID = row.id
+            lastTapRowID = row.id
+            lastTapTime = now
+        }
+    }
+
     var body: some View {
         let total = totalRows ?? content.rows.count
         let count = content.rows.count
         VStack(spacing: 0) {
-            ArchiveNSTableView(
-                content: content,
-                columnSettings: columnSettings,
-                onRowSelected: onRowSelected,
-                onRowDoubleClicked: onRowDoubleClicked
-            )
+            Table(sortedRows, selection: $selectionID, sortOrder: $sortOrder) {
+                TableColumn("", sortUsing: ColumnComparator(key: "")) { row in
+                    FrameTypeIcon(row: row)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { cellTapped(row) }
+                }
+                .width(min: 22, ideal: 22, max: 22)
+
+                TableColumnForEach(displayColumns, id: \.self) { col in
+                    TableColumn(Self.columnTitle(for: col), sortUsing: ColumnComparator(key: col)) { row in
+                        Text(Self.formatted(row.values[col] ?? "", column: col))
+                            .font(.system(size: 11))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                   alignment: Self.columnAlignment(for: col))
+                            .contentShape(Rectangle())
+                            .onTapGesture { cellTapped(row) }
+                    }
+                    .width(min: Self.minWidth(for: col), ideal: Self.idealWidth(for: col))
+                }
+            }
+            .onChange(of: selectionID) { _, newID in
+                let row = newID.flatMap { id in sortedRows.first { $0.id == id } }
+                onRowSelected?(row)
+            }
+            .onChange(of: sortedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
+                guard let id = selectionID, let row = sortedRows.first(where: { $0.id == id }) else { return }
+                onRowSelected?(row)
+            }
 
             Divider()
 
@@ -363,294 +416,126 @@ struct ArchiveTableView: View {
             .background(Color(nsColor: .controlBackgroundColor))
         }
     }
-}
-
-struct ArchiveNSTableView: NSViewRepresentable {
-    let content: ArchiveViewerContent
-    let columnSettings: ArchiveColumnSettings
-    var onRowSelected: ((ArchiveRow?) -> Void)? = nil
-    var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
-
-    private var displayColumns: [String] { columnSettings.visibleColumns(from: content.columns) }
-
-    func makeCoordinator() -> Coordinator { Coordinator(content: content, columnSettings: columnSettings) }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let tableView = NSTableView()
-        tableView.dataSource = context.coordinator
-        tableView.delegate = context.coordinator
-        tableView.usesAlternatingRowBackgroundColors = true
-        tableView.allowsColumnResizing = true
-        tableView.allowsColumnReordering = true
-        tableView.allowsMultipleSelection = false
-        tableView.columnAutoresizingStyle = .sequentialColumnAutoresizingStyle
-        tableView.rowHeight = 20
-        tableView.target = context.coordinator
-        tableView.doubleAction = #selector(Coordinator.rowDoubleClicked(_:))
-
-        addColumns(to: tableView, columns: displayColumns)
-        applyWidths(to: tableView, coordinator: context.coordinator)
-
-        NotificationCenter.default.addObserver(
-            context.coordinator,
-            selector: #selector(Coordinator.columnDidMove(_:)),
-            name: NSTableView.columnDidMoveNotification,
-            object: tableView)
-        NotificationCenter.default.addObserver(
-            context.coordinator,
-            selector: #selector(Coordinator.columnDidResize(_:)),
-            name: NSTableView.columnDidResizeNotification,
-            object: tableView)
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = tableView
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        return scrollView
-    }
-
-    private static let iconColumnID = NSUserInterfaceItemIdentifier("__type_icon__")
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let tableView = scrollView.documentView as? NSTableView else { return }
-        let currentColumns = tableView.tableColumns.map { $0.identifier.rawValue }
-        let expectedColumns = [Self.iconColumnID.rawValue] + displayColumns
-        if currentColumns != expectedColumns {
-            for col in tableView.tableColumns { tableView.removeTableColumn(col) }
-            addColumns(to: tableView, columns: displayColumns)
-            applyWidths(to: tableView, coordinator: context.coordinator)
-        }
-        context.coordinator.update(content: content, tableView: tableView)
-        context.coordinator.onRowSelected = onRowSelected
-        context.coordinator.onRowDoubleClicked = onRowDoubleClicked
-        context.coordinator.columnSettings = columnSettings
-    }
-
-    private func applyWidths(to tableView: NSTableView, coordinator: Coordinator) {
-        coordinator.isApplyingSettings = true
-        for col in tableView.tableColumns where col.identifier != Self.iconColumnID {
-            if let w = columnSettings.columnWidths[col.identifier.rawValue] {
-                col.width = CGFloat(w)
-            }
-        }
-        coordinator.isApplyingSettings = false
-    }
-
-    private func addColumns(to tableView: NSTableView, columns: [String]) {
-        let iconCol = NSTableColumn(identifier: Self.iconColumnID)
-        iconCol.title = ""
-        iconCol.width = 24
-        iconCol.minWidth = 24
-        iconCol.maxWidth = 24
-        iconCol.resizingMask = []
-        tableView.addTableColumn(iconCol)
-
-        for column in columns {
-            let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column))
-            col.title = Self.columnTitle(for: column)
-            let (width, minWidth) = Self.columnSizing(for: column)
-            col.width = width
-            col.minWidth = minWidth
-            col.maxWidth = 600
-            col.sortDescriptorPrototype = NSSortDescriptor(key: column, ascending: true,
-                selector: #selector(NSString.localizedStandardCompare(_:)))
-            tableView.addTableColumn(col)
-        }
-    }
 
     private static func columnTitle(for column: String) -> String {
         switch column {
-        case "fwhm":  return "FWHM"
-        case "snr":   return "SNR"
-        case "ecc":   return "Ecc"
-        case "exp":   return "Exp"
-        default:      return column.capitalized
+        case "fwhm": return "FWHM"
+        case "snr":  return "SNR"
+        case "ecc":  return "Ecc"
+        case "exp":  return "Exp"
+        default:     return column.capitalized
         }
     }
 
-    private static func columnSizing(for column: String) -> (width: CGFloat, minWidth: CGFloat) {
+    private static func formatted(_ value: String, column: String) -> String {
         switch column {
-        case "type", "level", "filter":          return (70,  50)
-        case "diagnostic":                       return (140, 70)
-        case "exp", "fwhm", "ecc", "frames":    return (60,  44)
-        case "stars":                            return (56,  44)
-        case "date":                             return (130, 80)
-        case "added", "created":                 return (150, 90)
-        case "object", "target":                 return (110, 60)
-        case "name":                             return (160, 80)
-        case "camera":                           return (130, 70)
-        case "file", "path":                     return (260, 100)
-        default:                                 return (100, 50)
+        case "fwhm":
+            if let d = Double(value) { return String(format: "%.1f", d) }
+        case "ecc":
+            if let d = Double(value) { return String(format: "%.2f", d) }
+        case "type", "level":
+            return value.capitalized
+        default: break
+        }
+        return value
+    }
+
+    private static func columnAlignment(for column: String) -> Alignment {
+        switch column {
+        case "fwhm", "ecc", "snr", "exp", "stars", "frames": return .trailing
+        default: return .leading
         }
     }
 
-    class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-        private var content: ArchiveViewerContent
-        private var sortedRows: [ArchiveRow]
-        var onRowSelected: ((ArchiveRow?) -> Void)?
-        var onRowDoubleClicked: ((ArchiveRow) -> Void)?
-        var columnSettings: ArchiveColumnSettings
-        var isApplyingSettings = false
-
-        init(content: ArchiveViewerContent, columnSettings: ArchiveColumnSettings) {
-            self.content = content
-            self.sortedRows = content.rows
-            self.columnSettings = columnSettings
+    private static func idealWidth(for column: String) -> CGFloat {
+        switch column {
+        case "type", "level", "filter":       return 70
+        case "diagnostic":                    return 140
+        case "exp", "fwhm", "ecc", "frames": return 60
+        case "stars":                         return 56
+        case "date":                          return 130
+        case "added", "created":              return 150
+        case "object", "target":              return 110
+        case "name":                          return 160
+        case "camera":                        return 130
+        case "file", "path":                  return 260
+        default:                              return 100
         }
+    }
 
-        @objc func columnDidMove(_ notification: Notification) {
-            guard let tableView = notification.object as? NSTableView else { return }
-            let order = tableView.tableColumns
-                .map { $0.identifier.rawValue }
-                .filter { $0 != ArchiveNSTableView.iconColumnID.rawValue }
-            columnSettings.columnOrder = order
-            columnSettings.save()
+    private static func minWidth(for column: String) -> CGFloat {
+        switch column {
+        case "type", "level", "filter":       return 50
+        case "diagnostic":                    return 70
+        case "exp", "fwhm", "ecc", "frames": return 44
+        case "stars":                         return 44
+        case "date":                          return 80
+        case "added", "created":              return 90
+        case "object", "target":              return 60
+        case "name":                          return 80
+        case "camera":                        return 70
+        case "file", "path":                  return 100
+        default:                              return 50
         }
+    }
+}
 
-        @objc func columnDidResize(_ notification: Notification) {
-            guard !isApplyingSettings,
-                  let col = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
-                  col.identifier != ArchiveNSTableView.iconColumnID else { return }
-            columnSettings.columnWidths[col.identifier.rawValue] = Double(col.width)
-            columnSettings.save()
+private struct FrameTypeIcon: View {
+    let row: ArchiveRow
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(palette.0, palette.1)
+            .font(.system(size: 11, weight: .regular))
+    }
+
+    private var isFrameset: Bool { row.values["frames"].flatMap(Int.init) != nil }
+
+    private var symbolName: String {
+        if row.values["rejected"] == "true" || row.values["excluded"] == "true" {
+            return "xmark.diamond.fill"
         }
+        let type  = row.values["type"]?.lowercased()  ?? ""
+        let level = row.values["level"]?.lowercased() ?? "raw"
+        return frameTypeSymbolName(type: type, level: level, isFrameset: isFrameset)
+    }
 
-        func update(content: ArchiveViewerContent, tableView: NSTableView) {
-            let previousSelection = tableView.selectedRow
-            self.content = content
-            self.sortedRows = content.rows
-            tableView.reloadData()
-            if previousSelection >= 0 && previousSelection < sortedRows.count {
-                tableView.selectRowIndexes(IndexSet(integer: previousSelection), byExtendingSelection: false)
-            }
+    private var palette: (Color, Color) {
+        if row.values["rejected"] == "true" { return (.white, .red) }
+        if row.values["excluded"] == "true" { return (Color(NSColor.black), .yellow) }
+        let type = row.values["type"]?.lowercased() ?? ""
+        if type == "light" {
+            return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor))
         }
+        return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
+    }
+}
 
-        func tableViewSelectionDidChange(_ notification: Notification) {
-            guard let tableView = notification.object as? NSTableView else { return }
-            let row = tableView.selectedRow
-            onRowSelected?(row >= 0 && row < sortedRows.count ? sortedRows[row] : nil)
+struct ColumnComparator: SortComparator {
+    typealias Compared = ArchiveRow
+    let key: String
+    var order: SortOrder = .forward
+
+    func compare(_ lhs: ArchiveRow, _ rhs: ArchiveRow) -> ComparisonResult {
+        let lv = lhs.values[key] ?? ""
+        let rv = rhs.values[key] ?? ""
+        let result: ComparisonResult
+        if let ln = Double(lv), let rn = Double(rv) {
+            result = ln < rn ? .orderedAscending : ln > rn ? .orderedDescending : .orderedSame
+        } else {
+            result = lv.localizedStandardCompare(rv)
         }
+        return order == .reverse ? result.flipped : result
+    }
+}
 
-        @objc func rowDoubleClicked(_ sender: NSTableView) {
-            let row = sender.clickedRow
-            guard row >= 0, row < sortedRows.count else { return }
-            onRowDoubleClicked?(sortedRows[row])
-        }
-
-        func numberOfRows(in tableView: NSTableView) -> Int { sortedRows.count }
-
-        func tableView(_ tableView: NSTableView, sortDescriptorsDidChange old: [NSSortDescriptor]) {
-            guard let descriptor = tableView.sortDescriptors.first, let key = descriptor.key else {
-                sortedRows = content.rows; tableView.reloadData(); return
-            }
-            sortedRows = content.rows.sorted { a, b in
-                let lv = a.values[key] ?? ""
-                let rv = b.values[key] ?? ""
-                let cmp: Bool
-                if let ln = Double(lv), let rn = Double(rv) { cmp = ln < rn }
-                else { cmp = lv.localizedStandardCompare(rv) == .orderedAscending }
-                return descriptor.ascending ? cmp : !cmp
-            }
-            tableView.reloadData()
-        }
-
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            guard let columnID = tableColumn?.identifier else { return nil }
-
-            if columnID == ArchiveNSTableView.iconColumnID {
-                return makeIconCell(for: sortedRows[row])
-            }
-
-            let id = NSUserInterfaceItemIdentifier("cell")
-            let cell: NSTextField
-            if let reused = tableView.makeView(withIdentifier: id, owner: nil) as? NSTextField {
-                cell = reused
-            } else {
-                cell = NSTextField()
-                cell.identifier = id
-                cell.isBordered = false
-                cell.isEditable = false
-                cell.backgroundColor = .clear
-                cell.lineBreakMode = .byTruncatingTail
-                cell.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-            }
-            cell.stringValue = formatted(sortedRows[row].values[columnID.rawValue] ?? "", column: columnID.rawValue)
-            return cell
-        }
-
-        private func formatted(_ value: String, column: String) -> String {
-            switch column {
-            case "fwhm":
-                if let d = Double(value) { return String(format: "%.1f", d) }
-            case "ecc":
-                if let d = Double(value) { return String(format: "%.2f", d) }
-            case "type", "level":
-                return value.capitalized
-            default: break
-            }
-            return value
-        }
-
-        private func makeIconCell(for row: ArchiveRow) -> NSView {
-            let imageView = NSImageView(image: typeIcon(for: row))
-            imageView.imageAlignment = .alignCenter
-            return imageView
-        }
-
-        // A frameset of light frames also has type="light", but uniquely has a numeric
-        // "frames" count field. Individual frames don't have that field.
-        // Framesets have a numeric "frames" count; individual frames and masters do not.
-        private func isFrameset(_ row: ArchiveRow) -> Bool {
-            row.values["frames"].flatMap(Int.init) != nil
-        }
-
-        private func typeIcon(for row: ArchiveRow) -> NSImage {
-            if row.values["rejected"] == "true" {
-                return icon("xmark.diamond.fill", colors: [.white, .systemRed])
-            }
-            if row.values["excluded"] == "true" {
-                return icon("xmark.diamond.fill", colors: [.black, .systemYellow])
-            }
-
-            let type  = row.values["type"]?.lowercased()  ?? ""
-            let level = row.values["level"]?.lowercased() ?? "raw"
-            let symbol = frameTypeSymbolName(type: type, level: level, isFrameset: isFrameset(row))
-
-            let isLight = type == "light"
-            let colors: [NSColor] = isLight
-                ? [.textBackgroundColor, .labelColor]
-                : [.secondaryLabelColor]
-            return icon(symbol, colors: colors)
-        }
-
-        private func icon(_ symbolName: String, colors: [NSColor]) -> NSImage {
-            let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
-                .applying(NSImage.SymbolConfiguration(paletteColors: colors))
-            return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config) ?? NSImage()
-        }
-
-        private func compositeIcon(base: String, badge: String) -> NSImage {
-            NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
-                let color = NSColor.secondaryLabelColor
-                let baseConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-                NSImage(systemSymbolName: base, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(baseConfig)?
-                    .draw(in: rect)
-
-                let badgeSize = CGFloat(6)
-                let badgeConfig = NSImage.SymbolConfiguration(pointSize: 5, weight: .bold)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-                NSImage(systemSymbolName: badge, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(badgeConfig)?
-                    .draw(in: NSRect(x: (rect.width - badgeSize) / 2,
-                                    y: (rect.height - badgeSize) / 2,
-                                    width: badgeSize, height: badgeSize))
-                return true
-            }
+private extension ComparisonResult {
+    var flipped: ComparisonResult {
+        switch self {
+        case .orderedAscending:  return .orderedDescending
+        case .orderedDescending: return .orderedAscending
+        case .orderedSame:       return .orderedSame
         }
     }
 }
@@ -995,51 +880,32 @@ private struct QualityRangeRow: View {
 @Observable
 final class ArchiveColumnSettings {
     var hiddenColumns: Set<String> = []
-    var columnOrder: [String] = []
-    var columnWidths: [String: Double] = [:]
 
     private static let key = "archiveViewer.columnSettings"
 
     init() { load() }
 
     func visibleColumns(from available: [String]) -> [String] {
-        var result: [String] = []
-        var seen = Set<String>()
-        for col in columnOrder where available.contains(col) && !hiddenColumns.contains(col) {
-            result.append(col); seen.insert(col)
-        }
-        for col in available where !seen.contains(col) && !hiddenColumns.contains(col) {
-            result.append(col)
-        }
-        return result
+        available.filter { !hiddenColumns.contains($0) }
     }
 
     func save() {
-        let dict: [String: Any] = [
-            "hiddenColumns": Array(hiddenColumns),
-            "columnOrder": columnOrder,
-            "columnWidths": columnWidths
-        ]
-        UserDefaults.standard.set(dict, forKey: Self.key)
+        UserDefaults.standard.set(Array(hiddenColumns), forKey: Self.key)
     }
 
     private func load() {
-        guard let dict = UserDefaults.standard.dictionary(forKey: Self.key) else { return }
-        if let v = dict["hiddenColumns"] as? [String] { hiddenColumns = Set(v) }
-        if let v = dict["columnOrder"]   as? [String] { columnOrder = v }
-        if let v = dict["columnWidths"]  as? [String: Double] { columnWidths = v }
+        if let arr = UserDefaults.standard.array(forKey: Self.key) as? [String] {
+            hiddenColumns = Set(arr)
+        } else if let dict = UserDefaults.standard.dictionary(forKey: Self.key),
+                  let arr = dict["hiddenColumns"] as? [String] {
+            hiddenColumns = Set(arr)
+        }
     }
 }
 
 struct ColumnsPopover: View {
     let available: [String]
     let settings: ArchiveColumnSettings
-
-    private var allColumns: [String] {
-        let inOrder = settings.columnOrder.filter { available.contains($0) }
-        let rest    = available.filter { !settings.columnOrder.contains($0) }
-        return inOrder + rest
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1060,7 +926,7 @@ struct ColumnsPopover: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(allColumns, id: \.self) { col in
+                    ForEach(available, id: \.self) { col in
                         Toggle(isOn: Binding(
                             get: { !settings.hiddenColumns.contains(col) },
                             set: { show in
