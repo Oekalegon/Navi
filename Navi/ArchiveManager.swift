@@ -27,6 +27,12 @@ final class ArchiveManager {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+    private let tableDate: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
 
     private init() {}
 
@@ -350,7 +356,7 @@ final class ArchiveManager {
         if let v = f.objectName          { d["object"] = v }
         if let v = f.filter              { d["filter"] = v }
         if let v = f.camera              { d["camera"] = v }
-        if let v = f.timestamp           { d["date"] = iso.string(from: v) }
+        if let v = f.timestamp ?? f.fileDate { d["date"] = tableDate.string(from: v) }
         if let v = f.exposureTime        { d["exp"] = v }
         if let v = f.starCount           { d["stars"] = v }
         if let v = f.medianFWHM          { d["fwhm"] = v }
