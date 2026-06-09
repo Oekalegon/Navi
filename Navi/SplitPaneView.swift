@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct SplitPaneView: View {
     var pane: SplitPane
@@ -16,21 +17,47 @@ struct SplitPaneView: View {
             if direction == .horizontal {
                 HSplitView {
                     ForEach(children) { child in
-                        SplitPaneView(pane: child, paneManager: paneManager)
-                            .frame(idealWidth: child.preferredWidth)
+                        StableSplitPaneHost(pane: child, paneManager: paneManager)
+                            .frame(idealWidth: child.preferredWidth, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             } else {
                 VSplitView {
                     ForEach(children) { child in
-                        SplitPaneView(pane: child, paneManager: paneManager)
-                            .frame(idealHeight: child.preferredHeight)
+                        StableSplitPaneHost(pane: child, paneManager: paneManager)
+                            .frame(idealHeight: child.preferredHeight, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
         } else {
             PaneContentView(pane: pane)
         }
+    }
+}
+
+// Wraps SplitPaneView in a stable NSHostingView so the parent NSSplitView
+// never sees a subview add/remove when pane content changes type
+// (e.g. PaneContentView → VSplitView). NSSplitView only re-runs adjustSubviews
+// on structural subview changes, so the user-set divider position is preserved.
+struct StableSplitPaneHost: NSViewRepresentable {
+    let pane: SplitPane
+    let paneManager: PaneManager
+
+    func makeNSView(context: Context) -> NSHostingView<AnyView> {
+        let view = NSHostingView(rootView: content)
+        view.autoresizingMask = [.width, .height]
+        return view
+    }
+
+    func updateNSView(_ nsView: NSHostingView<AnyView>, context: Context) {
+        nsView.rootView = content
+    }
+
+    private var content: AnyView {
+        AnyView(
+            SplitPaneView(pane: pane, paneManager: paneManager)
+                .environment(paneManager)
+        )
     }
 }
 
