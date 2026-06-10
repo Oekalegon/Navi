@@ -211,6 +211,7 @@ struct ArchiveViewerView: View {
                         selectedRow = row
                         if let row { showFrameIfViewerVisible(row) }
                     },
+                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
                 )
             }
         } else {
@@ -241,6 +242,7 @@ struct ArchiveViewerView: View {
                         selectedRow = row
                         if let row { showFrameIfViewerVisible(row) }
                     },
+                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
                 )
             }
         } else {
@@ -313,6 +315,11 @@ struct ArchiveViewerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private func handleFramesetDoubleClick(_ row: ArchiveRow) {
+        guard let idStr = row.values["id"], !idStr.isEmpty else { return }
+        Task { await loadFramesetView(id: idStr, title: framesetTitle(from: row)) }
     }
 
     private func showFrameIfViewerVisible(_ row: ArchiveRow) {
@@ -430,8 +437,11 @@ struct ArchiveTableView: View {
     var totalRows: Int? = nil
     let columnSettings: ArchiveColumnSettings
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
+    var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
     @State private var selectionID: ArchiveRow.ID? = nil
     @State private var sortOrder: [ColumnComparator] = []
+    @State private var lastTapRowID: ArchiveRow.ID? = nil
+    @State private var lastTapTime: Date = .distantPast
     @State private var expandedFramesets: Set<ArchiveRow.ID> = []
     @State private var framesetChildren: [ArchiveRow.ID: [ArchiveRow]] = [:]
     @State private var loadingFramesets: Set<ArchiveRow.ID> = []
@@ -455,6 +465,17 @@ struct ArchiveTableView: View {
             }
         }
         return result
+    }
+
+    private func cellTapped(_ row: ArchiveRow) {
+        let now = Date()
+        if lastTapRowID == row.id, now.timeIntervalSince(lastTapTime) < 0.4 {
+            onRowDoubleClicked?(row)
+            lastTapRowID = nil
+        } else {
+            lastTapRowID = row.id
+            lastTapTime = now
+        }
     }
 
     private func toggleExpand(_ row: ArchiveRow) {
@@ -490,7 +511,7 @@ struct ArchiveTableView: View {
                 TableColumn("Name", sortUsing: ColumnComparator(key: "name")) { row in
                     let isFrameset = row.values["frames"].flatMap(Int.init) != nil
                     let isChild = childRowIDs.contains(row.id)
-                    ArchiveNameCell(
+                    let cell = ArchiveNameCell(
                         row: row,
                         isFrameset: isFrameset,
                         isChild: isChild,
@@ -498,6 +519,11 @@ struct ArchiveTableView: View {
                         isLoading: loadingFramesets.contains(row.id),
                         onToggle: { toggleExpand(row) }
                     )
+                    if isFrameset {
+                        cell.simultaneousGesture(TapGesture().onEnded { cellTapped(row) })
+                    } else {
+                        cell
+                    }
                 }
                 .width(min: 120, ideal: 200)
 
