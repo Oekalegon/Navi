@@ -25,7 +25,7 @@ struct SplitPaneView: View {
                 VSplitView {
                     ForEach(children) { child in
                         StableSplitPaneHost(pane: child, paneManager: paneManager)
-                            .frame(idealHeight: child.preferredHeight, maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, idealHeight: child.preferredHeight, maxHeight: .infinity)
                     }
                 }
             }

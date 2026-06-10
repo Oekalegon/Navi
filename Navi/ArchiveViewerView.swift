@@ -25,6 +25,9 @@ struct ArchiveViewerView: View {
     }
     @State private var filterBase: ArchiveViewerContent? = nil
     @State private var isLoadingFilter = false
+    @State private var isImporting = false
+    @State private var importSummary: String? = nil
+    @State private var importSummaryTask: Task<Void, Never>? = nil
     var body: some View {
         VStack(spacing: 0) {
             headerBar
@@ -44,9 +47,14 @@ struct ArchiveViewerView: View {
         .task(id: paneManager.archiveFilter) {
             await refreshFilterBase()
         }
+        .task(id: ArchiveManager.shared.importVersion) {
+            guard ArchiveManager.shared.importVersion > 0 else { return }
+            await loadRecentFrames()
+        }
         .sheet(isPresented: $showingFilter) {
             ArchiveFilterSheet(filter: filterBinding)
         }
+        .focusedSceneValue(\.importAction, { showImportPanel() })
     }
 
     private var filterChipsBar: some View {
@@ -127,6 +135,30 @@ struct ArchiveViewerView: View {
             .disabled(isLoadingRecent)
             .help("Show recent frames")
 
+            Button {
+                showImportPanel()
+            } label: {
+                if isImporting {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isImporting)
+            .help("Import FITS files")
+
+            if let summary = importSummary {
+                Text(summary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
+                    .lineLimit(1)
+            }
+
             if !isFilterActive, let content = paneManager.archiveContent {
                 Text(content.toolName)
                     .font(.caption2)
@@ -176,12 +208,7 @@ struct ArchiveViewerView: View {
                     content: content,
                     columnSettings: columnSettings,
                     onRowSelected: { selectedRow = $0 },
-                    onRowDoubleClicked: { [paneManager] row in
-                        let filePath = row.values["file"] ?? row.values["path"]
-                        if let filePath, !filePath.isEmpty {
-                            paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
-                        }
-                    }
+                    onRowDoubleClicked: { row in handleRowDoubleClick(row) }
                 )
             }
         } else {
@@ -209,12 +236,7 @@ struct ArchiveViewerView: View {
                     totalRows: base.rows.count,
                     columnSettings: columnSettings,
                     onRowSelected: { selectedRow = $0 },
-                    onRowDoubleClicked: { [paneManager] row in
-                        let filePath = row.values["file"] ?? row.values["path"]
-                        if let filePath, !filePath.isEmpty {
-                            paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
-                        }
-                    }
+                    onRowDoubleClicked: { row in handleRowDoubleClick(row) }
                 )
             }
         } else {
@@ -289,6 +311,42 @@ struct ArchiveViewerView: View {
         .padding()
     }
 
+    private func handleRowDoubleClick(_ row: ArchiveRow) {
+        let isFrameset = row.values["frames"].flatMap(Int.init) != nil
+        if isFrameset, let idStr = row.values["id"], !idStr.isEmpty {
+            Task { await loadFramesetView(id: idStr, title: framesetTitle(from: row)) }
+        } else {
+            let filePath = row.values["file"] ?? row.values["path"]
+            if let filePath, !filePath.isEmpty {
+                paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
+            }
+        }
+    }
+
+    private func framesetTitle(from row: ArchiveRow) -> String? {
+        if let name = row.values["name"], !name.isEmpty { return name }
+        var parts: [String] = []
+        if let obj = row.values["object"], !obj.isEmpty { parts.append(obj) }
+        if let filter = row.values["filter"], !filter.isEmpty { parts.append(filter) }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " – ") + " Frames"
+    }
+
+    private func loadFramesetView(id: String, title: String? = nil) async {
+        do {
+            let result = try await ArchiveManager.shared.callTool(
+                name: "archive_frameset_get",
+                arguments: ["id": id]
+            )
+            var content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+            if let title { content.title = title }
+            paneManager.archiveContent = content
+            paneManager.archiveFilter = ArchiveFilter()
+        } catch {
+            logger.error("loadFramesetView failed: \(error)")
+        }
+    }
+
     private func loadRecentFrames() async {
         guard !isLoadingRecent else { return }
         isLoadingRecent = true
@@ -302,6 +360,34 @@ struct ArchiveViewerView: View {
             paneManager.archiveContent = content
         } catch {
             // Archive not connected or unavailable — leave content as-is
+        }
+    }
+
+    func showImportPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.title = "Import FITS Files"
+        panel.prompt = "Import"
+        panel.message = "Select FITS files or folders containing FITS files"
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let urls = panel.urls
+        Task { await runImport(urls: urls) }
+    }
+
+    private func runImport(urls: [URL]) async {
+        guard !isImporting else { return }
+        isImporting = true
+        defer { isImporting = false }
+        let result = await ArchiveManager.shared.importFITS(urls: urls)
+        importSummaryTask?.cancel()
+        withAnimation { importSummary = result.summary }
+        importSummaryTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            withAnimation { importSummary = nil }
         }
     }
 
@@ -348,11 +434,29 @@ struct ArchiveTableView: View {
     @State private var sortOrder: [ColumnComparator] = []
     @State private var lastTapRowID: ArchiveRow.ID? = nil
     @State private var lastTapTime: Date = .distantPast
+    @State private var expandedFramesets: Set<ArchiveRow.ID> = []
+    @State private var framesetChildren: [ArchiveRow.ID: [ArchiveRow]] = [:]
+    @State private var loadingFramesets: Set<ArchiveRow.ID> = []
 
     private var displayColumns: [String] { columnSettings.visibleColumns(from: content.columns) }
 
     private var sortedRows: [ArchiveRow] {
         sortOrder.isEmpty ? content.rows : content.rows.sorted(using: sortOrder)
+    }
+
+    private var childRowIDs: Set<ArchiveRow.ID> {
+        Set(framesetChildren.values.flatMap { $0 }.map { $0.id })
+    }
+
+    private var displayedRows: [ArchiveRow] {
+        var result: [ArchiveRow] = []
+        for row in sortedRows {
+            result.append(row)
+            if expandedFramesets.contains(row.id) {
+                result += framesetChildren[row.id] ?? []
+            }
+        }
+        return result
     }
 
     private func cellTapped(_ row: ArchiveRow) {
@@ -367,18 +471,58 @@ struct ArchiveTableView: View {
         }
     }
 
+    private func toggleExpand(_ row: ArchiveRow) {
+        if expandedFramesets.contains(row.id) {
+            expandedFramesets.remove(row.id)
+        } else {
+            expandedFramesets.insert(row.id)
+            if framesetChildren[row.id] == nil {
+                Task { await loadChildren(for: row) }
+            }
+        }
+    }
+
+    private func loadChildren(for row: ArchiveRow) async {
+        guard let idStr = row.values["id"], !idStr.isEmpty else { return }
+        loadingFramesets.insert(row.id)
+        do {
+            let result = try await ArchiveManager.shared.callTool(
+                name: "archive_frameset_get",
+                arguments: ["id": idStr]
+            )
+            let parsed = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+            framesetChildren[row.id] = parsed.rows
+        } catch {}
+        loadingFramesets.remove(row.id)
+    }
+
     var body: some View {
         let total = totalRows ?? content.rows.count
         let count = content.rows.count
         VStack(spacing: 0) {
-            Table(sortedRows, selection: $selectionID, sortOrder: $sortOrder) {
+            Table(displayedRows, selection: $selectionID, sortOrder: $sortOrder) {
                 TableColumn("", sortUsing: ColumnComparator(key: "")) { row in
-                    FrameTypeIcon(row: row)
+                    let isFrameset = row.values["frames"].flatMap(Int.init) != nil
+                    let isChild = childRowIDs.contains(row.id)
+                    if isFrameset {
+                        FramesetExpandCell(
+                            row: row,
+                            isExpanded: expandedFramesets.contains(row.id),
+                            isLoading: loadingFramesets.contains(row.id),
+                            onToggle: { toggleExpand(row) },
+                            onTap: { cellTapped(row) }
+                        )
+                    } else {
+                        HStack(spacing: 0) {
+                            if isChild { Spacer().frame(width: 14) }
+                            FrameTypeIcon(row: row)
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                         .onTapGesture { cellTapped(row) }
+                    }
                 }
-                .width(min: 22, ideal: 22, max: 22)
+                .width(min: 36, ideal: 36, max: 36)
 
                 TableColumnForEach(displayColumns, id: \.self) { col in
                     TableColumn(Self.columnTitle(for: col), sortUsing: ColumnComparator(key: col)) { row in
@@ -393,12 +537,17 @@ struct ArchiveTableView: View {
                 }
             }
             .onChange(of: selectionID) { _, newID in
-                let row = newID.flatMap { id in sortedRows.first { $0.id == id } }
+                let row = newID.flatMap { id in displayedRows.first { $0.id == id } }
                 onRowSelected?(row)
             }
-            .onChange(of: sortedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
-                guard let id = selectionID, let row = sortedRows.first(where: { $0.id == id }) else { return }
+            .onChange(of: displayedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
+                guard let id = selectionID, let row = displayedRows.first(where: { $0.id == id }) else { return }
                 onRowSelected?(row)
+            }
+            .onChange(of: content.toolName) { _, _ in
+                expandedFramesets.removeAll()
+                framesetChildren.removeAll()
+                loadingFramesets.removeAll()
             }
 
             Divider()
@@ -506,6 +655,38 @@ private struct FrameTypeIcon: View {
             return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor))
         }
         return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
+    }
+}
+
+private struct FramesetExpandCell: View {
+    let row: ArchiveRow
+    let isExpanded: Bool
+    let isLoading: Bool
+    let onToggle: () -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.55)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(TapGesture().onEnded { onToggle() })
+                }
+            }
+            FrameTypeIcon(row: row)
+                .frame(width: 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap() }
     }
 }
 
