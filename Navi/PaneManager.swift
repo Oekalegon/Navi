@@ -15,6 +15,7 @@ class PaneManager {
     var archiveFilter: ArchiveFilter = ArchiveFilter()
     var fitsURL: URL?
     var fitsFrameRejected: Bool = false
+    var focusedPaneID: UUID? = nil
 
     init() {
         let aiPane = SplitPane(type: .aiAssistant)
@@ -77,11 +78,32 @@ class PaneManager {
         showArchivePane()
     }
 
+    var isFITSViewerVisible: Bool {
+        findPane(ofType: .fitsViewer, in: rootPane) != nil
+    }
+
     // FITS viewer splits the archive viewer vertically with FITS on top.
     // Falls back to an empty pane or a horizontal split of the AI pane.
     func showFITSViewer(url: URL) {
         fitsURL = url
         if findPane(ofType: .fitsViewer, in: rootPane) != nil { return }
+        openFITSViewerPane()
+    }
+
+    func showFITSViewerIfVisible(url: URL) {
+        guard isFITSViewerVisible else { return }
+        fitsURL = url
+    }
+
+    func toggleFITSViewer() {
+        if isFITSViewerVisible {
+            removeFITSViewer()
+        } else {
+            openFITSViewerPane()
+        }
+    }
+
+    private func openFITSViewerPane() {
         if let archive = findPane(ofType: .archiveViewer, in: rootPane) {
             splitPane(archive, direction: .vertical, newPaneType: .fitsViewer, prepend: true)
         } else if let empty = findPane(ofType: .empty, in: rootPane) {
@@ -89,6 +111,30 @@ class PaneManager {
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)
         }
+    }
+
+    private func removeFITSViewer() {
+        if rootPane.isLeaf && rootPane.paneType == .fitsViewer {
+            rootPane.paneType = .empty
+            return
+        }
+        guard let (parent, index) = findParentOf(type: .fitsViewer, in: rootPane),
+              let children = parent.children, children.count == 2 else { return }
+        let sibling = children[1 - index]
+        parent.paneType = sibling.paneType
+        parent.direction = sibling.direction
+        parent.children = sibling.children
+        parent.preferredWidth = sibling.preferredWidth
+        parent.preferredHeight = sibling.preferredHeight
+    }
+
+    private func findParentOf(type: PaneType, in pane: SplitPane) -> (SplitPane, Int)? {
+        guard let children = pane.children else { return nil }
+        for (index, child) in children.enumerated() {
+            if child.isLeaf && child.paneType == type { return (pane, index) }
+            if let result = findParentOf(type: type, in: child) { return result }
+        }
+        return nil
     }
 
     // Widest leaf: nil preferredWidth sorts last (treated as ∞ — takes remaining space).

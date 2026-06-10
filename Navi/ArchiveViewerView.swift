@@ -207,8 +207,10 @@ struct ArchiveViewerView: View {
                 ArchiveTableView(
                     content: content,
                     columnSettings: columnSettings,
-                    onRowSelected: { selectedRow = $0 },
-                    onRowDoubleClicked: { row in handleRowDoubleClick(row) }
+                    onRowSelected: { row in
+                        selectedRow = row
+                        if let row { showFrameIfViewerVisible(row) }
+                    },
                 )
             }
         } else {
@@ -235,8 +237,10 @@ struct ArchiveViewerView: View {
                     content: filtered,
                     totalRows: base.rows.count,
                     columnSettings: columnSettings,
-                    onRowSelected: { selectedRow = $0 },
-                    onRowDoubleClicked: { row in handleRowDoubleClick(row) }
+                    onRowSelected: { row in
+                        selectedRow = row
+                        if let row { showFrameIfViewerVisible(row) }
+                    },
                 )
             }
         } else {
@@ -311,17 +315,15 @@ struct ArchiveViewerView: View {
         .padding()
     }
 
-    private func handleRowDoubleClick(_ row: ArchiveRow) {
+    private func showFrameIfViewerVisible(_ row: ArchiveRow) {
         let isFrameset = row.values["frames"].flatMap(Int.init) != nil
-        if isFrameset, let idStr = row.values["id"], !idStr.isEmpty {
-            Task { await loadFramesetView(id: idStr, title: framesetTitle(from: row)) }
-        } else {
-            let filePath = row.values["file"] ?? row.values["path"]
-            if let filePath, !filePath.isEmpty {
-                paneManager.showFITSViewer(url: URL(fileURLWithPath: filePath))
-            }
+        guard !isFrameset else { return }
+        let filePath = row.values["file"] ?? row.values["path"]
+        if let filePath, !filePath.isEmpty {
+            paneManager.showFITSViewerIfVisible(url: URL(fileURLWithPath: filePath))
         }
     }
+
 
     private func framesetTitle(from row: ArchiveRow) -> String? {
         if let name = row.values["name"], !name.isEmpty { return name }
@@ -428,12 +430,8 @@ struct ArchiveTableView: View {
     var totalRows: Int? = nil
     let columnSettings: ArchiveColumnSettings
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
-    var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
-
     @State private var selectionID: ArchiveRow.ID? = nil
     @State private var sortOrder: [ColumnComparator] = []
-    @State private var lastTapRowID: ArchiveRow.ID? = nil
-    @State private var lastTapTime: Date = .distantPast
     @State private var expandedFramesets: Set<ArchiveRow.ID> = []
     @State private var framesetChildren: [ArchiveRow.ID: [ArchiveRow]] = [:]
     @State private var loadingFramesets: Set<ArchiveRow.ID> = []
@@ -457,18 +455,6 @@ struct ArchiveTableView: View {
             }
         }
         return result
-    }
-
-    private func cellTapped(_ row: ArchiveRow) {
-        let now = Date()
-        if lastTapRowID == row.id, now.timeIntervalSince(lastTapTime) < 0.4 {
-            onRowDoubleClicked?(row)
-            lastTapRowID = nil
-        } else {
-            selectionID = row.id
-            lastTapRowID = row.id
-            lastTapTime = now
-        }
     }
 
     private func toggleExpand(_ row: ArchiveRow) {
@@ -510,8 +496,7 @@ struct ArchiveTableView: View {
                         isChild: isChild,
                         isExpanded: expandedFramesets.contains(row.id),
                         isLoading: loadingFramesets.contains(row.id),
-                        onToggle: { toggleExpand(row) },
-                        onTap: { cellTapped(row) }
+                        onToggle: { toggleExpand(row) }
                     )
                 }
                 .width(min: 120, ideal: 200)
@@ -522,8 +507,6 @@ struct ArchiveTableView: View {
                             .font(.system(size: 11))
                             .frame(maxWidth: .infinity, maxHeight: .infinity,
                                    alignment: Self.columnAlignment(for: col))
-                            .contentShape(Rectangle())
-                            .onTapGesture { cellTapped(row) }
                     }
                     .width(min: Self.minWidth(for: col), ideal: Self.idealWidth(for: col))
                 }
@@ -660,7 +643,6 @@ private struct ArchiveNameCell: View {
     let isExpanded: Bool
     let isLoading: Bool
     let onToggle: () -> Void
-    let onTap: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
@@ -690,7 +672,6 @@ private struct ArchiveNameCell: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .onTapGesture { onTap() }
     }
 
     private var displayName: String {

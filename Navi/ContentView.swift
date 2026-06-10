@@ -35,6 +35,13 @@ struct ContentView: View {
                         }
                         .controlSize(.small)
                         .help("Open Archive Pane")
+
+                        Button(action: { paneManager.toggleFITSViewer() }) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 13))
+                        }
+                        .controlSize(.small)
+                        .help(paneManager.isFITSViewerVisible ? "Hide FITS Viewer" : "Show FITS Viewer")
                     }
                 }
 
