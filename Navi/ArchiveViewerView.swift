@@ -501,30 +501,22 @@ struct ArchiveTableView: View {
         let count = content.rows.count
         VStack(spacing: 0) {
             Table(displayedRows, selection: $selectionID, sortOrder: $sortOrder) {
-                TableColumn("", sortUsing: ColumnComparator(key: "")) { row in
+                TableColumn("Name", sortUsing: ColumnComparator(key: "name")) { row in
                     let isFrameset = row.values["frames"].flatMap(Int.init) != nil
                     let isChild = childRowIDs.contains(row.id)
-                    if isFrameset {
-                        FramesetExpandCell(
-                            row: row,
-                            isExpanded: expandedFramesets.contains(row.id),
-                            isLoading: loadingFramesets.contains(row.id),
-                            onToggle: { toggleExpand(row) },
-                            onTap: { cellTapped(row) }
-                        )
-                    } else {
-                        HStack(spacing: 0) {
-                            if isChild { Spacer().frame(width: 14) }
-                            FrameTypeIcon(row: row)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture { cellTapped(row) }
-                    }
+                    ArchiveNameCell(
+                        row: row,
+                        isFrameset: isFrameset,
+                        isChild: isChild,
+                        isExpanded: expandedFramesets.contains(row.id),
+                        isLoading: loadingFramesets.contains(row.id),
+                        onToggle: { toggleExpand(row) },
+                        onTap: { cellTapped(row) }
+                    )
                 }
-                .width(min: 36, ideal: 36, max: 36)
+                .width(min: 120, ideal: 200)
 
-                TableColumnForEach(displayColumns, id: \.self) { col in
+                TableColumnForEach(displayColumns.filter { $0 != "name" }, id: \.self) { col in
                     TableColumn(Self.columnTitle(for: col), sortUsing: ColumnComparator(key: col)) { row in
                         Text(Self.formatted(row.values[col] ?? "", column: col))
                             .font(.system(size: 11))
@@ -650,6 +642,9 @@ private struct FrameTypeIcon: View {
     private var palette: (Color, Color) {
         if row.values["rejected"] == "true" { return (.white, .red) }
         if row.values["excluded"] == "true" { return (Color(NSColor.black), .yellow) }
+        if isFrameset {
+            return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
+        }
         let type = row.values["type"]?.lowercased() ?? ""
         if type == "light" {
             return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor))
@@ -658,35 +653,53 @@ private struct FrameTypeIcon: View {
     }
 }
 
-private struct FramesetExpandCell: View {
+private struct ArchiveNameCell: View {
     let row: ArchiveRow
+    let isFrameset: Bool
+    let isChild: Bool
     let isExpanded: Bool
     let isLoading: Bool
     let onToggle: () -> Void
     let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
-            Group {
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.55)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(TapGesture().onEnded { onToggle() })
+        HStack(spacing: 4) {
+            if isFrameset {
+                Group {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.55)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14, height: 14)
+                            .contentShape(Rectangle())
+                            .highPriorityGesture(TapGesture().onEnded { onToggle() })
+                    }
                 }
+            } else {
+                Spacer().frame(width: isChild ? 28 : 14)
             }
             FrameTypeIcon(row: row)
-                .frame(width: 16)
+            Text(displayName)
+                .font(.system(size: 11))
+                .lineLimit(1)
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
+    }
+
+    private var displayName: String {
+        let name = (row.values["name"] ?? "").trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty { return name }
+        let level = (row.values["level"] ?? "").capitalized
+        let parts = [row.values["object"] ?? "", row.values["filter"] ?? "", level]
+            .filter { !$0.isEmpty }
+        return parts.joined(separator: " ")
     }
 }
 

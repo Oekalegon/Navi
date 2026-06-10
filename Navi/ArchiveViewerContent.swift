@@ -11,7 +11,7 @@ import Foundation
 func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) -> String {
     let stacked = level.lowercased() == "stacked"
     if isFrameset {
-        return type.lowercased() == "light" ? "rectangle.fill.on.rectangle.fill" : "rectangle.on.rectangle"
+        return "folder"
     }
     switch type.lowercased() {
     case "light":
@@ -37,7 +37,7 @@ struct ArchiveViewerContent {
     var isTable: Bool
 
     var iconName: String {
-        if toolName.hasPrefix("archive_frameset") { return "rectangle.stack" }
+        if toolName.hasPrefix("archive_frameset") { return "folder" }
         if toolName.hasPrefix("archive_") { return "rectangle" }
         return "archivebox"
     }
