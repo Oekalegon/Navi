@@ -20,6 +20,8 @@ struct FITSViewerView: View {
     @State private var isLoading = false
     @State private var frameType: String = ""
     @State private var frameLevel: String = "raw"
+    @State private var frameTitle: String? = nil
+    @State private var frameDateText: String? = nil
 
     @State private var zoom: Float = 1.0
     @State private var panOffset: SIMD2<Float> = SIMD2<Float>(0, 0)
@@ -59,9 +61,17 @@ struct FITSViewerView: View {
                     level: frameLevel))
                 .foregroundStyle(frameType.isEmpty || frameType.lowercased() == "light" ? .primary : .secondary)
                 .font(.system(size: 14))
-            Text(paneManager.fitsURL?.lastPathComponent ?? "FITS Viewer")
+            Text(frameTitle ?? paneManager.fitsURL?.lastPathComponent ?? "FITS Viewer")
                 .font(.headline)
                 .lineLimit(1)
+                .help(paneManager.fitsURL?.lastPathComponent ?? "")
+            if let dateText = frameDateText {
+                Text(dateText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help("Observation date")
+            }
             Spacer()
             if currentFrameID != nil {
                 RejectToggleButton(
@@ -160,6 +170,27 @@ struct FITSViewerView: View {
         }
     }
 
+    // Stacked frames span an observation session; single frames have one timestamp.
+    private static func observationDateText(for frame: ArchivedFrame) -> String? {
+        if frame.stacked, let beg = frame.sessionBeg, let end = frame.sessionEnd, beg != end {
+            let range = min(beg, end)..<max(beg, end)
+            return range.formatted(date: .abbreviated, time: .shortened)
+        }
+        guard let date = frame.timestamp ?? frame.sessionBeg else { return nil }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    // Same naming convention as the archive viewer's Name column
+    // (ArchiveNameCell.displayName): object + filter + capitalized level.
+    private static func displayName(for frame: ArchivedFrame) -> String? {
+        let parts = [
+            frame.objectName ?? "",
+            frame.filter ?? "",
+            frame.processingLevel.rawValue.capitalized
+        ].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     private func effectivePoint(_ sliderValue: Float, min: Float, max: Float) -> Float {
         applyStretch(sliderValue, min: min, max: max, stretch: stretchSettings)
     }
@@ -223,13 +254,15 @@ struct FITSViewerView: View {
         saveTask?.cancel()
         saveTask = nil
         isLoading = true; loadError = nil; fitsImage = nil
-        frameType = ""; frameLevel = "raw"
+        frameType = ""; frameLevel = "raw"; frameTitle = nil; frameDateText = nil
         currentFrameID = nil; paneManager.fitsFrameRejected = false; stretchSettings = .identity
 
         let frame = await ArchiveManager.shared.archivedFrame(filePath: url.path)
         if let frame {
             frameType = frame.frameType
             frameLevel = frame.processingLevel.rawValue
+            frameTitle = Self.displayName(for: frame)
+            frameDateText = Self.observationDateText(for: frame)
             stretchSettings = frame.stretchSettings ?? .identity
             currentFrameID = frame.id
             paneManager.fitsFrameRejected = frame.rejected

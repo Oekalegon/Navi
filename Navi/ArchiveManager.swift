@@ -36,6 +36,28 @@ final class ArchiveManager {
         f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
+    private let tableTime: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+    private let utcCalendar: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }()
+
+    // Collapses the second date when the range falls within a single (UTC) day:
+    // "2026-06-10 21:30 – 23:45" instead of "2026-06-10 21:30 – 2026-06-10 23:45".
+    private func tableDateRange(from beg: Date, to end: Date) -> String {
+        let (from, to) = beg <= end ? (beg, end) : (end, beg)
+        if from == to { return tableDate.string(from: from) }
+        let suffix = utcCalendar.isDate(from, inSameDayAs: to)
+            ? tableTime.string(from: to)
+            : tableDate.string(from: to)
+        return tableDate.string(from: from) + " – " + suffix
+    }
 
     private init() {}
 
@@ -456,8 +478,7 @@ final class ArchiveManager {
         if let v = f.filter              { d["filter"] = v }
         if let v = f.camera              { d["camera"] = v }
         if f.stacked, let beg = f.sessionBeg {
-            let end = f.sessionEnd ?? beg
-            d["date"] = tableDate.string(from: beg) + " – " + tableDate.string(from: end)
+            d["date"] = tableDateRange(from: beg, to: f.sessionEnd ?? beg)
         } else if let obsDate = f.timestamp ?? f.fileDate {
             d["date"] = tableDate.string(from: obsDate)
         } else {
@@ -485,8 +506,7 @@ final class ArchiveManager {
         if let v = fs.camera         { d["camera"] = v }
         if let v = fs.exposureTime   { d["exp"] = v }
         if let from = fs.dateFrom {
-            let to = fs.dateTo ?? from
-            d["date"] = tableDate.string(from: from) + " – " + tableDate.string(from: to)
+            d["date"] = tableDateRange(from: from, to: fs.dateTo ?? from)
         } else {
             d["date"] = tableDate.string(from: fs.createdAt)
         }

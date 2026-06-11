@@ -560,7 +560,7 @@ struct ArchiveTableView: View {
                 TableColumnForEach(displayColumns.filter { $0 != "name" }, id: \.self) { col in
                     TableColumn(Self.columnTitle(for: col), sortUsing: ColumnComparator(key: col)) { row in
                         Text(Self.formatted(row.values[col] ?? "", column: col))
-                            .font(.system(size: 11))
+                            .font(Self.cellFont(for: col))
                             .frame(maxWidth: .infinity, maxHeight: .infinity,
                                    alignment: Self.columnAlignment(for: col))
                     }
@@ -628,13 +628,23 @@ struct ArchiveTableView: View {
         }
     }
 
+    // Monospaced digits keep numbers and dates vertically aligned across rows.
+    private static func cellFont(for column: String) -> Font {
+        switch column {
+        case "fwhm", "ecc", "snr", "exp", "stars", "frames", "date", "added", "created":
+            return .system(size: 11).monospacedDigit()
+        default:
+            return .system(size: 11)
+        }
+    }
+
     private static func idealWidth(for column: String) -> CGFloat {
         switch column {
         case "type", "level", "filter":       return 70
         case "diagnostic":                    return 140
         case "exp", "fwhm", "ecc", "frames": return 60
         case "stars":                         return 56
-        case "date":                          return 130
+        case "date":                          return 165
         case "added", "created":              return 150
         case "object", "target":              return 110
         case "name":                          return 160
@@ -650,7 +660,7 @@ struct ArchiveTableView: View {
         case "diagnostic":                    return 70
         case "exp", "fwhm", "ecc", "frames": return 44
         case "stars":                         return 44
-        case "date":                          return 80
+        case "date":                          return 110
         case "added", "created":              return 90
         case "object", "target":              return 60
         case "name":                          return 80
