@@ -23,12 +23,12 @@ func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) 
     }
 }
 
-struct ArchiveRow: Identifiable {
+struct ArchiveRow: Identifiable, Equatable {
     let id = UUID()
     var values: [String: String]
 }
 
-struct ArchiveViewerContent {
+struct ArchiveViewerContent: Equatable {
     var title: String
     var toolName: String
     var rawContent: String

@@ -15,13 +15,14 @@ struct ArchiveViewerView: View {
     @State private var showRaw = false
     @State private var isLoadingRecent = false
     @State private var selectedRow: ArchiveRow? = nil
+    @State private var selectionID: ArchiveRow.ID? = nil
     @State private var isRejecting = false
     private let logger = Logger(subsystem: "com.navi.app", category: "ArchiveViewer")
     @State private var showingFilter = false
     @State private var showingColumnsPopover = false
     @State private var columnSettings = ArchiveColumnSettings()
     private var filterBinding: Binding<ArchiveFilter> {
-        Binding(get: { paneManager.archiveFilter }, set: { paneManager.archiveFilter = $0 })
+        Binding(get: { paneManager.archiveFilter }, set: { paneManager.setArchiveFilter($0) })
     }
     @State private var filterBase: ArchiveViewerContent? = nil
     @State private var isLoadingFilter = false
@@ -51,6 +52,10 @@ struct ArchiveViewerView: View {
             guard ArchiveManager.shared.importVersion > 0 else { return }
             await loadRecentFrames()
         }
+        .onChange(of: paneManager.archiveContent?.toolName) { _, _ in
+            selectionID = nil
+            selectedRow = nil
+        }
         .sheet(isPresented: $showingFilter) {
             ArchiveFilterSheet(filter: filterBinding)
         }
@@ -64,7 +69,11 @@ struct ArchiveViewerView: View {
                     ActiveFilterChip(
                         category: category.rawValue,
                         label: paneManager.archiveFilter.chipLabel(for: category)
-                    ) { paneManager.archiveFilter.clear(category) }
+                    ) {
+                        var updated = paneManager.archiveFilter
+                        updated.clear(category)
+                        paneManager.setArchiveFilter(updated)
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -77,6 +86,26 @@ struct ArchiveViewerView: View {
     private var headerBar: some View {
         HStack(spacing: 8) {
             let isFilterActive = paneManager.archiveFilter.isActive
+
+            Button { paneManager.archiveBack() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(!paneManager.canGoBack)
+            .help("Back")
+
+            Button { paneManager.archiveForward() } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(!paneManager.canGoForward)
+            .help("Forward")
+
+            Divider()
+                .frame(height: 14)
+
             Image(systemName: isFilterActive
                   ? "line.3.horizontal.decrease.circle.fill"
                   : (paneManager.archiveContent?.iconName ?? "archivebox"))
@@ -207,6 +236,7 @@ struct ArchiveViewerView: View {
                 ArchiveTableView(
                     content: content,
                     columnSettings: columnSettings,
+                    selectionID: $selectionID,
                     onRowSelected: { row in
                         selectedRow = row
                         if let row { showFrameIfViewerVisible(row) }
@@ -238,6 +268,7 @@ struct ArchiveViewerView: View {
                     content: filtered,
                     totalRows: base.rows.count,
                     columnSettings: columnSettings,
+                    selectionID: $selectionID,
                     onRowSelected: { row in
                         selectedRow = row
                         if let row { showFrameIfViewerVisible(row) }
@@ -310,7 +341,7 @@ struct ArchiveViewerView: View {
             Text("No rows match the current filter")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Button("Clear Filter") { paneManager.archiveFilter = ArchiveFilter() }
+            Button("Clear Filter") { paneManager.setArchiveFilter(ArchiveFilter()) }
                 .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -349,8 +380,7 @@ struct ArchiveViewerView: View {
             )
             var content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
             if let title { content.title = title }
-            paneManager.archiveContent = content
-            paneManager.archiveFilter = ArchiveFilter()
+            paneManager.navigateArchiveTo(content: content)
         } catch {
             logger.error("loadFramesetView failed: \(error)")
         }
@@ -366,7 +396,7 @@ struct ArchiveViewerView: View {
                 arguments: [:]
             )
             let content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
-            paneManager.archiveContent = content
+            paneManager.navigateArchiveTo(content: content)
         } catch {
             // Archive not connected or unavailable — leave content as-is
         }
@@ -436,9 +466,9 @@ struct ArchiveTableView: View {
     let content: ArchiveViewerContent
     var totalRows: Int? = nil
     let columnSettings: ArchiveColumnSettings
+    @Binding var selectionID: ArchiveRow.ID?
     var onRowSelected: ((ArchiveRow?) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
-    @State private var selectionID: ArchiveRow.ID? = nil
     @State private var sortOrder: [ColumnComparator] = []
     @State private var lastTapRowID: ArchiveRow.ID? = nil
     @State private var lastTapTime: Date = .distantPast
@@ -538,12 +568,16 @@ struct ArchiveTableView: View {
                 }
             }
             .onChange(of: selectionID) { _, newID in
+                // Defer so NSTableView finishes reconciling the new selection before
+                // any parent re-render triggered by onRowSelected can interfere.
                 let row = newID.flatMap { id in displayedRows.first { $0.id == id } }
-                onRowSelected?(row)
+                let callback = onRowSelected
+                Task { @MainActor in callback?(row) }
             }
             .onChange(of: displayedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
                 guard let id = selectionID, let row = displayedRows.first(where: { $0.id == id }) else { return }
-                onRowSelected?(row)
+                let callback = onRowSelected
+                Task { @MainActor in callback?(row) }
             }
             .onChange(of: content.toolName) { _, _ in
                 expandedFramesets.removeAll()

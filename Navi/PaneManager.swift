@@ -13,6 +13,10 @@ class PaneManager {
     var rootPane: SplitPane
     var archiveContent: ArchiveViewerContent?
     var archiveFilter: ArchiveFilter = ArchiveFilter()
+    private var archiveBackStack: [ArchiveNavState] = []
+    private var archiveForwardStack: [ArchiveNavState] = []
+    var canGoBack: Bool { !archiveBackStack.isEmpty }
+    var canGoForward: Bool { !archiveForwardStack.isEmpty }
     var fitsURL: URL?
     var fitsFrameRejected: Bool = false
     var focusedPaneID: UUID? = nil
@@ -72,9 +76,38 @@ class PaneManager {
         }
     }
 
-    func showArchiveViewer(content: ArchiveViewerContent, filter: ArchiveFilter = ArchiveFilter()) {
+    func navigateArchiveTo(content: ArchiveViewerContent?, filter: ArchiveFilter = ArchiveFilter()) {
+        if archiveContent != nil || archiveFilter.isActive {
+            archiveBackStack.append(ArchiveNavState(content: archiveContent, filter: archiveFilter))
+            archiveForwardStack.removeAll()
+        }
         archiveContent = content
         archiveFilter = filter
+    }
+
+    func archiveBack() {
+        guard let prev = archiveBackStack.popLast() else { return }
+        archiveForwardStack.append(ArchiveNavState(content: archiveContent, filter: archiveFilter))
+        archiveContent = prev.content
+        archiveFilter = prev.filter
+    }
+
+    func archiveForward() {
+        guard let next = archiveForwardStack.popLast() else { return }
+        archiveBackStack.append(ArchiveNavState(content: archiveContent, filter: archiveFilter))
+        archiveContent = next.content
+        archiveFilter = next.filter
+    }
+
+    func setArchiveFilter(_ filter: ArchiveFilter) {
+        guard filter != archiveFilter else { return }
+        archiveBackStack.append(ArchiveNavState(content: archiveContent, filter: archiveFilter))
+        archiveForwardStack.removeAll()
+        archiveFilter = filter
+    }
+
+    func showArchiveViewer(content: ArchiveViewerContent, filter: ArchiveFilter = ArchiveFilter()) {
+        navigateArchiveTo(content: content, filter: filter)
         showArchivePane()
     }
 
@@ -152,4 +185,9 @@ class PaneManager {
             .compactMap { tallestLeafPane(in: $0) }
             .max { ($0.preferredHeight ?? .greatestFiniteMagnitude) < ($1.preferredHeight ?? .greatestFiniteMagnitude) }
     }
+}
+
+private struct ArchiveNavState {
+    var content: ArchiveViewerContent?
+    var filter: ArchiveFilter
 }
