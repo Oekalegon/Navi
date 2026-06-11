@@ -50,7 +50,10 @@ struct StableSplitPaneHost: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSHostingView<AnyView>, context: Context) {
-        nsView.rootView = content
+        // SplitPane and PaneManager are both @Observable, so every view inside
+        // the hosting view re-renders automatically when their properties change.
+        // Re-setting rootView here would break AnyView type-identity tracking,
+        // causing SwiftUI to lose @State (e.g. table selectionID) on every update.
     }
 
     private var content: AnyView {
@@ -151,12 +154,35 @@ final class FocusTrackerView: NSView {
         }
     }
 
+    // Re-resolve paneRoot when this view is re-parented within the same window
+    // (e.g. after a pane is split to add the FITS viewer).
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        guard window != nil else { return }
+        paneRoot = findPaneRoot()
+    }
+
     private func handleFirstResponderChange(window: NSWindow) {
         guard paneType != .empty,
               let root = paneRoot,
               let responder = window.firstResponder as? NSView,
               responder.isDescendant(of: root) else { return }
-        paneManager.focusedPaneID = paneID
+        // Defer until the run loop returns to .default mode. A plain
+        // DispatchQueue.main.async block can run during NSTableView's
+        // mouse-tracking loop (.eventTracking is in the common modes), so the
+        // focus-indicator re-render would fire mid-click and SwiftUI's Table
+        // would re-apply the stale selection binding, reverting the row the
+        // user just clicked. Restricting to .default mode guarantees the
+        // update runs only after the click (and its selection-binding write)
+        // has fully completed.
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            guard let self,
+                  let root = self.paneRoot,
+                  let responder = self.window?.firstResponder as? NSView,
+                  responder.isDescendant(of: root),
+                  self.paneManager.focusedPaneID != self.paneID else { return }
+            self.paneManager.focusedPaneID = self.paneID
+        }
     }
 
     // Walk up until we find a view whose direct parent is an NSSplitView —
