@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -scheme Navi -destination 'platform=macOS' build)",
+      "Bash(git commit -m ' *)",
+      "Bash(xargs cat -n)",
+      "Bash(xcodebuild -resolvePackageDependencies -scheme Navi)",
+      "Bash(xargs cat)",
+      "Bash(git merge *)",
+      "Bash(xcodebuild -scheme Navi -destination 'platform=macOS' -quiet build)",
+      "Bash(grep -v 'paneManager.archiveFilter\\\\|filterBinding\\\\|filterBase\\\\|filterTask\\\\|filterChipsBar\\\\|filterContentArea\\\\|filterEmptyState\\\\|refreshFilterBase\\\\|ArchiveFilterSheet\\\\|FilterChip\\\\|FilterSection\\\\|FilterCategory\\\\|ActiveFilterChip\\\\|QualityRangeRow\\\\|isLoadingFilter\\\\|loadObjects\\\\|allObjects\\\\|objectSearch\\\\|objectDetail\\\\|frameTypeDetail\\\\|kindDetail\\\\|levelDetail\\\\|dateDetail\\\\|qualityDetail\\\\|$filter\\\\b')",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi status)",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi log --oneline -5)",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi diff --stat Navi/AIAssistantView.swift Navi/AIConversationViewModel.swift Navi/ArchiveViewerContent.swift Navi/ArchiveViewerView.swift Navi/ClaudeService.swift Navi/PaneManager.swift)",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi add Navi/AIAssistantView.swift Navi/AIConversationViewModel.swift Navi/ArchiveViewerContent.swift Navi/ArchiveViewerView.swift Navi/ClaudeService.swift Navi/PaneManager.swift)",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi commit -m ' *)",
+      "Bash(git -C /Users/donwillems/Personal/Development/Navi add Navi/ArchiveViewerView.swift)",
+      "Edit(~/.claude/skills/swift-pr-review/**)",
+      "Bash(defaults read *)",
+      "Bash(git -C /Users/donwillems/Personal/Development/AstrophotoKit diff --stat HEAD)",
+      "Bash(git -C /Users/donwillems/Personal/Development/AstrophotoKit log --oneline -3)"
+    ],
+    "additionalDirectories": [
+      "/Users/donwillems/Personal/Development/AstrophotoKit/Sources/AstrophotoArchiveKit"
+    ]
+  }
+}
