@@ -32,10 +32,6 @@ struct ArchiveViewerView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerBar
-            if paneManager.archiveFilter.isActive {
-                Divider()
-                filterChipsBar
-            }
             Divider()
             contentArea
         }
@@ -62,7 +58,7 @@ struct ArchiveViewerView: View {
         .focusedSceneValue(\.importAction, { showImportPanel() })
     }
 
-    private var filterChipsBar: some View {
+    private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(paneManager.archiveFilter.activeCategories, id: \.self) { category in
@@ -76,11 +72,8 @@ struct ArchiveViewerView: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var headerBar: some View {
@@ -115,6 +108,11 @@ struct ArchiveViewerView: View {
             Text(isFilterActive ? "Filter Results"
                  : (paneManager.archiveContent?.title ?? "Archive Browser"))
                 .font(.headline)
+                .layoutPriority(1)
+
+            if isFilterActive {
+                filterChips
+            }
 
             Spacer()
 
