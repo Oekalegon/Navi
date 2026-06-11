@@ -1150,7 +1150,7 @@ final class ArchiveColumnSettings {
             ColumnEntry(key: "exp",    label: "Exposure"),
         ]),
         ColumnGroup(id: "quality", header: "Quality", entries: [
-            ColumnEntry(key: "fwhm",  label: "Median FWHM"),
+            ColumnEntry(key: "fwhm",  label: "FWHM (Median)"),
             ColumnEntry(key: "ecc",   label: "Eccentricity"),
             ColumnEntry(key: "stars", label: "Number of Stars"),
         ]),
