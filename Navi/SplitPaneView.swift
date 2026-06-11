@@ -132,6 +132,7 @@ final class FocusTrackerView: NSView {
     let paneType: PaneType
     var paneManager: PaneManager
     private var observation: NSKeyValueObservation?
+    private var eventMonitor: Any?
     private var paneRoot: NSView?
 
     init(paneID: UUID, paneType: PaneType, paneManager: PaneManager) {
@@ -143,14 +144,51 @@ final class FocusTrackerView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         observation = nil
         paneRoot = nil
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
         guard let window else { return }
         paneRoot = findPaneRoot()
         observation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
             self?.handleFirstResponderChange(window: window)
+        }
+        // First-responder tracking alone misses panes whose content never
+        // becomes first responder (e.g. the FITS viewer's MTKView) and
+        // gesture-only interactions like trackpad zoom, so also watch for
+        // interaction events landing inside this pane.
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .magnify]
+        ) { [weak self] event in
+            self?.handleInteractionEvent(event)
+            return event
+        }
+    }
+
+    private func handleInteractionEvent(_ event: NSEvent) {
+        guard paneType != .empty,
+              let window, event.window === window,
+              let root = paneRoot else { return }
+        let locationInRoot = root.convert(event.locationInWindow, from: nil)
+        guard root.bounds.contains(locationInRoot) else { return }
+        scheduleFocusUpdate()
+    }
+
+    // Defer until the run loop returns to .default mode so the focus-indicator
+    // re-render never runs inside an event-tracking loop mid-interaction
+    // (see handleFirstResponderChange).
+    private func scheduleFocusUpdate() {
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            guard let self, self.paneManager.focusedPaneID != self.paneID else { return }
+            self.paneManager.focusedPaneID = self.paneID
         }
     }
 
