@@ -37,6 +37,11 @@ struct FITSViewerView: View {
     private let logger = Logger(subsystem: "com.navi.app", category: "FITSViewer")
     @State private var cursorPosition: SIMD2<Float>? = nil
     @State private var aspectRatio: SIMD2<Float> = SIMD2<Float>(1.0, 1.0)
+    @State private var showLoadingUI = false
+
+    // Matches FITSImageView's Metal clear color so the (mostly black) image
+    // doesn't flash a bright loading view while switching frames.
+    private static let imageBackground = Color(red: 0.22, green: 0.22, blue: 0.24)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +53,17 @@ struct FITSViewerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: paneManager.fitsURL) {
             await loadFITS()
+        }
+        // Reveal the spinner only when a load takes noticeably long; fast loads
+        // just show the dark background instead of a flashing progress view.
+        .task(id: isLoading) {
+            guard isLoading else {
+                showLoadingUI = false
+                return
+            }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            showLoadingUI = true
         }
         .onChange(of: stretchSettings) { _, _ in scheduleSave() }
         .onChange(of: blackPoint)     { _, _ in scheduleSave() }
@@ -132,13 +148,18 @@ struct FITSViewerView: View {
         if paneManager.fitsURL == nil {
             emptyState("Open a FITS file to view it here")
         } else if isLoading {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Loading \(paneManager.fitsURL?.lastPathComponent ?? "file")…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            ZStack {
+                Self.imageBackground
+                if showLoadingUI {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading \(paneManager.fitsURL?.lastPathComponent ?? "file")…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.colorScheme, .dark)
         } else if let error = loadError {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
