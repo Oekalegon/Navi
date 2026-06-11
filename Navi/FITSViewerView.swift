@@ -56,6 +56,11 @@ struct FITSViewerView: View {
 
     private var headerBar: some View {
         HStack(spacing: 8) {
+            PaneCloseButton(paneType: .fitsViewer)
+
+            Divider()
+                .frame(height: 14)
+
             Image(systemName: frameTypeSymbolName(
                     type: frameType.isEmpty ? "light" : frameType,
                     level: frameLevel))

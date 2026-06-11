@@ -29,19 +29,23 @@ struct ContentView: View {
                         }
                         .controlSize(.small)
 
-                        Button(action: { paneManager.showArchivePane() }) {
-                            Image(systemName: "archivebox")
-                                .font(.system(size: 13))
-                        }
-                        .controlSize(.small)
-                        .help("Open Archive Pane")
+                        PaneToggleButton(
+                            icon: "sparkles",
+                            title: "AI Assistant",
+                            isVisible: paneManager.isAIAssistantVisible
+                        ) { paneManager.toggleAIAssistant() }
 
-                        Button(action: { paneManager.toggleFITSViewer() }) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 13))
-                        }
-                        .controlSize(.small)
-                        .help(paneManager.isFITSViewerVisible ? "Hide FITS Viewer" : "Show FITS Viewer")
+                        PaneToggleButton(
+                            icon: "archivebox",
+                            title: "Archive Viewer",
+                            isVisible: paneManager.isArchiveViewerVisible
+                        ) { paneManager.toggleArchiveViewer() }
+
+                        PaneToggleButton(
+                            icon: "photo",
+                            title: "FITS Viewer",
+                            isVisible: paneManager.isFITSViewerVisible
+                        ) { paneManager.toggleFITSViewer() }
                     }
                 }
 
@@ -59,5 +63,23 @@ struct ContentView: View {
                 SettingsView()
                     .environment(settings)
             }
+    }
+}
+
+// Toolbar toggle reflecting whether a pane is currently visible.
+private struct PaneToggleButton: View {
+    let icon: String
+    let title: String
+    let isVisible: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isVisible }, set: { _ in toggle() })) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help(isVisible ? "Hide \(title)" : "Show \(title)")
     }
 }

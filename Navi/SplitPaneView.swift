@@ -91,6 +91,21 @@ struct PaneContentView: View {
     }
 }
 
+/// Header-bar button that closes the pane showing the given type.
+struct PaneCloseButton: View {
+    let paneType: PaneType
+    @Environment(PaneManager.self) private var paneManager
+
+    var body: some View {
+        Button { paneManager.closePane(ofType: paneType) } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12))
+        }
+        .buttonStyle(.plain)
+        .help("Close pane")
+    }
+}
+
 private struct PaneFocusCorner: View {
     var body: some View {
         PaneFocusTriangle()

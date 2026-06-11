@@ -115,6 +115,75 @@ class PaneManager {
         findPane(ofType: .fitsViewer, in: rootPane) != nil
     }
 
+    var isAIAssistantVisible: Bool {
+        findPane(ofType: .aiAssistant, in: rootPane) != nil
+    }
+
+    var isArchiveViewerVisible: Bool {
+        findPane(ofType: .archiveViewer, in: rootPane) != nil
+    }
+
+    func toggleAIAssistant() {
+        if isAIAssistantVisible {
+            closePane(ofType: .aiAssistant)
+        } else {
+            openAIAssistantPane()
+        }
+    }
+
+    func toggleArchiveViewer() {
+        if isArchiveViewerVisible {
+            closePane(ofType: .archiveViewer)
+        } else {
+            showArchivePane()
+        }
+    }
+
+    // Close the pane showing `type`; its sibling takes over the freed space.
+    func closePane(ofType type: PaneType) {
+        guard type != .empty else { return }
+        if rootPane.isLeaf {
+            if rootPane.paneType == type { rootPane.paneType = .empty }
+            return
+        }
+        guard let (parent, index) = findParentOf(type: type, in: rootPane),
+              let children = parent.children, children.count == 2 else { return }
+        let closing = children[index]
+        let sibling = children[1 - index]
+        parent.paneType = sibling.paneType
+        parent.direction = sibling.direction
+        parent.children = sibling.children
+        parent.preferredWidth = sibling.preferredWidth
+        parent.preferredHeight = sibling.preferredHeight
+        // Both leaf IDs disappear in the collapse (sibling's content is copied
+        // onto the parent node), so any focus pointing at them is stale.
+        if focusedPaneID == closing.id || focusedPaneID == sibling.id {
+            focusedPaneID = nil
+        }
+    }
+
+    // AI assistant prefers the left edge: reuse an empty pane if available,
+    // otherwise wrap the whole tree so AI sits to the left of everything.
+    private func openAIAssistantPane() {
+        if findPane(ofType: .aiAssistant, in: rootPane) != nil { return }
+        if let empty = findPane(ofType: .empty, in: rootPane) {
+            empty.paneType = .aiAssistant
+            return
+        }
+        let existing = SplitPane(type: rootPane.paneType)
+        existing.direction = rootPane.direction
+        existing.children = rootPane.children
+        existing.preferredWidth = rootPane.preferredWidth
+        existing.preferredHeight = rootPane.preferredHeight
+        let aiPane = SplitPane(type: .aiAssistant)
+        aiPane.preferredWidth = 300
+        rootPane.paneType = .empty
+        rootPane.direction = .horizontal
+        rootPane.children = [aiPane, existing]
+        rootPane.preferredWidth = nil
+        rootPane.preferredHeight = nil
+    }
+
     // FITS viewer splits the archive viewer vertically with FITS on top.
     // Falls back to an empty pane or a horizontal split of the AI pane.
     func showFITSViewer(url: URL) {
@@ -130,7 +199,7 @@ class PaneManager {
 
     func toggleFITSViewer() {
         if isFITSViewerVisible {
-            removeFITSViewer()
+            closePane(ofType: .fitsViewer)
         } else {
             openFITSViewerPane()
         }
@@ -144,21 +213,6 @@ class PaneManager {
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)
         }
-    }
-
-    private func removeFITSViewer() {
-        if rootPane.isLeaf && rootPane.paneType == .fitsViewer {
-            rootPane.paneType = .empty
-            return
-        }
-        guard let (parent, index) = findParentOf(type: .fitsViewer, in: rootPane),
-              let children = parent.children, children.count == 2 else { return }
-        let sibling = children[1 - index]
-        parent.paneType = sibling.paneType
-        parent.direction = sibling.direction
-        parent.children = sibling.children
-        parent.preferredWidth = sibling.preferredWidth
-        parent.preferredHeight = sibling.preferredHeight
     }
 
     private func findParentOf(type: PaneType, in pane: SplitPane) -> (SplitPane, Int)? {

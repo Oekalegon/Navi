@@ -80,6 +80,11 @@ struct ArchiveViewerView: View {
         HStack(spacing: 8) {
             let isFilterActive = paneManager.archiveFilter.isActive
 
+            PaneCloseButton(paneType: .archiveViewer)
+
+            Divider()
+                .frame(height: 14)
+
             Button { paneManager.archiveBack() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .medium))
