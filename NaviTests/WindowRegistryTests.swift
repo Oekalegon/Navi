@@ -25,10 +25,10 @@ struct WindowRegistryTests {
     }
 
     @discardableResult
-    private func register(_ manager: PaneManager, in registry: WindowRegistry) -> UUID {
-        let id = registry.stage(manager)
-        _ = registry.adopt(id)
-        return id
+    private func register(_ manager: PaneManager, in registry: WindowRegistry) -> WindowToken {
+        let token = registry.stage(manager)
+        _ = registry.adopt(token)
+        return token
     }
 
     private let frameURL = URL(fileURLWithPath: "/tmp/frame.fits")
@@ -143,7 +143,7 @@ struct WindowRegistryTests {
         register(main, in: registry)
         let followerID = register(follower, in: registry)
 
-        registry.release(followerID)
+        registry.release(followerID.id)
         let candidates = registry.showFrame(url: frameURL, from: main)
 
         #expect(candidates.isEmpty)
@@ -155,13 +155,36 @@ struct WindowRegistryTests {
     @Test func releasedIDCannotBeReAdopted() {
         let registry = WindowRegistry()
         let manager = makeManager([.fitsViewer])
-        let id = register(manager, in: registry)
-        registry.release(id)
+        let token = register(manager, in: registry)
+        registry.release(token.id)
 
-        let readopted = registry.adopt(id)
+        let readopted = registry.adopt(token)
 
         #expect(readopted !== manager)
         #expect(registry.entries.isEmpty)
+    }
+
+    // Window restoration after relaunch: the staged manager is gone, but the
+    // token's root pane type survives, so a detached FITS-viewer window
+    // reopens as a FITS viewer instead of a default AI-assistant window.
+    @Test func restoredTokenFallsBackToRootType() {
+        let registry = WindowRegistry()
+        let restored = WindowToken(id: UUID(), rootType: .fitsViewer)
+
+        let manager = registry.adopt(restored)
+
+        #expect(manager.rootPane.isLeaf)
+        #expect(manager.rootPane.paneType == .fitsViewer)
+    }
+
+    @Test func stagedTokenCarriesDetachedPaneType() {
+        let manager = makeManager([.aiAssistant, .infoPanel])
+        let info = manager.findPane(ofType: .infoPanel, in: manager.rootPane)!
+        let detached = manager.detachPaneManager(for: info)!
+
+        let token = WindowRegistry().stage(detached)
+
+        #expect(token.rootType == .infoPanel)
     }
 
     @Test func rejectionSyncsToAllWindowsShowingTheFrame() {

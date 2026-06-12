@@ -8,14 +8,14 @@
 import SwiftUI
 
 struct ContentView: View {
-    let windowID: UUID
+    let token: WindowToken
     @State private var paneManager: PaneManager
     @State private var settings = SettingsManager.shared
     @State private var showingSettings = false
 
-    init(windowID: UUID) {
-        self.windowID = windowID
-        _paneManager = State(initialValue: WindowRegistry.shared.adopt(windowID))
+    init(token: WindowToken) {
+        self.token = token
+        _paneManager = State(initialValue: WindowRegistry.shared.adopt(token))
     }
 
     var body: some View {
@@ -69,7 +69,7 @@ struct ContentView: View {
                 SettingsView()
                     .environment(settings)
             }
-            .onDisappear { WindowRegistry.shared.release(windowID) }
+            .onDisappear { WindowRegistry.shared.release(token.id) }
     }
 }
 

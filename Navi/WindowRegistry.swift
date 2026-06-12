@@ -7,6 +7,15 @@
 
 import Foundation
 
+/// Identifies a window scene. Codable so macOS window restoration can bring a
+/// window back after relaunch: the staged PaneManager is gone by then, but the
+/// root pane type survives in the token, so a detached FITS-viewer window at
+/// least reopens as a FITS viewer instead of a default AI-assistant window.
+struct WindowToken: Codable, Hashable {
+    var id: UUID
+    var rootType: PaneType
+}
+
 /// A FITS viewer that could show a frame selected in an archive pane,
 /// described for the user by the window it lives in.
 struct FrameDestination: Identifiable {
@@ -37,26 +46,30 @@ final class WindowRegistry {
     private var nextNumber = 1
 
     /// The PaneManager backing a window scene: a previously staged manager, the
-    /// already-registered one, or a fresh default manager. Idempotent because
-    /// SwiftUI re-creates a window's root view many times. A released ID is
-    /// terminal: SwiftUI gives no guarantee the root view isn't re-initialized
-    /// during window teardown, and re-registering here would create a zombie
-    /// entry that shows up as a routing destination with no window behind it.
-    func adopt(_ id: UUID) -> PaneManager {
-        if let entry = entries.first(where: { $0.id == id }) { return entry.paneManager }
-        guard !released.contains(id) else { return PaneManager() }
-        let manager = staged.removeValue(forKey: id) ?? PaneManager()
-        entries.append(Entry(id: id, paneManager: manager, number: nextNumber))
+    /// already-registered one, or a fresh manager showing the token's root pane
+    /// type (the restoration path — the staged manager did not survive the
+    /// relaunch). Idempotent because SwiftUI re-creates a window's root view
+    /// many times. A released ID is terminal: SwiftUI gives no guarantee the
+    /// root view isn't re-initialized during window teardown, and
+    /// re-registering here would create a zombie entry that shows up as a
+    /// routing destination with no window behind it.
+    func adopt(_ token: WindowToken) -> PaneManager {
+        if let entry = entries.first(where: { $0.id == token.id }) { return entry.paneManager }
+        guard !released.contains(token.id) else { return PaneManager(rootType: token.rootType) }
+        let manager = staged.removeValue(forKey: token.id) ?? PaneManager(rootType: token.rootType)
+        entries.append(Entry(id: token.id, paneManager: manager, number: nextNumber))
         nextNumber += 1
         return manager
     }
 
     /// Stages a manager for a window about to open and returns the value to
     /// pass to openWindow.
-    func stage(_ manager: PaneManager) -> UUID {
-        let id = UUID()
-        staged[id] = manager
-        return id
+    func stage(_ manager: PaneManager) -> WindowToken {
+        let token = WindowToken(
+            id: UUID(),
+            rootType: manager.rootPane.isLeaf ? manager.rootPane.paneType : .aiAssistant)
+        staged[token.id] = manager
+        return token
     }
 
     func release(_ id: UUID) {

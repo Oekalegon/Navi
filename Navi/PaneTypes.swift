@@ -13,8 +13,9 @@ enum SplitDirection {
     case vertical   // Up/Down split
 }
 
-// Types of panes
-enum PaneType: Equatable {
+// Types of panes. Codable/Hashable so a WindowToken can carry the root pane
+// type through macOS window restoration (NAVI-10).
+enum PaneType: String, Codable, Hashable {
     case aiAssistant
     case fitsViewer
     case archiveViewer
