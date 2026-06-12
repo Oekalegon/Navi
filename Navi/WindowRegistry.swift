@@ -85,6 +85,15 @@ final class WindowRegistry {
         return fitsCandidates
     }
 
+    /// Syncs the rejected badge of every FITS viewer showing the frame at
+    /// `path`: with multiple windows the same frame can be on display in
+    /// several of them, so a reject toggled in one window must reach them all.
+    func frameRejectionChanged(path: String, rejected: Bool) {
+        for entry in entries where entry.paneManager.fitsURL?.path == path {
+            entry.paneManager.fitsFrameRejected = rejected
+        }
+    }
+
     // The windows whose dependent panes follow `source`'s archive selection,
     // the source window itself first.
     private func followers(of source: PaneManager) -> [FrameDestination] {

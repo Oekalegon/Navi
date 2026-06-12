@@ -131,6 +131,25 @@ struct WindowRegistryTests {
         #expect(detachedViewer.fitsURL == nil)
     }
 
+    @Test func rejectionSyncsToAllWindowsShowingTheFrame() {
+        let registry = WindowRegistry()
+        let main = makeManager([.archiveViewer, .fitsViewer])
+        let follower = makeManager([.fitsViewer])
+        let unrelated = makeManager([.fitsViewer])
+        register(main, in: registry)
+        register(follower, in: registry)
+        register(unrelated, in: registry)
+        main.fitsURL = frameURL
+        follower.fitsURL = frameURL
+        unrelated.fitsURL = URL(fileURLWithPath: "/tmp/other.fits")
+
+        registry.frameRejectionChanged(path: frameURL.path, rejected: true)
+
+        #expect(main.fitsFrameRejected == true)
+        #expect(follower.fitsFrameRejected == true)
+        #expect(unrelated.fitsFrameRejected == false)
+    }
+
     @Test func mainWindowLosesArchiveToDetachedWindow() {
         let registry = WindowRegistry()
         let main = makeManager([.aiAssistant, .archiveViewer, .fitsViewer])

@@ -489,8 +489,9 @@ struct ArchiveViewerView: View {
             }
             selectedRow?.values["rejected"] = value
             let rowPath = row.values["file"] ?? row.values["path"] ?? ""
-            if !rowPath.isEmpty, paneManager.fitsURL?.path == rowPath {
-                paneManager.fitsFrameRejected = target
+            if !rowPath.isEmpty {
+                // The frame may be on display in another window's FITS viewer.
+                WindowRegistry.shared.frameRejectionChanged(path: rowPath, rejected: target)
             }
         } catch {
             logger.error("toggleRejection failed: \(error)")

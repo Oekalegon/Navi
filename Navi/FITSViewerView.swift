@@ -273,6 +273,10 @@ struct FITSViewerView: View {
         do {
             try await ArchiveManager.shared.setRejected(target, id: id)
             paneManager.fitsFrameRejected = target
+            if let path = paneManager.fitsURL?.path {
+                // Other windows' FITS viewers may show the same frame.
+                WindowRegistry.shared.frameRejectionChanged(path: path, rejected: target)
+            }
             let idStr = id.uuidString
             let value = target ? "true" : "false"
             if var content = paneManager.archiveContent,
