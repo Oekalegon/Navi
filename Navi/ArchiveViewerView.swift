@@ -35,6 +35,9 @@ struct ArchiveViewerView: View {
             headerBar
             Divider()
             contentArea
+                // Anchored to the whole table, not the clicked row: SwiftUI's
+                // Table does not expose row rects, so a row-anchored popover
+                // is not possible without dropping to NSTableView.
                 .popover(item: $pendingFrameChoice, arrowEdge: .bottom) { choice in
                     FrameDestinationPopover(destinations: choice.destinations) { destination in
                         destination.paneManager.showFITSViewerIfVisible(url: choice.url)
@@ -257,9 +260,9 @@ struct ArchiveViewerView: View {
                     content: content,
                     columnSettings: columnSettings,
                     selectionID: $selectionID,
-                    onRowSelected: { row in
+                    onRowSelected: { row, isNewSelection in
                         selectedRow = row
-                        if let row { showFrameIfViewerVisible(row) }
+                        if let row, isNewSelection { showFrameIfViewerVisible(row) }
                     },
                     onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
                 )
@@ -289,9 +292,9 @@ struct ArchiveViewerView: View {
                     totalRows: base.rows.count,
                     columnSettings: columnSettings,
                     selectionID: $selectionID,
-                    onRowSelected: { row in
+                    onRowSelected: { row, isNewSelection in
                         selectedRow = row
-                        if let row { showFrameIfViewerVisible(row) }
+                        if let row, isNewSelection { showFrameIfViewerVisible(row) }
                     },
                     onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
                 )
@@ -535,7 +538,10 @@ struct ArchiveTableView: View {
     var totalRows: Int? = nil
     let columnSettings: ArchiveColumnSettings
     @Binding var selectionID: ArchiveRow.ID?
-    var onRowSelected: ((ArchiveRow?) -> Void)? = nil
+    // isNewSelection distinguishes a user selecting a row (true) from the
+    // selected row's values changing in place, e.g. a reject toggle (false) —
+    // callers must not re-route the frame to viewers in the latter case.
+    var onRowSelected: ((ArchiveRow?, _ isNewSelection: Bool) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
     @State private var sortOrder: [ColumnComparator] = []
     @State private var lastTapRowID: ArchiveRow.ID? = nil
@@ -640,12 +646,12 @@ struct ArchiveTableView: View {
                 // any parent re-render triggered by onRowSelected can interfere.
                 let row = newID.flatMap { id in displayedRows.first { $0.id == id } }
                 let callback = onRowSelected
-                Task { @MainActor in callback?(row) }
+                Task { @MainActor in callback?(row, true) }
             }
             .onChange(of: displayedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
                 guard let id = selectionID, let row = displayedRows.first(where: { $0.id == id }) else { return }
                 let callback = onRowSelected
-                Task { @MainActor in callback?(row) }
+                Task { @MainActor in callback?(row, false) }
             }
             .onChange(of: content.toolName) { _, _ in
                 expandedFramesets.removeAll()
