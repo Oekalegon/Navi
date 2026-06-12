@@ -164,6 +164,28 @@ struct WindowRegistryTests {
         #expect(registry.entries.isEmpty)
     }
 
+    // After the main window closes, the oldest remaining window takes over
+    // main-window behaviour, so destination titles must call it "Main Window"
+    // (not its original "Window N").
+    @Test func oldestRemainingWindowIsTitledMainAfterMainCloses() {
+        let registry = WindowRegistry()
+        let original = makeManager([.archiveViewer, .fitsViewer])
+        let viewer = makeManager([.fitsViewer])
+        let archive = makeManager([.archiveViewer, .fitsViewer])
+        let originalToken = register(original, in: registry)
+        register(viewer, in: registry)
+        register(archive, in: registry)
+
+        registry.release(originalToken.id)
+        // The third window now holds the primary archive; the second is the
+        // oldest remaining window and follows it.
+        let candidates = registry.showFrame(url: frameURL, from: archive)
+
+        #expect(candidates.count == 2)
+        #expect(candidates.first?.title == "This Window")
+        #expect(candidates.last?.title == "Main Window")
+    }
+
     // Window restoration after relaunch: the staged manager is gone, but the
     // token's root pane type survives, so a detached FITS-viewer window
     // reopens as a FITS viewer instead of a default AI-assistant window.

@@ -135,9 +135,14 @@ final class WindowRegistry {
     }
 
     private func destination(for entry: Entry, title: String? = nil) -> FrameDestination {
-        FrameDestination(
+        // "Main Window" follows position, not the original number: when the
+        // main window closes, the oldest remaining window takes over main-
+        // window behaviour (entries order drives primaryArchiveManager), so
+        // its title must say so too.
+        let isMain = entries.first?.id == entry.id
+        return FrameDestination(
             id: entry.id,
-            title: title ?? (entry.number == 1 ? "Main Window" : "Window \(entry.number)"),
+            title: title ?? (isMain ? "Main Window" : "Window \(entry.number)"),
             paneManager: entry.paneManager)
     }
 }
