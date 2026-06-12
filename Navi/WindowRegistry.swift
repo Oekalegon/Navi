@@ -33,13 +33,18 @@ final class WindowRegistry {
 
     private(set) var entries: [Entry] = []
     private var staged: [UUID: PaneManager] = [:]
+    private var released: Set<UUID> = []
     private var nextNumber = 1
 
     /// The PaneManager backing a window scene: a previously staged manager, the
     /// already-registered one, or a fresh default manager. Idempotent because
-    /// SwiftUI re-creates a window's root view many times.
+    /// SwiftUI re-creates a window's root view many times. A released ID is
+    /// terminal: SwiftUI gives no guarantee the root view isn't re-initialized
+    /// during window teardown, and re-registering here would create a zombie
+    /// entry that shows up as a routing destination with no window behind it.
     func adopt(_ id: UUID) -> PaneManager {
         if let entry = entries.first(where: { $0.id == id }) { return entry.paneManager }
+        guard !released.contains(id) else { return PaneManager() }
         let manager = staged.removeValue(forKey: id) ?? PaneManager()
         entries.append(Entry(id: id, paneManager: manager, number: nextNumber))
         nextNumber += 1
@@ -55,6 +60,7 @@ final class WindowRegistry {
     }
 
     func release(_ id: UUID) {
+        released.insert(id)
         entries.removeAll { $0.id == id }
     }
 

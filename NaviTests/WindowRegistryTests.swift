@@ -24,8 +24,11 @@ struct WindowRegistryTests {
         return manager
     }
 
-    private func register(_ manager: PaneManager, in registry: WindowRegistry) {
-        _ = registry.adopt(registry.stage(manager))
+    @discardableResult
+    private func register(_ manager: PaneManager, in registry: WindowRegistry) -> UUID {
+        let id = registry.stage(manager)
+        _ = registry.adopt(id)
+        return id
     }
 
     private let frameURL = URL(fileURLWithPath: "/tmp/frame.fits")
@@ -129,6 +132,36 @@ struct WindowRegistryTests {
         #expect(candidates.last?.title == "Window 2")
         #expect(main.fitsURL == nil)
         #expect(detachedViewer.fitsURL == nil)
+    }
+
+    // MARK: Window lifecycle
+
+    @Test func releasedWindowStopsReceivingRoutedFrames() {
+        let registry = WindowRegistry()
+        let main = makeManager([.aiAssistant, .archiveViewer])
+        let follower = makeManager([.fitsViewer])
+        register(main, in: registry)
+        let followerID = register(follower, in: registry)
+
+        registry.release(followerID)
+        let candidates = registry.showFrame(url: frameURL, from: main)
+
+        #expect(candidates.isEmpty)
+        #expect(follower.fitsURL == nil)
+    }
+
+    // A root view re-initialized during window teardown must not resurrect the
+    // window as a zombie routing destination.
+    @Test func releasedIDCannotBeReAdopted() {
+        let registry = WindowRegistry()
+        let manager = makeManager([.fitsViewer])
+        let id = register(manager, in: registry)
+        registry.release(id)
+
+        let readopted = registry.adopt(id)
+
+        #expect(readopted !== manager)
+        #expect(registry.entries.isEmpty)
     }
 
     @Test func rejectionSyncsToAllWindowsShowingTheFrame() {
