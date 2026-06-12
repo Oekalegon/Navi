@@ -143,6 +143,11 @@ struct ArchiveTableView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if let disk = ArchiveManager.shared.diskUsage {
+                    Text("\(disk.used) used, \(disk.available) available")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)

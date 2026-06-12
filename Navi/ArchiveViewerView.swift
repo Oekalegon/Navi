@@ -54,9 +54,13 @@ struct ArchiveViewerView: View {
         .task(id: paneManager.archiveFilter) {
             await refreshFilterBase()
         }
+        .task(id: ArchiveManager.shared.isConnected) {
+            await ArchiveManager.shared.refreshDiskUsage()
+        }
         .task(id: ArchiveManager.shared.importVersion) {
             guard ArchiveManager.shared.importVersion > 0 else { return }
             await loadRecentFrames()
+            await ArchiveManager.shared.refreshDiskUsage()
         }
         .onChange(of: paneManager.archiveContent?.toolName) { _, _ in
             selectionID = nil

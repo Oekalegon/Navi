@@ -134,8 +134,27 @@ final class ArchiveManager {
     func disconnect() {
         archive = nil
         isConnected = false
+        diskUsage = nil
         archiveBookmarkURL?.stopAccessingSecurityScopedResource()
         archiveBookmarkURL = nil
+    }
+
+    // MARK: - Disk usage
+
+    // Formatted archive disk usage for the archive pane status bar (NAVI-25).
+    // Cached because statistics() walks the archive directory to sum file sizes.
+    private(set) var diskUsage: (used: String, available: String)?
+    private var isRefreshingDiskUsage = false
+
+    func refreshDiskUsage() async {
+        guard !isRefreshingDiskUsage else { return }
+        isRefreshingDiskUsage = true
+        defer { isRefreshingDiskUsage = false }
+        guard let archive, let stats = try? await archive.statistics() else {
+            diskUsage = nil
+            return
+        }
+        diskUsage = (used: stats.usedBytesFormatted, available: stats.availableBytesFormatted)
     }
 
     // MARK: - Tools exposed to Claude
@@ -355,6 +374,7 @@ final class ArchiveManager {
             throw ArchiveManagerError.missingArgument("id")
         }
         try await archive.remove(id: uuid, deleteFile: args["delete_file"] as? Bool ?? false)
+        Task { await self.refreshDiskUsage() }
         return "Frame \(idStr) removed."
     }
 
