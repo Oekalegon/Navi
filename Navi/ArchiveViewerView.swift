@@ -216,14 +216,6 @@ struct ArchiveViewerView: View {
             }
 
             if !isFilterActive, let content = paneManager.archiveContent {
-                Text(content.toolName)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.1))
-                    .cornerRadius(4)
-
                 if content.isTable && !showRaw {
                     Toggle(isOn: $showRaw) {
                         Image(systemName: "doc.plaintext")
