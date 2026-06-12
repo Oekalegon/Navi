@@ -8,9 +8,15 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var paneManager = PaneManager()
+    let windowID: UUID
+    @State private var paneManager: PaneManager
     @State private var settings = SettingsManager.shared
     @State private var showingSettings = false
+
+    init(windowID: UUID) {
+        self.windowID = windowID
+        _paneManager = State(initialValue: WindowRegistry.shared.adopt(windowID))
+    }
 
     var body: some View {
         SplitPaneView(pane: paneManager.rootPane, paneManager: paneManager)
@@ -63,6 +69,7 @@ struct ContentView: View {
                 SettingsView()
                     .environment(settings)
             }
+            .onDisappear { WindowRegistry.shared.release(windowID) }
     }
 }
 

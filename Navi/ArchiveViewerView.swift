@@ -29,11 +29,18 @@ struct ArchiveViewerView: View {
     @State private var isImporting = false
     @State private var importSummary: String? = nil
     @State private var importSummaryTask: Task<Void, Never>? = nil
+    @State private var pendingFrameChoice: PendingFrameChoice? = nil
     var body: some View {
         VStack(spacing: 0) {
             headerBar
             Divider()
             contentArea
+                .popover(item: $pendingFrameChoice, arrowEdge: .bottom) { choice in
+                    FrameDestinationPopover(destinations: choice.destinations) { destination in
+                        destination.paneManager.showFITSViewerIfVisible(url: choice.url)
+                        pendingFrameChoice = nil
+                    }
+                }
         }
         .background(Color(nsColor: .textBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -375,14 +382,19 @@ struct ArchiveViewerView: View {
         return URL(fileURLWithPath: path)
     }
 
+    // Routes the selected frame to the FITS viewers and info panels that
+    // follow this archive pane, across windows (NAVI-10). When several FITS
+    // viewers could show the frame, a popover asks which one should.
     private func showFrameIfViewerVisible(_ row: ArchiveRow) {
         let isFrameset = row.values["frames"].flatMap(Int.init) != nil
         guard !isFrameset else { return }
         let filePath = row.values["file"] ?? row.values["path"]
         if let filePath, !filePath.isEmpty {
             let url = URL(fileURLWithPath: filePath)
-            paneManager.showFITSViewerIfVisible(url: url)
-            paneManager.showInfoIfVisible(url: url)
+            let candidates = WindowRegistry.shared.showFrame(url: url, from: paneManager)
+            if !candidates.isEmpty {
+                pendingFrameChoice = PendingFrameChoice(url: url, destinations: candidates)
+            }
         }
     }
 
@@ -483,6 +495,37 @@ struct ArchiveViewerView: View {
         } catch {
             logger.error("toggleRejection failed: \(error)")
         }
+    }
+}
+
+// A frame selection that several FITS viewers could show (NAVI-10); the
+// popover asks the user which window's viewer should take it.
+private struct PendingFrameChoice: Identifiable {
+    let id = UUID()
+    let url: URL
+    let destinations: [FrameDestination]
+}
+
+private struct FrameDestinationPopover: View {
+    let destinations: [FrameDestination]
+    let onSelect: (FrameDestination) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Show Frame In")
+                .font(.headline)
+            ForEach(destinations) { destination in
+                Button {
+                    onSelect(destination)
+                } label: {
+                    Label(destination.title, systemImage: "photo")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 180)
     }
 }
 

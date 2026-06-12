@@ -17,13 +17,14 @@ import AppKit
 struct PaneMoveButton: View {
     let pane: SplitPane
     @Environment(PaneManager.self) private var paneManager
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         if !paneManager.rootPane.isLeaf {
             Menu {
                 menuContent
             } label: {
-                Image(systemName: "rectangle.2.swap")
+                Image(systemName: "inset.filled.toptrailing.rectangle")
                     .font(.system(size: 12))
             }
             .menuStyle(.button)
@@ -54,6 +55,27 @@ struct PaneMoveButton: View {
                 }
             }
         }
+        Section {
+            Button {
+                moveToNewWindow()
+            } label: {
+                Label {
+                    Text("New Window")
+                } icon: {
+                    // A window containing only this pane: full-rect destination.
+                    if let image = layoutIconImage(leafRects: [], sourceRect: nil,
+                                                   destinationRect: CGRect(x: 0, y: 0,
+                                                                           width: 1, height: 1)) {
+                        Image(nsImage: image)
+                    }
+                }
+            }
+        }
+    }
+
+    private func moveToNewWindow() {
+        guard let manager = paneManager.detachPaneManager(for: pane) else { return }
+        openWindow(value: WindowRegistry.shared.stage(manager))
     }
 
     private func optionButton(_ option: PaneMoveOption, in options: PaneMoveOptions) -> some View {

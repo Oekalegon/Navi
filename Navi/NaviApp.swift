@@ -53,8 +53,13 @@ struct NaviCommands: Commands {
 @main
 struct NaviApp: App {
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // Every window — the initial one, File > New Window, and panes detached
+        // via the move-pane menu's New Window item (NAVI-10) — is keyed by a
+        // UUID that resolves to its PaneManager in the WindowRegistry.
+        WindowGroup(for: UUID.self) { $windowID in
+            ContentView(windowID: windowID)
+        } defaultValue: {
+            UUID()
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands { NaviCommands() }

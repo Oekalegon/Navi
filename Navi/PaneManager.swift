@@ -38,8 +38,8 @@ class PaneManager {
         return frames
     }
 
-    init() {
-        self.rootPane = SplitPane(type: .aiAssistant)
+    init(rootType: PaneType = .aiAssistant) {
+        self.rootPane = SplitPane(type: rootType)
     }
 
     func findPane(ofType type: PaneType, in pane: SplitPane) -> SplitPane? {
@@ -237,6 +237,29 @@ class PaneManager {
         let newLeaf = insertPane(type, at: target, direction: direction, before: before,
                                  preferredWidth: width, preferredHeight: height)
         focusedPaneID = newLeaf.id
+    }
+
+    // Remove a leaf and build the PaneManager for a new window showing it,
+    // carrying over the data its content needs (NAVI-10). The remaining tree
+    // collapses as in removeLeaf; the last pane in a window cannot detach.
+    func detachPaneManager(for leaf: SplitPane) -> PaneManager? {
+        guard leaf.isLeaf, leaf.paneType != .empty, rootPane !== leaf,
+              findParent(of: leaf, in: rootPane) != nil else { return nil }
+        let manager = PaneManager(rootType: leaf.paneType)
+        switch leaf.paneType {
+        case .fitsViewer:
+            manager.fitsURL = fitsURL
+            manager.fitsFrameRejected = fitsFrameRejected
+        case .infoPanel:
+            manager.infoURL = infoURL
+        case .archiveViewer:
+            manager.archiveContent = archiveContent
+            manager.archiveFilter = archiveFilter
+        case .aiAssistant, .empty:
+            break
+        }
+        removeLeaf(leaf)
+        return manager
     }
 
     // AI assistant prefers the left edge: reuse an empty pane if available,
