@@ -22,6 +22,7 @@ struct AIAssistantView: View {
             // Header
             HStack {
                 PaneCloseButton(paneType: .aiAssistant)
+                PaneMoveButton(pane: pane)
                 Text("AI Assistant")
                     .font(.headline)
                 Spacer()

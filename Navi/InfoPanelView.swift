@@ -43,6 +43,7 @@ struct InfoPanelView: View {
     private var headerBar: some View {
         HStack(spacing: 8) {
             PaneCloseButton(paneType: .infoPanel)
+            PaneMoveButton(pane: pane)
 
             Divider()
                 .frame(height: 14)

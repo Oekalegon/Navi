@@ -20,4 +20,14 @@ enum PaneType: Equatable {
     case archiveViewer
     case infoPanel
     case empty
+
+    var displayName: String {
+        switch self {
+        case .aiAssistant: "AI Assistant"
+        case .fitsViewer: "FITS Viewer"
+        case .archiveViewer: "Archive"
+        case .infoPanel: "Info"
+        case .empty: "Empty Pane"
+        }
+    }
 }

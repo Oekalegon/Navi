@@ -73,6 +73,7 @@ struct FITSViewerView: View {
     private var headerBar: some View {
         HStack(spacing: 8) {
             PaneCloseButton(paneType: .fitsViewer)
+            PaneMoveButton(pane: pane)
 
             Divider()
                 .frame(height: 14)

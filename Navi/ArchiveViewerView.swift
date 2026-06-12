@@ -81,6 +81,7 @@ struct ArchiveViewerView: View {
             let isFilterActive = paneManager.archiveFilter.isActive
 
             PaneCloseButton(paneType: .archiveViewer)
+            PaneMoveButton(pane: pane)
 
             Divider()
                 .frame(height: 14)

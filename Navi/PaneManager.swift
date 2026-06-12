@@ -22,20 +22,34 @@ class PaneManager {
     var infoURL: URL?
     var focusedPaneID: UUID? = nil
 
+    // Live pane-frame providers, registered by each pane's FocusTrackerView and
+    // keyed by tracker identity so a transient duplicate tracker for the same
+    // pane can never clobber the live one. Frames are queried on demand (when
+    // the move-pane menu opens) because cached frames go stale when an outer
+    // divider moves without resizing the inner hosting view.
+    @ObservationIgnored var paneFrameProviders: [ObjectIdentifier: () -> (UUID, CGRect)?] = [:]
+
+    // Current frame of every laid-out leaf pane, in window coordinates (y-up).
+    func currentPaneFrames() -> [UUID: CGRect] {
+        var frames: [UUID: CGRect] = [:]
+        for provider in paneFrameProviders.values {
+            if let (id, rect) = provider() { frames[id] = rect }
+        }
+        return frames
+    }
+
     init() {
-        let aiPane = SplitPane(type: .aiAssistant)
-        aiPane.preferredWidth = 300
-
-        let emptyPane = SplitPane(type: .empty)
-
-        self.rootPane = SplitPane(type: .empty)
-        self.rootPane.direction = .horizontal
-        self.rootPane.children = [aiPane, emptyPane]
+        self.rootPane = SplitPane(type: .aiAssistant)
     }
 
     func findPane(ofType type: PaneType, in pane: SplitPane) -> SplitPane? {
         if pane.isLeaf { return pane.paneType == type ? pane : nil }
         return pane.children?.compactMap { findPane(ofType: type, in: $0) }.first
+    }
+
+    func findPane(id: UUID, in pane: SplitPane) -> SplitPane? {
+        if pane.id == id { return pane }
+        return pane.children?.compactMap { findPane(id: id, in: $0) }.first
     }
 
     func splitPane(_ pane: SplitPane, direction: SplitDirection,
@@ -44,17 +58,32 @@ class PaneManager {
                    newPanePreferredHeight: CGFloat? = nil,
                    prepend: Bool = false) {
         guard pane.children == nil else { return }
-        pane.direction = direction
-        let existing = SplitPane(type: pane.paneType)
-        existing.preferredWidth = pane.preferredWidth
-        existing.preferredHeight = pane.preferredHeight
-        let newPane = SplitPane(type: newPaneType)
-        newPane.preferredWidth = newPanePreferredWidth
-        newPane.preferredHeight = newPanePreferredHeight
-        pane.children = prepend ? [newPane, existing] : [existing, newPane]
-        pane.paneType = .empty
-        pane.preferredWidth = nil
-        pane.preferredHeight = nil
+        insertPane(newPaneType, at: pane, direction: direction, before: prepend,
+                   preferredWidth: newPanePreferredWidth,
+                   preferredHeight: newPanePreferredHeight)
+    }
+
+    // Splits `node` (leaf or split) in `direction`, pushing its current content
+    // down into one child and placing a new leaf of `type` on the other side.
+    @discardableResult
+    func insertPane(_ type: PaneType, at node: SplitPane,
+                    direction: SplitDirection, before: Bool,
+                    preferredWidth: CGFloat? = nil,
+                    preferredHeight: CGFloat? = nil) -> SplitPane {
+        let existing = SplitPane(type: node.paneType)
+        existing.direction = node.direction
+        existing.children = node.children
+        existing.preferredWidth = node.preferredWidth
+        existing.preferredHeight = node.preferredHeight
+        let newPane = SplitPane(type: type)
+        newPane.preferredWidth = preferredWidth
+        newPane.preferredHeight = preferredHeight
+        node.paneType = .empty
+        node.direction = direction
+        node.children = before ? [newPane, existing] : [existing, newPane]
+        node.preferredWidth = nil
+        node.preferredHeight = nil
+        return newPane
     }
 
     func showContent(type: PaneType, splitFrom sourcePane: SplitPane, direction: SplitDirection) {
@@ -72,6 +101,11 @@ class PaneManager {
         guard let target = widestLeafPane(in: rootPane) else { return }
         if target.paneType == .empty {
             target.paneType = .archiveViewer
+        } else if target.paneType == .aiAssistant {
+            // Never stack below the assistant column: pin it to 300pt on the
+            // left and give the archive the remaining width.
+            target.preferredWidth = 300
+            splitPane(target, direction: .horizontal, newPaneType: .archiveViewer)
         } else {
             splitPane(target, direction: .vertical, newPaneType: .archiveViewer)
         }
@@ -142,14 +176,20 @@ class PaneManager {
 
     // Close the pane showing `type`; its sibling takes over the freed space.
     func closePane(ofType type: PaneType) {
-        guard type != .empty else { return }
-        if rootPane.isLeaf {
-            if rootPane.paneType == type { rootPane.paneType = .empty }
+        guard type != .empty,
+              let pane = findPane(ofType: type, in: rootPane) else { return }
+        removeLeaf(pane)
+    }
+
+    // Remove a leaf from the tree; its sibling takes over the freed space.
+    func removeLeaf(_ leaf: SplitPane) {
+        if rootPane === leaf {
+            rootPane.paneType = .empty
             return
         }
-        guard let (parent, index) = findParentOf(type: type, in: rootPane),
+        guard leaf.isLeaf,
+              let (parent, index) = findParent(of: leaf, in: rootPane),
               let children = parent.children, children.count == 2 else { return }
-        let closing = children[index]
         let sibling = children[1 - index]
         parent.paneType = sibling.paneType
         parent.direction = sibling.direction
@@ -158,9 +198,45 @@ class PaneManager {
         parent.preferredHeight = sibling.preferredHeight
         // Both leaf IDs disappear in the collapse (sibling's content is copied
         // onto the parent node), so any focus pointing at them is stale.
-        if focusedPaneID == closing.id || focusedPaneID == sibling.id {
+        if focusedPaneID == leaf.id || focusedPaneID == sibling.id {
             focusedPaneID = nil
         }
+    }
+
+    // Exchange the contents of two leaves; geometry stays with the position.
+    func swapPanes(_ a: SplitPane, _ b: SplitPane) {
+        guard a.isLeaf, b.isLeaf, a !== b else { return }
+        let type = a.paneType
+        a.paneType = b.paneType
+        b.paneType = type
+        // Focus follows the content to its new position.
+        if focusedPaneID == a.id {
+            focusedPaneID = b.id
+        } else if focusedPaneID == b.id {
+            focusedPaneID = a.id
+        }
+    }
+
+    // Move a leaf to a new position: remove it (sibling absorbs the space),
+    // then split the target node and place the pane on the chosen side.
+    func movePane(_ leaf: SplitPane, toTarget targetID: UUID,
+                  direction: SplitDirection, before: Bool) {
+        guard leaf.isLeaf,
+              let (parent, index) = findParent(of: leaf, in: rootPane),
+              let children = parent.children, children.count == 2,
+              let preTarget = findPane(id: targetID, in: rootPane),
+              preTarget !== leaf else { return }
+        let sibling = children[1 - index]
+        let type = leaf.paneType
+        let width = leaf.preferredWidth
+        let height = leaf.preferredHeight
+        removeLeaf(leaf)
+        // The sibling node is absorbed into the parent during removal, so a
+        // move targeting the sibling must re-target the parent.
+        let target = preTarget === sibling ? parent : preTarget
+        let newLeaf = insertPane(type, at: target, direction: direction, before: before,
+                                 preferredWidth: width, preferredHeight: height)
+        focusedPaneID = newLeaf.id
     }
 
     // AI assistant prefers the left edge: reuse an empty pane if available,
@@ -171,9 +247,8 @@ class PaneManager {
             empty.paneType = .aiAssistant
             return
         }
-        let aiPane = SplitPane(type: .aiAssistant)
-        aiPane.preferredWidth = 300
-        wrapRootHorizontally(adding: aiPane, prepend: true)
+        insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
+                   preferredWidth: 300)
     }
 
     var isInfoPanelVisible: Bool {
@@ -202,24 +277,8 @@ class PaneManager {
             empty.paneType = .infoPanel
             return
         }
-        let infoPane = SplitPane(type: .infoPanel)
-        infoPane.preferredWidth = 300
-        wrapRootHorizontally(adding: infoPane, prepend: false)
-    }
-
-    // Wraps the current tree in a horizontal split with `newPane` at the
-    // leading (prepend) or trailing edge.
-    private func wrapRootHorizontally(adding newPane: SplitPane, prepend: Bool) {
-        let existing = SplitPane(type: rootPane.paneType)
-        existing.direction = rootPane.direction
-        existing.children = rootPane.children
-        existing.preferredWidth = rootPane.preferredWidth
-        existing.preferredHeight = rootPane.preferredHeight
-        rootPane.paneType = .empty
-        rootPane.direction = .horizontal
-        rootPane.children = prepend ? [newPane, existing] : [existing, newPane]
-        rootPane.preferredWidth = nil
-        rootPane.preferredHeight = nil
+        insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
+                   preferredWidth: 300)
     }
 
     // FITS viewer splits the archive viewer vertically with FITS on top.
@@ -249,15 +308,16 @@ class PaneManager {
         } else if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .fitsViewer
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
+            ai.preferredWidth = 300
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)
         }
     }
 
-    private func findParentOf(type: PaneType, in pane: SplitPane) -> (SplitPane, Int)? {
+    private func findParent(of node: SplitPane, in pane: SplitPane) -> (SplitPane, Int)? {
         guard let children = pane.children else { return nil }
         for (index, child) in children.enumerated() {
-            if child.isLeaf && child.paneType == type { return (pane, index) }
-            if let result = findParentOf(type: type, in: child) { return result }
+            if child === node { return (pane, index) }
+            if let result = findParent(of: node, in: child) { return result }
         }
         return nil
     }

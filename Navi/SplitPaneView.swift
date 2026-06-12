@@ -163,6 +163,7 @@ final class FocusTrackerView: NSView {
 
     deinit {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        paneManager.paneFrameProviders.removeValue(forKey: ObjectIdentifier(self))
     }
 
     override func viewDidMoveToWindow() {
@@ -173,8 +174,17 @@ final class FocusTrackerView: NSView {
             NSEvent.removeMonitor(eventMonitor)
             self.eventMonitor = nil
         }
-        guard let window else { return }
+        guard let window else {
+            paneManager.paneFrameProviders.removeValue(forKey: ObjectIdentifier(self))
+            return
+        }
         paneRoot = findPaneRoot()
+        // Lets PaneManager query this pane's frame (window coordinates, y-up)
+        // on demand — e.g. to draw the move-pane menu's layout icons.
+        paneManager.paneFrameProviders[ObjectIdentifier(self)] = { [weak self] in
+            guard let self, let root = self.paneRoot, root.window != nil else { return nil }
+            return (self.paneID, root.convert(root.bounds, to: nil))
+        }
         observation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
             self?.handleFirstResponderChange(window: window)
         }
