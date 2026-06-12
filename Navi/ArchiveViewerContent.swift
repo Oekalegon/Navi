@@ -44,7 +44,9 @@ struct ArchiveViewerContent: Equatable {
 
     // MARK: - Public entry point
 
-    private static let hiddenColumns: Set<String> = ["id"]
+    // "rejected" stays in the row values (the icon and reject toggle read it)
+    // but is not shown as a column: the frame icon already conveys it.
+    private static let hiddenColumns: Set<String> = ["id", "rejected"]
 
     static func parse(toolName: String, content: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
