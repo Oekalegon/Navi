@@ -30,12 +30,12 @@ struct ArchiveStatusBar: View {
                 if usage.totalBytes > 0 {
                     legendItem(color: DiskUsageBar.archiveColor,
                                label: "Archive \(Self.formatted(usage.archiveBytes))")
+                    DiskUsageBar(usage: usage)
+                        .frame(width: 140, height: 7)
                     legendItem(color: DiskUsageBar.otherColor,
                                label: "Other \(Self.formatted(usage.otherBytes))")
                     legendItem(color: DiskUsageBar.freeColor,
                                label: "Free \(Self.formatted(usage.availableBytes))")
-                    DiskUsageBar(usage: usage)
-                        .frame(width: 140, height: 7)
                 }
             }
         }
