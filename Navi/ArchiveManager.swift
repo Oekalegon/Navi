@@ -339,8 +339,9 @@ final class ArchiveManager {
     }
 
     private func archiveRecent(_ args: [String: Any], archive: Archive) async throws -> String {
+        // The tool contract uses 0 or negative for "all frames"; the kit API expresses that as nil.
         let limit = args["limit"] as? Int ?? 15
-        let frames = try await archive.recentFrames(limit: limit, rejectionFilter: .includeAll)
+        let frames = try await archive.recentFrames(limit: limit > 0 ? limit : nil, rejectionFilter: .includeAll)
         return try encodeJSON(frames.map { frameDict($0) })
     }
 
