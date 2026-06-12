@@ -141,9 +141,18 @@ final class ArchiveManager {
 
     // MARK: - Disk usage
 
-    // Formatted archive disk usage for the archive pane status bar (NAVI-25).
+    // Archive disk usage for the archive pane status bar (NAVI-25).
     // Cached because statistics() walks the archive directory to sum file sizes.
-    private(set) var diskUsage: (used: String, available: String)?
+    struct DiskUsage {
+        var archiveBytes: Int64
+        var availableBytes: Int64
+        var totalBytes: Int64
+        var frameCount: Int
+        // Space taken by everything else on the volume holding the archive.
+        var otherBytes: Int64 { max(0, totalBytes - availableBytes - archiveBytes) }
+    }
+
+    private(set) var diskUsage: DiskUsage?
     private var isRefreshingDiskUsage = false
 
     func refreshDiskUsage() async {
@@ -154,7 +163,12 @@ final class ArchiveManager {
             diskUsage = nil
             return
         }
-        diskUsage = (used: stats.usedBytesFormatted, available: stats.availableBytesFormatted)
+        diskUsage = DiskUsage(
+            archiveBytes: stats.usedBytes,
+            availableBytes: stats.availableBytes,
+            totalBytes: stats.totalBytes,
+            frameCount: stats.frameCount
+        )
     }
 
     // MARK: - Tools exposed to Claude

@@ -136,22 +136,7 @@ struct ArchiveTableView: View {
 
             Divider()
 
-            HStack {
-                Text(count == total
-                     ? "\(count) \(count == 1 ? "row" : "rows")"
-                     : "\(count) of \(total) rows")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if let disk = ArchiveManager.shared.diskUsage {
-                    Text("\(disk.used) used, \(disk.available) available")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .controlBackgroundColor))
+            ArchiveStatusBar(rowCount: count, totalRowCount: total)
         }
     }
 
