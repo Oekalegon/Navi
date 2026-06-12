@@ -18,5 +18,6 @@ enum PaneType: Equatable {
     case aiAssistant
     case fitsViewer
     case archiveViewer
+    case infoPanel
     case empty
 }

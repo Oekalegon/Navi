@@ -158,6 +158,15 @@ struct ArchiveViewerView: View {
             ) { Task { await toggleRejection() } }
 
             Button {
+                paneManager.toggleInfoPanel(url: selectedFileURL)
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")
+
+            Button {
                 Task { await loadRecentFrames() }
             } label: {
                 Image(systemName: "clock")
@@ -356,12 +365,23 @@ struct ArchiveViewerView: View {
         Task { await loadFramesetView(id: idStr, title: framesetTitle(from: row)) }
     }
 
+    // File URL of the selected row, if it is a frame (not a frameset).
+    private var selectedFileURL: URL? {
+        guard let row = selectedRow,
+              row.values["frames"].flatMap(Int.init) == nil,
+              let path = row.values["file"] ?? row.values["path"], !path.isEmpty
+        else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
     private func showFrameIfViewerVisible(_ row: ArchiveRow) {
         let isFrameset = row.values["frames"].flatMap(Int.init) != nil
         guard !isFrameset else { return }
         let filePath = row.values["file"] ?? row.values["path"]
         if let filePath, !filePath.isEmpty {
-            paneManager.showFITSViewerIfVisible(url: URL(fileURLWithPath: filePath))
+            let url = URL(fileURLWithPath: filePath)
+            paneManager.showFITSViewerIfVisible(url: url)
+            paneManager.showInfoIfVisible(url: url)
         }
     }
 

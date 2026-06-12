@@ -137,6 +137,15 @@ struct FITSViewerView: View {
                     .monospacedDigit()
                     .frame(minWidth: 36, alignment: .trailing)
             }
+
+            Button {
+                paneManager.toggleInfoPanel(url: paneManager.fitsURL)
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

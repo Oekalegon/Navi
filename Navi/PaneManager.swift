@@ -19,6 +19,7 @@ class PaneManager {
     var canGoForward: Bool { !archiveForwardStack.isEmpty }
     var fitsURL: URL?
     var fitsFrameRejected: Bool = false
+    var infoURL: URL?
     var focusedPaneID: UUID? = nil
 
     init() {
@@ -170,16 +171,53 @@ class PaneManager {
             empty.paneType = .aiAssistant
             return
         }
+        let aiPane = SplitPane(type: .aiAssistant)
+        aiPane.preferredWidth = 300
+        wrapRootHorizontally(adding: aiPane, prepend: true)
+    }
+
+    var isInfoPanelVisible: Bool {
+        findPane(ofType: .infoPanel, in: rootPane) != nil
+    }
+
+    func toggleInfoPanel(url: URL? = nil) {
+        if isInfoPanelVisible {
+            closePane(ofType: .infoPanel)
+        } else {
+            if let url { infoURL = url }
+            openInfoPane()
+        }
+    }
+
+    func showInfoIfVisible(url: URL) {
+        guard isInfoPanelVisible else { return }
+        infoURL = url
+    }
+
+    // Info panel is a tall column at the right edge: reuse an empty pane if
+    // available, otherwise wrap the whole tree so it sits right of everything.
+    private func openInfoPane() {
+        if findPane(ofType: .infoPanel, in: rootPane) != nil { return }
+        if let empty = findPane(ofType: .empty, in: rootPane) {
+            empty.paneType = .infoPanel
+            return
+        }
+        let infoPane = SplitPane(type: .infoPanel)
+        infoPane.preferredWidth = 300
+        wrapRootHorizontally(adding: infoPane, prepend: false)
+    }
+
+    // Wraps the current tree in a horizontal split with `newPane` at the
+    // leading (prepend) or trailing edge.
+    private func wrapRootHorizontally(adding newPane: SplitPane, prepend: Bool) {
         let existing = SplitPane(type: rootPane.paneType)
         existing.direction = rootPane.direction
         existing.children = rootPane.children
         existing.preferredWidth = rootPane.preferredWidth
         existing.preferredHeight = rootPane.preferredHeight
-        let aiPane = SplitPane(type: .aiAssistant)
-        aiPane.preferredWidth = 300
         rootPane.paneType = .empty
         rootPane.direction = .horizontal
-        rootPane.children = [aiPane, existing]
+        rootPane.children = prepend ? [newPane, existing] : [existing, newPane]
         rootPane.preferredWidth = nil
         rootPane.preferredHeight = nil
     }

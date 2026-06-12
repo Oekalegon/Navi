@@ -77,6 +77,8 @@ struct PaneContentView: View {
                 FITSViewerView(pane: pane)
             case .archiveViewer:
                 ArchiveViewerView(pane: pane)
+            case .infoPanel:
+                InfoPanelView(pane: pane)
             case .empty:
                 Color.clear
             }

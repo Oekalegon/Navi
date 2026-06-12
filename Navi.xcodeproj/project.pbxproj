@@ -674,15 +674,15 @@
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
 			productName = VSOP;
 		};
-		D4816A52D55B417DAAA9D922 /* AstrophotoToolDefinitions */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */;
-			productName = AstrophotoToolDefinitions;
-		};
 		C79ED7062FCCE3B20035ED86 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C79ED7042FCCE31A0035ED86 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		D4816A52D55B417DAAA9D922 /* AstrophotoToolDefinitions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F42FCC8DF900C2CEFA /* XCLocalSwiftPackageReference "../AstrophotoKit" */;
+			productName = AstrophotoToolDefinitions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
