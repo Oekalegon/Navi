@@ -83,7 +83,28 @@ struct ArchiveViewerContent: Equatable {
     private func hidingColumns() -> ArchiveViewerContent {
         var copy = self
         copy.columns = columns.filter { !Self.hiddenColumns.contains($0) }
+        copy.rows = rows.map { row in
+            var row = row
+            if let split = Self.splitFWHM(row.values["fwhm"]) {
+                row.values["fwhm"] = split.px
+                if let arcsec = split.arcsec { row.values["fwhm_arcsec"] = arcsec }
+            }
+            return row
+        }
         return copy
+    }
+
+    // The MCP tools emit FWHM as a combined value: "3.20px/2.08\"" (or "3.20px"
+    // when the pixel scale is unknown). Split it into plain numbers so the px
+    // and arcsec columns sort and filter numerically. Plain numeric values
+    // pass through untouched.
+    private static func splitFWHM(_ value: String?) -> (px: String, arcsec: String?)? {
+        guard let value, value.hasSuffix("\"") || value.hasSuffix("px") else { return nil }
+        let parts = value.split(separator: "/")
+        guard let pxPart = parts.first, pxPart.hasSuffix("px") else { return nil }
+        let px = String(pxPart.dropLast(2))
+        guard parts.count == 2, parts[1].hasSuffix("\"") else { return (px, nil) }
+        return (px, String(parts[1].dropLast()))
     }
 
     // MARK: - Fixed-width table parser

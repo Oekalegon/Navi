@@ -607,16 +607,20 @@ struct ArchiveTableView: View {
     private static func columnTitle(for column: String) -> String {
         ArchiveColumnSettings.groups
             .flatMap { $0.entries }
-            .first { $0.key == column }?
-            .label ?? column.capitalized
+            .first { $0.key == column }
+            .map { $0.header ?? $0.label } ?? column.capitalized
     }
 
     private static func formatted(_ value: String, column: String) -> String {
         switch column {
         case "fwhm":
-            if let d = Double(value) { return String(format: "%.1f", d) }
+            if let d = ColumnComparator.numericValue(value) { return String(format: "%.1f px", d) }
+        case "fwhm_arcsec":
+            if let d = ColumnComparator.numericValue(value) { return String(format: "%.2f\"", d) }
         case "ecc":
             if let d = Double(value) { return String(format: "%.2f", d) }
+        case "exp":
+            if let d = ColumnComparator.numericValue(value) { return String(format: "%g s", d) }
         case "type", "level":
             return value.capitalized
         default: break
@@ -626,7 +630,7 @@ struct ArchiveTableView: View {
 
     private static func columnAlignment(for column: String) -> Alignment {
         switch column {
-        case "fwhm", "ecc", "snr", "exp", "stars", "frames": return .trailing
+        case "fwhm", "fwhm_arcsec", "ecc", "snr", "exp", "stars", "frames": return .trailing
         default: return .leading
         }
     }
@@ -634,7 +638,7 @@ struct ArchiveTableView: View {
     // Monospaced digits keep numbers and dates vertically aligned across rows.
     private static func cellFont(for column: String) -> Font {
         switch column {
-        case "fwhm", "ecc", "snr", "exp", "stars", "frames", "date", "added", "created":
+        case "fwhm", "fwhm_arcsec", "ecc", "snr", "exp", "stars", "frames", "date", "added", "created":
             return .system(size: 11).monospacedDigit()
         default:
             return .system(size: 11)
@@ -645,7 +649,7 @@ struct ArchiveTableView: View {
         switch column {
         case "type", "level", "filter":       return 70
         case "diagnostic":                    return 140
-        case "exp", "fwhm", "ecc", "frames": return 60
+        case "exp", "fwhm", "fwhm_arcsec", "ecc", "frames": return 60
         case "stars":                         return 56
         case "date":                          return 165
         case "added", "created":              return 150
@@ -661,7 +665,7 @@ struct ArchiveTableView: View {
         switch column {
         case "type", "level", "filter":       return 50
         case "diagnostic":                    return 70
-        case "exp", "fwhm", "ecc", "frames": return 44
+        case "exp", "fwhm", "fwhm_arcsec", "ecc", "frames": return 44
         case "stars":                         return 44
         case "date":                          return 110
         case "added", "created":              return 90
@@ -762,11 +766,22 @@ struct ColumnComparator: SortComparator {
     let key: String
     var order: SortOrder = .forward
 
+    // Numeric value of a cell, ignoring a trailing unit (e.g. "300s" → 300).
+    // The suffix must be letters only, so date strings like "2026-06-11"
+    // don't get truncated to their leading number.
+    static func numericValue(_ value: String) -> Double? {
+        if let d = Double(value) { return d }
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard let unitStart = trimmed.firstIndex(where: { $0.isLetter }) else { return nil }
+        guard trimmed[unitStart...].allSatisfy({ $0.isLetter || $0.isWhitespace }) else { return nil }
+        return Double(trimmed[..<unitStart].trimmingCharacters(in: .whitespaces))
+    }
+
     func compare(_ lhs: ArchiveRow, _ rhs: ArchiveRow) -> ComparisonResult {
         let lv = lhs.values[key] ?? ""
         let rv = rhs.values[key] ?? ""
         let result: ComparisonResult
-        if let ln = Double(lv), let rn = Double(rv) {
+        if let ln = Self.numericValue(lv), let rn = Self.numericValue(rv) {
             result = ln < rn ? .orderedAscending : ln > rn ? .orderedDescending : .orderedSame
         } else {
             result = lv.localizedStandardCompare(rv)
@@ -1124,7 +1139,8 @@ private struct QualityRangeRow: View {
 
 struct ColumnEntry {
     let key: String
-    let label: String
+    let label: String       // shown in the column chooser
+    var header: String? = nil  // table column header; defaults to label
 }
 
 struct ColumnGroup: Identifiable {
@@ -1150,7 +1166,8 @@ final class ArchiveColumnSettings {
             ColumnEntry(key: "exp",    label: "Exposure"),
         ]),
         ColumnGroup(id: "quality", header: "Quality", entries: [
-            ColumnEntry(key: "fwhm",  label: "FWHM (Median)"),
+            ColumnEntry(key: "fwhm",        label: "Mean FWHM [px]", header: "FWHM (Mean)"),
+            ColumnEntry(key: "fwhm_arcsec", label: "Mean FWHM [\"]", header: "FWHM (Mean)"),
             ColumnEntry(key: "ecc",   label: "Eccentricity"),
             ColumnEntry(key: "stars", label: "Number of Stars"),
         ]),

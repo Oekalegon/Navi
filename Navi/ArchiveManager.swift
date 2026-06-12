@@ -416,6 +416,7 @@ final class ArchiveManager {
                 "excluded": m.excluded
             ]
             if let v = m.frame.medianFWHM       { d["fwhm"] = v }
+            if let v = m.frame.medianFWHMArcsec { d["fwhm_arcsec"] = v }
             if let v = m.frame.starCount         { d["stars"] = v }
             if let v = m.frame.medianEccentricity { d["ecc"] = v }
             if let r = m.excludedReason          { d["excluded_reason"] = r }
@@ -487,6 +488,7 @@ final class ArchiveManager {
         if let v = f.exposureTime        { d["exp"] = v }
         if let v = f.starCount           { d["stars"] = v }
         if let v = f.medianFWHM          { d["fwhm"] = v }
+        if let v = f.medianFWHMArcsec    { d["fwhm_arcsec"] = v }
         if let v = f.medianEccentricity  { d["ecc"] = v }
         if f.rejected                    { d["rejected"] = "true" }
         return d
@@ -511,6 +513,7 @@ final class ArchiveManager {
             d["date"] = tableDate.string(from: fs.createdAt)
         }
         if let v = fs.medianFWHM     { d["fwhm"] = v }
+        if let v = fs.medianFWHMArcsec { d["fwhm_arcsec"] = v }
         if let v = fs.medianStarCount { d["stars"] = v }
         return d
     }
