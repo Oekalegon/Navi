@@ -30,7 +30,10 @@ struct FrameDestination: Identifiable {
 /// the new scene, whose ContentView adopts the staged manager.
 ///
 /// Not @Observable on purpose: every use happens inside an action handler
-/// (menu click, selection change), never during a view update.
+/// (menu click, selection change), never during a view update. @MainActor is
+/// explicit rather than relying on the target's default-isolation setting, so
+/// the contract survives a move to another target or package.
+@MainActor
 final class WindowRegistry {
     static let shared = WindowRegistry()
 
