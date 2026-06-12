@@ -291,9 +291,32 @@ private struct ArchiveNameCell: View {
         let name = (row.values["name"] ?? "").trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { return name }
         let level = (row.values["level"] ?? "").capitalized
-        let parts = [row.values["object"] ?? "", row.values["filter"] ?? "", level]
-            .filter { !$0.isEmpty }
-        return parts.joined(separator: " ")
+        let filter = row.values["filter"] ?? ""
+        let parts: [String]
+        switch (row.values["type"] ?? "").lowercased() {
+        case "bias":
+            parts = [level, "Bias"]
+        case "dark":
+            parts = [exposureLabel, temperatureLabel, level, "Dark"]
+        case "darkflat", "dark-flat", "dark flat":
+            parts = [temperatureLabel, level, "DarkFlat"]
+        case "flat":
+            parts = [filter, level, "Flat"]
+        default:
+            parts = [row.values["object"] ?? "", filter, level]
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    private var exposureLabel: String {
+        guard let v = row.values["exp"],
+              let d = ColumnComparator.numericValue(v) else { return "" }
+        return String(format: "%gs", d)
+    }
+
+    private var temperatureLabel: String {
+        guard let v = row.values["temp"], let d = Double(v) else { return "" }
+        return String(format: "%g°C", d)
     }
 }
 

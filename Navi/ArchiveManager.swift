@@ -521,6 +521,7 @@ final class ArchiveManager {
             d["date"] = "—"
         }
         if let v = f.exposureTime        { d["exp"] = v }
+        if let v = f.temperature         { d["temp"] = v }
         if let v = f.starCount           { d["stars"] = v }
         if let v = f.medianFWHM          { d["fwhm"] = v }
         if let v = f.medianFWHMArcsec    { d["fwhm_arcsec"] = v }

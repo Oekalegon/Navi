@@ -46,7 +46,8 @@ struct ArchiveViewerContent: Equatable {
 
     // "rejected" stays in the row values (the icon and reject toggle read it)
     // but is not shown as a column: the frame icon already conveys it.
-    private static let hiddenColumns: Set<String> = ["id", "rejected"]
+    // "temp" is only used to construct display names for calibration frames.
+    private static let hiddenColumns: Set<String> = ["id", "rejected", "temp"]
 
     static func parse(toolName: String, content: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
