@@ -49,7 +49,7 @@ struct ArchiveViewerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             guard paneManager.archiveContent == nil else { return }
-            await loadRecentFrames()
+            await loadAllFrames()
         }
         .task(id: paneManager.archiveFilter) {
             await refreshFilterBase()
@@ -59,7 +59,7 @@ struct ArchiveViewerView: View {
         }
         .task(id: ArchiveManager.shared.importVersion) {
             guard ArchiveManager.shared.importVersion > 0 else { return }
-            await loadRecentFrames()
+            await loadAllFrames()
             await ArchiveManager.shared.refreshDiskUsage()
         }
         .onChange(of: paneManager.archiveContent?.toolName) { _, _ in
@@ -182,14 +182,14 @@ struct ArchiveViewerView: View {
             .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")
 
             Button {
-                Task { await loadRecentFrames() }
+                Task { await loadAllFrames() }
             } label: {
                 Image(systemName: "clock")
                     .font(.system(size: 12))
             }
             .buttonStyle(.plain)
             .disabled(isLoadingRecent)
-            .help("Show recent frames")
+            .help("Show all frames")
 
             Button {
                 showImportPanel()
@@ -429,16 +429,18 @@ struct ArchiveViewerView: View {
         }
     }
 
-    private func loadRecentFrames() async {
+    // Shows every frame in the archive, sorted by added date (newest first).
+    private func loadAllFrames() async {
         guard !isLoadingRecent else { return }
         isLoadingRecent = true
         defer { isLoadingRecent = false }
         do {
             let result = try await ArchiveManager.shared.callTool(
                 name: "archive_recent",
-                arguments: [:]
+                arguments: ["limit": 0]   // 0 = no limit
             )
-            let content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
+            var content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
+            content.title = "All Frames"
             paneManager.navigateArchiveTo(content: content)
         } catch {
             // Archive not connected or unavailable — leave content as-is
