@@ -20,6 +20,7 @@ struct InfoPanelView: View {
     @State private var archiveItems: [InfoItem] = []
     @State private var qualityItems: [InfoItem] = []
     @State private var provenanceEntries: [ProvenanceEntry] = []
+    @State private var suppressedQualityKeywords: Set<String> = []
     @State private var frameTitle: String? = nil
     @State private var loadError: String? = nil
     @State private var isLoading = false
@@ -86,12 +87,30 @@ struct InfoPanelView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                     }
-                    ForEach(headerSections.filter { provenanceEntries.isEmpty || $0.group != .processing },
-                            id: \.group) { section in
+                    ForEach(headerSections.filter {
+                                (provenanceEntries.isEmpty || $0.group != .processing) &&
+                                $0.group != .quality
+                            }, id: \.group) { section in
                         sectionHeader(section.group.rawValue)
                         ForEach(section.entries, id: \.keyword) { entry in
                             InfoRow(label: entry.displayName, value: entry.displayValue,
                                     detail: entry.keyword)
+                        }
+                        if section.group == .camera {
+                            let fitsQuality = headerSections.first { $0.group == .quality }
+                            if fitsQuality != nil || !qualityItems.isEmpty {
+                                sectionHeader("Quality")
+                                if let fq = fitsQuality {
+                                    ForEach(fq.entries.filter { !suppressedQualityKeywords.contains($0.keyword) },
+                                            id: \.keyword) { entry in
+                                        InfoRow(label: entry.displayName, value: entry.displayValue,
+                                                detail: entry.keyword)
+                                    }
+                                }
+                                ForEach(qualityItems) { item in
+                                    InfoRow(label: item.label, value: item.value)
+                                }
+                            }
                         }
                     }
                     if !archiveItems.isEmpty {
@@ -110,12 +129,6 @@ struct InfoPanelView: View {
                             } else {
                                 InfoRow(label: entry.label, value: entry.value)
                             }
-                        }
-                    }
-                    if !qualityItems.isEmpty {
-                        sectionHeader("Quality")
-                        ForEach(qualityItems) { item in
-                            InfoRow(label: item.label, value: item.value)
                         }
                     }
                 }
@@ -152,7 +165,7 @@ struct InfoPanelView: View {
     private func load() async {
         guard let url = paneManager.infoURL else {
             headerSections = []; archiveItems = []; qualityItems = []; provenanceEntries = []
-            frameTitle = nil; loadError = nil
+            suppressedQualityKeywords = []; frameTitle = nil; loadError = nil
             return
         }
         isLoading = true
@@ -172,6 +185,7 @@ struct InfoPanelView: View {
         headerSections = FITSKeywordCatalog.groupedSections(from: metadata)
         archiveItems = Self.archiveInfo(frame: frame, header: metadata)
         qualityItems = Self.qualityInfo(frame: frame)
+        suppressedQualityKeywords = frame.map(Self.suppressedQualityKeywords) ?? []
         provenanceEntries = frame != nil ? await loadProvenance(frame: frame!) : []
         frameTitle = frame.flatMap(Self.displayName) ?? url.lastPathComponent
     }
@@ -181,7 +195,10 @@ struct InfoPanelView: View {
               !inputs.isEmpty else { return [] }
         var entries: [ProvenanceEntry] = []
         entries.append(ProvenanceEntry(label: "Pipeline", value: Self.formatSnakeCase(run.pipelineID)))
-        for (key, value) in run.parameters.sorted(by: { $0.key < $1.key }) {
+        let params = run.parameters.isEmpty
+            ? ArchiveManager.shared.pipelineDefaultParameters(id: run.pipelineID)
+            : run.parameters
+        for (key, value) in params.sorted(by: { $0.key < $1.key }) {
             entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
         }
         entries.append(ProvenanceEntry(label: "Input frames", value: "\(inputs.count)"))
@@ -214,6 +231,17 @@ struct InfoPanelView: View {
                 paneManager.showArchiveViewer(content: content)
             } catch {}
         }
+    }
+
+    private static func suppressedQualityKeywords(for frame: ArchivedFrame) -> Set<String> {
+        var s: Set<String> = []
+        if frame.starCount           != nil { s.formUnion(["NSTARS"]) }
+        if frame.saturatedStarCount  != nil { s.formUnion(["SATSTARS"]) }
+        if frame.medianEccentricity  != nil { s.formUnion(["MEDECC", "MEANECC"]) }
+        if frame.medianFWHM          != nil { s.formUnion(["MEDFWHM", "MEANFWHM", "FWHM"]) }
+        if frame.backgroundNoise     != nil ||
+           frame.backgroundNoiseElectrons != nil { s.formUnion(["BACKNOIS", "SKY_BKG"]) }
+        return s
     }
 
     private static func formatSnakeCase(_ s: String) -> String {

@@ -193,6 +193,15 @@ final class ArchiveManager {
         }
     }
 
+    func pipelineDefaultParameters(id: String) -> [String: String] {
+        guard let pipeline = PipelineRegistry.shared.get(id: id) else { return [:] }
+        let paramSpecs: [String: ParameterSpec] = pipeline.steps
+            .flatMap { $0.parameters }
+            .filter { $0.from != nil }
+            .reduce(into: [:]) { acc, spec in if acc[spec.from!] == nil { acc[spec.from!] = spec } }
+        return paramSpecs.compactMapValues { $0.defaultValue?.stringValue }
+    }
+
     func processingRun(for frame: ArchivedFrame) async -> (run: ArchivedProcessingRun, inputs: [ProcessingRunInputRef])? {
         do {
             return try await archive?.processingRun(for: frame)
@@ -950,7 +959,19 @@ extension ArchiveManager {
             let refDate  = timestamps.max().flatMap { iso8601.string(from: $0) }
             let dateBeg  = timestamps.min().flatMap { iso8601.string(from: $0) }
             let dateEnd  = timestamps.max().flatMap { iso8601.string(from: $0) }
-            let paramMap = parameters.reduce(into: [String: String]()) { $0[$1.key] = $1.value.stringValue }
+            // Merge explicit parameters with pipeline defaults so the stored run
+            // captures the full effective configuration, not just overrides.
+            var fullParameters = parameters
+            if let pipeline = PipelineRegistry.shared.get(id: pipelineID) {
+                let paramSpecs: [String: ParameterSpec] = pipeline.steps
+                    .flatMap { $0.parameters }
+                    .filter { $0.from != nil }
+                    .reduce(into: [:]) { acc, spec in if acc[spec.from!] == nil { acc[spec.from!] = spec } }
+                for (key, spec) in paramSpecs where fullParameters[key] == nil {
+                    if let def = spec.defaultValue { fullParameters[key] = def }
+                }
+            }
+            let paramMap = fullParameters.reduce(into: [String: String]()) { $0[$1.key] = $1.value.stringValue }
             let run      = try await archive.recordProcessingRun(pipelineID: pipelineID, parameters: paramMap, inputs: runInputs)
 
             var archivedIDs: [String] = []
