@@ -19,6 +19,7 @@ struct InfoPanelView: View {
     @State private var headerSections: [FITSHeaderSection] = []
     @State private var archiveItems: [InfoItem] = []
     @State private var qualityItems: [InfoItem] = []
+    @State private var provenanceEntries: [ProvenanceEntry] = []
     @State private var frameTitle: String? = nil
     @State private var loadError: String? = nil
     @State private var isLoading = false
@@ -27,6 +28,13 @@ struct InfoPanelView: View {
         let label: String
         let value: String
         var id: String { label }
+    }
+
+    struct ProvenanceEntry: Identifiable {
+        let id = UUID()
+        let label: String
+        let value: String
+        var framesetID: String? = nil
     }
 
     var body: some View {
@@ -78,7 +86,8 @@ struct InfoPanelView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                     }
-                    ForEach(headerSections, id: \.group) { section in
+                    ForEach(headerSections.filter { provenanceEntries.isEmpty || $0.group != .processing },
+                            id: \.group) { section in
                         sectionHeader(section.group.rawValue)
                         ForEach(section.entries, id: \.keyword) { entry in
                             InfoRow(label: entry.displayName, value: entry.displayValue,
@@ -89,6 +98,18 @@ struct InfoPanelView: View {
                         sectionHeader("Archive")
                         ForEach(archiveItems) { item in
                             InfoRow(label: item.label, value: item.value)
+                        }
+                    }
+                    if !provenanceEntries.isEmpty {
+                        sectionHeader("Provenance")
+                        ForEach(provenanceEntries) { entry in
+                            if let fsID = entry.framesetID {
+                                ProvenanceLinkRow(label: entry.label, value: entry.value) {
+                                    openFrameset(id: fsID)
+                                }
+                            } else {
+                                InfoRow(label: entry.label, value: entry.value)
+                            }
                         }
                     }
                     if !qualityItems.isEmpty {
@@ -130,7 +151,7 @@ struct InfoPanelView: View {
 
     private func load() async {
         guard let url = paneManager.infoURL else {
-            headerSections = []; archiveItems = []; qualityItems = []
+            headerSections = []; archiveItems = []; qualityItems = []; provenanceEntries = []
             frameTitle = nil; loadError = nil
             return
         }
@@ -151,7 +172,57 @@ struct InfoPanelView: View {
         headerSections = FITSKeywordCatalog.groupedSections(from: metadata)
         archiveItems = Self.archiveInfo(frame: frame, header: metadata)
         qualityItems = Self.qualityInfo(frame: frame)
+        provenanceEntries = frame != nil ? await loadProvenance(frame: frame!) : []
         frameTitle = frame.flatMap(Self.displayName) ?? url.lastPathComponent
+    }
+
+    private func loadProvenance(frame: ArchivedFrame) async -> [ProvenanceEntry] {
+        guard let (run, inputs) = await ArchiveManager.shared.processingRun(for: frame),
+              !inputs.isEmpty else { return [] }
+        var entries: [ProvenanceEntry] = []
+        entries.append(ProvenanceEntry(label: "Pipeline", value: Self.formatSnakeCase(run.pipelineID)))
+        for (key, value) in run.parameters.sorted(by: { $0.key < $1.key }) {
+            entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
+        }
+        entries.append(ProvenanceEntry(label: "Input frames", value: "\(inputs.count)"))
+        let inputIDs = inputs.compactMap(\.frameID)
+        guard !inputIDs.isEmpty else { return entries }
+        var tally: [UUID: Int] = [:]
+        for fid in inputIDs {
+            for fsID in await ArchiveManager.shared.frameSetIDs(forFrame: fid) {
+                tally[fsID, default: 0] += 1
+            }
+        }
+        let threshold = max(1, inputIDs.count / 2)
+        let sourceIDs = tally.filter { $0.value >= threshold }.keys.sorted { $0.uuidString < $1.uuidString }
+        for fsID in sourceIDs {
+            guard let fs = await ArchiveManager.shared.frameSet(id: fsID) else { continue }
+            let name = fs.name.isEmpty ? Self.framesetLabel(fs) : fs.name
+            entries.append(ProvenanceEntry(label: "Source", value: name, framesetID: fsID.uuidString))
+        }
+        return entries
+    }
+
+    private func openFrameset(id: String) {
+        Task {
+            do {
+                let result = try await ArchiveManager.shared.callTool(
+                    name: "archive_frameset_get",
+                    arguments: ["id": id]
+                )
+                let content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+                paneManager.showArchiveViewer(content: content)
+            } catch {}
+        }
+    }
+
+    private static func formatSnakeCase(_ s: String) -> String {
+        s.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
+    }
+
+    private static func framesetLabel(_ fs: ArchivedFrameSet) -> String {
+        let parts = [fs.objectName, fs.filter].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? "Frameset" : parts.joined(separator: " ")
     }
 
     // Same naming convention as the FITS viewer header.
@@ -268,6 +339,33 @@ private struct InfoRow: View {
                 .font(.caption)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
+    }
+}
+
+private struct ProvenanceLinkRow: View {
+    let label: String
+    let value: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Button(action: action) {
+                HStack(spacing: 3) {
+                    Text(value)
+                    Image(systemName: "arrow.right.circle")
+                }
+                .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.link)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)

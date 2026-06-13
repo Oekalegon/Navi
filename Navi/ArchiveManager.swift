@@ -193,6 +193,33 @@ final class ArchiveManager {
         }
     }
 
+    func processingRun(for frame: ArchivedFrame) async -> (run: ArchivedProcessingRun, inputs: [ProcessingRunInputRef])? {
+        do {
+            return try await archive?.processingRun(for: frame)
+        } catch {
+            logger.error("Failed to fetch processing run for frame \(frame.id): \(error)")
+            return nil
+        }
+    }
+
+    func frameSetIDs(forFrame frameID: UUID) async -> [UUID] {
+        do {
+            return try await archive?.frameSetIDs(forFrame: frameID) ?? []
+        } catch {
+            logger.error("Failed to fetch frameset IDs for frame \(frameID): \(error)")
+            return []
+        }
+    }
+
+    func frameSet(id: UUID) async -> ArchivedFrameSet? {
+        do {
+            return try await archive?.frameSet(id: id)
+        } catch {
+            logger.error("Failed to fetch frameset \(id): \(error)")
+            return nil
+        }
+    }
+
     func updateStretchSettings(
         _ settings: StretchSettings?,
         sliderBlackNorm: Float,
