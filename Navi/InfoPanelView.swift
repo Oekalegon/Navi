@@ -36,6 +36,7 @@ struct InfoPanelView: View {
         let label: String
         let value: String
         var framesetID: String? = nil
+        var isSubheader: Bool = false
     }
 
     var body: some View {
@@ -122,7 +123,9 @@ struct InfoPanelView: View {
                     if !provenanceEntries.isEmpty {
                         sectionHeader("Provenance")
                         ForEach(provenanceEntries) { entry in
-                            if let fsID = entry.framesetID {
+                            if entry.isSubheader {
+                                provenanceSubheader(entry.label)
+                            } else if let fsID = entry.framesetID {
                                 ProvenanceLinkRow(label: entry.label, value: entry.value) {
                                     openFrameset(id: fsID)
                                 }
@@ -136,6 +139,16 @@ struct InfoPanelView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    @ViewBuilder
+    private func provenanceSubheader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 1)
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -195,27 +208,65 @@ struct InfoPanelView: View {
               !inputs.isEmpty else { return [] }
         var entries: [ProvenanceEntry] = []
         entries.append(ProvenanceEntry(label: "Pipeline", value: Self.formatSnakeCase(run.pipelineID)))
+        entries.append(ProvenanceEntry(label: "Input frames", value: "\(inputs.count)"))
+
+        let inputIDs = inputs.compactMap(\.frameID)
+        if !inputIDs.isEmpty {
+            var tally: [UUID: Int] = [:]
+            for fid in inputIDs {
+                for fsID in await ArchiveManager.shared.frameSetIDs(forFrame: fid) {
+                    tally[fsID, default: 0] += 1
+                }
+            }
+            let threshold = max(1, inputIDs.count / 2)
+            let sourceIDs = tally.filter { $0.value >= threshold }.keys.sorted { $0.uuidString < $1.uuidString }
+            for fsID in sourceIDs {
+                guard let fs = await ArchiveManager.shared.frameSet(id: fsID) else { continue }
+                let name = fs.name.isEmpty ? Self.framesetLabel(fs) : fs.name
+                entries.append(ProvenanceEntry(label: "Source", value: name, framesetID: fsID.uuidString))
+            }
+        }
+
         let params = run.parameters.isEmpty
             ? ArchiveManager.shared.pipelineDefaultParameters(id: run.pipelineID)
             : run.parameters
-        for (key, value) in params.sorted(by: { $0.key < $1.key }) {
-            entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
-        }
-        entries.append(ProvenanceEntry(label: "Input frames", value: "\(inputs.count)"))
-        let inputIDs = inputs.compactMap(\.frameID)
-        guard !inputIDs.isEmpty else { return entries }
-        var tally: [UUID: Int] = [:]
-        for fid in inputIDs {
-            for fsID in await ArchiveManager.shared.frameSetIDs(forFrame: fid) {
-                tally[fsID, default: 0] += 1
+
+        // Group parameters by the pipeline step that declares them.
+        // Each step's ParameterSpec.from is the global key used in run.parameters.
+        var assignedKeys = Set<String>()
+        var groups: [(name: String, rows: [(key: String, value: String)])] = []
+        if let pipeline = PipelineRegistry.shared.get(id: run.pipelineID) {
+            for step in pipeline.steps {
+                var stepRows: [(String, String)] = []
+                for spec in step.parameters {
+                    guard let key = spec.from, !assignedKeys.contains(key),
+                          let value = params[key] else { continue }
+                    assignedKeys.insert(key)
+                    stepRows.append((key, value))
+                }
+                if !stepRows.isEmpty {
+                    let name = step.name ?? Self.formatSnakeCase(step.id)
+                    groups.append((name: name, rows: stepRows.sorted { $0.0 < $1.0 }))
+                }
             }
         }
-        let threshold = max(1, inputIDs.count / 2)
-        let sourceIDs = tally.filter { $0.value >= threshold }.keys.sorted { $0.uuidString < $1.uuidString }
-        for fsID in sourceIDs {
-            guard let fs = await ArchiveManager.shared.frameSet(id: fsID) else { continue }
-            let name = fs.name.isEmpty ? Self.framesetLabel(fs) : fs.name
-            entries.append(ProvenanceEntry(label: "Source", value: name, framesetID: fsID.uuidString))
+        let unclaimed = params.filter { !assignedKeys.contains($0.key) }
+                              .sorted { $0.key < $1.key }
+
+        if groups.count > 1 {
+            for group in groups {
+                entries.append(ProvenanceEntry(label: group.name, value: "", isSubheader: true))
+                for (key, value) in group.rows {
+                    entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
+                }
+            }
+            for (key, value) in unclaimed {
+                entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
+            }
+        } else {
+            for (key, value) in params.sorted(by: { $0.key < $1.key }) {
+                entries.append(ProvenanceEntry(label: Self.formatSnakeCase(key), value: value))
+            }
         }
         return entries
     }
