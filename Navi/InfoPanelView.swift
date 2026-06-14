@@ -549,15 +549,17 @@ private struct VersionDiffPopover: View {
     // tends to be the most descriptive.
     static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
         // Two parameters with the same new value are treated as aliases of the
-        // same setting (e.g. "method" and "stacking_method" both set to "kappa_sigma").
-        // We keep the most informative entry: prefer one where both from and to are
-        // present, then prefer the longer key as more descriptive.
+        // same setting (e.g. "method", "combine_method", "stacking_method" all
+        // set to "kappa_sigma"). We keep the most informative entry: prefer one
+        // where both from and to are present, then prefer the shorter key — the
+        // canonical pipeline parameter (declared in the YAML `from:` field) tends
+        // to be the most concise name; longer variants are usually AI-generated extras.
         var seen: [String: FrameDiff.ParameterChange] = [:]
         let sorted = diff.parameterChanges.sorted {
             let lBoth = $0.from != nil && $0.to != nil
             let rBoth = $1.from != nil && $1.to != nil
             if lBoth != rBoth { return lBoth }
-            return $0.key.count > $1.key.count
+            return $0.key.count < $1.key.count
         }
         for change in sorted {
             let key = change.to?.description ?? "\0nil"
