@@ -489,7 +489,7 @@ private struct VersionRow: View {
                 .foregroundStyle(.primary)
                 .frame(width: 110, alignment: .leading)
             Text(entry.frame.addedAt.formatted(date: .abbreviated, time: .shortened) + "  (current)")
-                .font(.caption)
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let diff = entry.diff, VersionDiffPopover.hasContent(diff, canonicalKeys: entry.canonicalParamKeys) {
@@ -523,6 +523,7 @@ private struct VersionLinkRow: View {
             Button(action: action) {
                 HStack(spacing: 3) {
                     Text(entry.frame.addedAt.formatted(date: .abbreviated, time: .shortened))
+                        .monospacedDigit()
                     Image(systemName: "arrow.right.circle")
                 }
                 .font(.caption)
