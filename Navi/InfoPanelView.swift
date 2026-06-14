@@ -485,7 +485,7 @@ private struct VersionRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let diff = entry.diff {
+            if let diff = entry.diff, VersionDiffPopover.hasContent(diff) {
                 Button { showDiff = true } label: {
                     Image(systemName: "info.circle")
                         .font(.caption)
@@ -523,7 +523,7 @@ private struct VersionLinkRow: View {
             .buttonStyle(.plain)
             .foregroundStyle(.link)
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let diff = entry.diff {
+            if let diff = entry.diff, VersionDiffPopover.hasContent(diff) {
                 Button { showDiff = true } label: {
                     Image(systemName: "info.circle")
                         .font(.caption)
@@ -543,13 +543,47 @@ private struct VersionLinkRow: View {
 private struct VersionDiffPopover: View {
     let diff: FrameDiff
 
+    // Parameters that differ but carry the same value change are deduplicated:
+    // the same stacking method stored under "method", "combine_method", and
+    // "stacking_method" should appear only once. We keep the longest key as it
+    // tends to be the most descriptive.
+    static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
+        var seen: Set<String> = []
+        var result: [FrameDiff.ParameterChange] = []
+        for change in diff.parameterChanges.sorted(by: { $0.key.count > $1.key.count }) {
+            let signature = "\(change.from?.description ?? "")→\(change.to?.description ?? "")"
+            if seen.insert(signature).inserted {
+                result.append(change)
+            }
+        }
+        return result.sorted { $0.key < $1.key }
+    }
+
+    static func hasContent(_ diff: FrameDiff) -> Bool {
+        let q = diff.quality
+        let hasQuality =
+            meaningfulChange(q.fwhm.from, q.fwhm.to, threshold: 0.005) ||
+            (q.starCount.from != nil && q.starCount.from != q.starCount.to) ||
+            meaningfulChange(q.eccentricity.from, q.eccentricity.to, threshold: 0.005) ||
+            meaningfulChange(q.backgroundNoise.from, q.backgroundNoise.to, threshold: 0.01)
+        return !deduplicatedParamChanges(diff).isEmpty ||
+               diff.inputsAdded.count != diff.inputsRemoved.count ||
+               hasQuality
+    }
+
+    private static func meaningfulChange(_ from: Double?, _ to: Double?, threshold: Double) -> Bool {
+        guard let from, let to else { return false }
+        return abs(from - to) > threshold
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !diff.parameterChanges.isEmpty {
+            let paramChanges = Self.deduplicatedParamChanges(diff)
+            if !paramChanges.isEmpty {
                 popoverSection("Parameters")
-                ForEach(diff.parameterChanges.sorted { $0.key < $1.key }, id: \.key) { change in
+                ForEach(paramChanges, id: \.key) { change in
                     popoverRow(
-                        label: InfoPanelView.formatSnakeCase(change.key),
+                        label: infoPanelFormatSnakeCase(change.key),
                         value: "\(change.from?.description ?? "—") → \(change.to?.description ?? "—")"
                     )
                 }
@@ -559,18 +593,19 @@ private struct VersionDiffPopover: View {
             if inputDelta != 0 {
                 popoverSection("Inputs")
                 let sign = inputDelta > 0 ? "+" : ""
-                popoverRow(
-                    label: "Frames",
-                    value: "\(sign)\(inputDelta)"
-                )
+                popoverRow(label: "Frames", value: "\(sign)\(inputDelta)")
             }
 
             let q = diff.quality
             let qualityRows: [(String, String)] = [
-                q.starCount.from != q.starCount.to ? ("Stars", "\(q.starCount.from.map(String.init) ?? "—") → \(q.starCount.to.map(String.init) ?? "—")") : nil,
-                hasMeaningfulChange(q.fwhm.from, q.fwhm.to, threshold: 0.005) ? ("FWHM", String(format: "%.2f → %.2f px", q.fwhm.from!, q.fwhm.to!)) : nil,
-                hasMeaningfulChange(q.eccentricity.from, q.eccentricity.to, threshold: 0.005) ? ("Eccentricity", String(format: "%.3f → %.3f", q.eccentricity.from!, q.eccentricity.to!)) : nil,
-                hasMeaningfulChange(q.backgroundNoise.from, q.backgroundNoise.to, threshold: 0.01) ? ("Background", String(format: "%.1f → %.1f", q.backgroundNoise.from!, q.backgroundNoise.to!)) : nil
+                (q.starCount.from != nil && q.starCount.from != q.starCount.to) ?
+                    ("Stars", "\(q.starCount.from.map(String.init) ?? "—") → \(q.starCount.to.map(String.init) ?? "—")") : nil,
+                Self.meaningfulChange(q.fwhm.from, q.fwhm.to, threshold: 0.005) ?
+                    ("FWHM", String(format: "%.2f → %.2f px", q.fwhm.from!, q.fwhm.to!)) : nil,
+                Self.meaningfulChange(q.eccentricity.from, q.eccentricity.to, threshold: 0.005) ?
+                    ("Eccentricity", String(format: "%.3f → %.3f", q.eccentricity.from!, q.eccentricity.to!)) : nil,
+                Self.meaningfulChange(q.backgroundNoise.from, q.backgroundNoise.to, threshold: 0.01) ?
+                    ("Background", String(format: "%.1f → %.1f", q.backgroundNoise.from!, q.backgroundNoise.to!)) : nil
             ].compactMap { $0 }
             if !qualityRows.isEmpty {
                 popoverSection("Quality")
@@ -604,11 +639,6 @@ private struct VersionDiffPopover: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 1)
-    }
-
-    private func hasMeaningfulChange(_ from: Double?, _ to: Double?, threshold: Double) -> Bool {
-        guard let from, let to else { return false }
-        return abs(from - to) > threshold
     }
 }
 
