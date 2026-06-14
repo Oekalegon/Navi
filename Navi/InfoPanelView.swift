@@ -346,13 +346,10 @@ struct InfoPanelView: View {
     private static func diffSummaryLines(_ diff: FrameDiff) -> [String] {
         var lines: [String] = []
 
-        let meaningfulChanges = diff.parameterChanges
-            .filter { !numericallyEqual($0.from, $0.to) }
-            .sorted { $0.key < $1.key }
-        if !meaningfulChanges.isEmpty {
-            let parts = meaningfulChanges.map { change in
-                let from = change.from ?? "—"
-                let to   = change.to   ?? "—"
+        if !diff.parameterChanges.isEmpty {
+            let parts = diff.parameterChanges.sorted { $0.key < $1.key }.map { change in
+                let from = change.from?.description ?? "—"
+                let to   = change.to?.description   ?? "—"
                 return "\(formatSnakeCase(change.key)): \(from) → \(to)"
             }
             lines.append(parts.joined(separator: ", "))
@@ -380,16 +377,6 @@ struct InfoPanelView: View {
         }
 
         return lines
-    }
-
-    private static func numericallyEqual(_ a: String?, _ b: String?) -> Bool {
-        switch (a, b) {
-        case (nil, nil): return true
-        case (nil, _), (_, nil): return false
-        case let (av?, bv?):
-            if let da = Double(av), let db = Double(bv) { return da == db }
-            return av == bv
-        }
     }
 
     private static func suppressedQualityKeywords(for frame: ArchivedFrame) -> Set<String> {
