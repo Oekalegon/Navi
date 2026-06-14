@@ -276,9 +276,8 @@ struct InfoPanelView: View {
             }
         }
 
-        let params = run.parameters.isEmpty
-            ? ArchiveManager.shared.pipelineDefaultParameters(id: run.pipelineID)
-            : run.parameters
+        var params = ArchiveManager.shared.pipelineDefaultParameters(id: run.pipelineID)
+        for (key, value) in run.parameters { params[key] = value }
 
         // Group parameters by the pipeline step that declares them.
         // Each step's ParameterSpec.from is the global key used in run.parameters.
