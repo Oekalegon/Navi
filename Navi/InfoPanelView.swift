@@ -548,15 +548,22 @@ private struct VersionDiffPopover: View {
     // "stacking_method" should appear only once. We keep the longest key as it
     // tends to be the most descriptive.
     static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
-        var seen: Set<String> = []
-        var result: [FrameDiff.ParameterChange] = []
-        for change in diff.parameterChanges.sorted(by: { $0.key.count > $1.key.count }) {
-            let signature = "\(change.from?.description ?? "")→\(change.to?.description ?? "")"
-            if seen.insert(signature).inserted {
-                result.append(change)
-            }
+        // Two parameters with the same new value are treated as aliases of the
+        // same setting (e.g. "method" and "stacking_method" both set to "kappa_sigma").
+        // We keep the most informative entry: prefer one where both from and to are
+        // present, then prefer the longer key as more descriptive.
+        var seen: [String: FrameDiff.ParameterChange] = [:]
+        let sorted = diff.parameterChanges.sorted {
+            let lBoth = $0.from != nil && $0.to != nil
+            let rBoth = $1.from != nil && $1.to != nil
+            if lBoth != rBoth { return lBoth }
+            return $0.key.count > $1.key.count
         }
-        return result.sorted { $0.key < $1.key }
+        for change in sorted {
+            let key = change.to?.description ?? "\0nil"
+            if seen[key] == nil { seen[key] = change }
+        }
+        return seen.values.sorted { $0.key < $1.key }
     }
 
     static func hasContent(_ diff: FrameDiff) -> Bool {
