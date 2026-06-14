@@ -543,29 +543,8 @@ private struct VersionLinkRow: View {
 private struct VersionDiffPopover: View {
     let diff: FrameDiff
 
-    // Parameters that differ but carry the same value change are deduplicated:
-    // the same stacking method stored under "method", "combine_method", and
-    // "stacking_method" should appear only once. We keep the longest key as it
-    // tends to be the most descriptive.
     static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
-        // Two parameters with the same new value are treated as aliases of the
-        // same setting (e.g. "method", "combine_method", "stacking_method" all
-        // set to "kappa_sigma"). We keep the most informative entry: prefer one
-        // where both from and to are present, then prefer the shorter key — the
-        // canonical pipeline parameter (declared in the YAML `from:` field) tends
-        // to be the most concise name; longer variants are usually AI-generated extras.
-        var seen: [String: FrameDiff.ParameterChange] = [:]
-        let sorted = diff.parameterChanges.sorted {
-            let lBoth = $0.from != nil && $0.to != nil
-            let rBoth = $1.from != nil && $1.to != nil
-            if lBoth != rBoth { return lBoth }
-            return $0.key.count < $1.key.count
-        }
-        for change in sorted {
-            let key = change.to?.description ?? "\0nil"
-            if seen[key] == nil { seen[key] = change }
-        }
-        return seen.values.sorted { $0.key < $1.key }
+        diff.parameterChanges.sorted { $0.key < $1.key }
     }
 
     static func hasContent(_ diff: FrameDiff) -> Bool {

@@ -986,16 +986,19 @@ extension ArchiveManager {
             let refDate  = timestamps.max().flatMap { iso8601.string(from: $0) }
             let dateBeg  = timestamps.min().flatMap { iso8601.string(from: $0) }
             let dateEnd  = timestamps.max().flatMap { iso8601.string(from: $0) }
-            // Merge explicit parameters with pipeline defaults so the stored run
-            // captures the full effective configuration, not just overrides.
-            var fullParameters = parameters
+            // Merge explicit parameters with pipeline defaults, keeping only keys
+            // declared in the pipeline spec. Unrecognised keys are dropped so that
+            // caller-supplied aliases (e.g. combine_method, stacking_method) never
+            // pollute the stored run and produce spurious diffs later.
+            var fullParameters: [String: Parameter] = [:]
             if let pipeline = PipelineRegistry.shared.get(id: pipelineID) {
                 let paramSpecs: [String: ParameterSpec] = pipeline.steps
                     .flatMap { $0.parameters }
                     .filter { $0.from != nil }
                     .reduce(into: [:]) { acc, spec in if acc[spec.from!] == nil { acc[spec.from!] = spec } }
-                for (key, spec) in paramSpecs where fullParameters[key] == nil {
-                    if let def = spec.defaultValue { fullParameters[key] = def }
+                for key in paramSpecs.keys {
+                    if let v = parameters[key] { fullParameters[key] = v }
+                    else if let def = paramSpecs[key]?.defaultValue { fullParameters[key] = def }
                 }
             }
             let paramMap = fullParameters.reduce(into: [String: String]()) { $0[$1.key] = $1.value.stringValue }
