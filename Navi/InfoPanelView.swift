@@ -544,7 +544,22 @@ private struct VersionDiffPopover: View {
     let diff: FrameDiff
 
     static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
-        diff.parameterChanges.sorted { $0.key < $1.key }
+        // Parameters landing on the same new value are aliases of the same setting
+        // (e.g. old runs stored combine_method and stacking_method alongside method).
+        // Keep the entry with the shortest key — that matches the canonical `from:`
+        // name in the pipeline YAML. Prefer entries where both from and to are
+        // present so we don't lose the "was X, now Y" context.
+        var seen: [String: FrameDiff.ParameterChange] = [:]
+        for change in diff.parameterChanges.sorted(by: {
+            let lBoth = $0.from != nil && $0.to != nil
+            let rBoth = $1.from != nil && $1.to != nil
+            if lBoth != rBoth { return lBoth }
+            return $0.key.count < $1.key.count
+        }) {
+            let signature = change.to?.description ?? "\0nil"
+            if seen[signature] == nil { seen[signature] = change }
+        }
+        return seen.values.sorted { $0.key < $1.key }
     }
 
     static func hasContent(_ diff: FrameDiff) -> Bool {
