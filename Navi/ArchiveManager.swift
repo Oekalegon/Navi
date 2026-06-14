@@ -220,6 +220,33 @@ final class ArchiveManager {
         }
     }
 
+    func frameDiff(_ frame: ArchivedFrame, predecessor: ArchivedFrame) async -> FrameDiff? {
+        do {
+            guard let archive else { return nil }
+            return try await archive.diff(frame, predecessor: predecessor)
+        } catch {
+            logger.error("Failed to compute frame diff: \(error)")
+            return nil
+        }
+    }
+
+    func fullVersionChain(for frame: ArchivedFrame) async -> [ArchivedFrame] {
+        do {
+            guard let archive else { return [frame] }
+            var head = frame
+            var visited = Set<UUID>([frame.id])
+            while true {
+                let nexts = try await archive.successors(of: head)
+                guard let next = nexts.first, !visited.contains(next.id) else { break }
+                visited.insert(next.id)
+                head = next
+            }
+            return try await archive.lineage(of: head)
+        } catch {
+            return [frame]
+        }
+    }
+
     func frameSet(id: UUID) async -> ArchivedFrameSet? {
         do {
             return try await archive?.frameSet(id: id)

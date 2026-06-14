@@ -20,6 +20,7 @@ struct InfoPanelView: View {
     @State private var archiveItems: [InfoItem] = []
     @State private var qualityItems: [InfoItem] = []
     @State private var provenanceEntries: [ProvenanceEntry] = []
+    @State private var versionEntries: [VersionEntry] = []
     @State private var suppressedQualityKeywords: Set<String> = []
     @State private var frameTitle: String? = nil
     @State private var loadError: String? = nil
@@ -37,6 +38,14 @@ struct InfoPanelView: View {
         let value: String
         var framesetID: String? = nil
         var isSubheader: Bool = false
+    }
+
+    struct VersionEntry: Identifiable {
+        let id: UUID
+        let frame: ArchivedFrame
+        let versionNumber: Int
+        let isCurrent: Bool
+        let diff: FrameDiff?  // diff between this frame and the next-older one in the chain
     }
 
     var body: some View {
@@ -134,6 +143,27 @@ struct InfoPanelView: View {
                             }
                         }
                     }
+                    if !versionEntries.isEmpty {
+                        sectionHeader("Versions")
+                        ForEach(versionEntries) { entry in
+                            if entry.isCurrent {
+                                VersionRow(entry: entry)
+                            } else {
+                                VersionLinkRow(entry: entry) { openVersion(entry.frame) }
+                            }
+                            if let lines = entry.diff.map(Self.diffSummaryLines), !lines.isEmpty {
+                                ForEach(lines, id: \.self) { line in
+                                    Text(line)
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .padding(.leading, 122)
+                                        .padding(.trailing, 12)
+                                        .padding(.vertical, 1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(.bottom, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -178,7 +208,7 @@ struct InfoPanelView: View {
     private func load() async {
         guard let url = paneManager.infoURL else {
             headerSections = []; archiveItems = []; qualityItems = []; provenanceEntries = []
-            suppressedQualityKeywords = []; frameTitle = nil; loadError = nil
+            versionEntries = []; suppressedQualityKeywords = []; frameTitle = nil; loadError = nil
             return
         }
         isLoading = true
@@ -200,7 +230,30 @@ struct InfoPanelView: View {
         qualityItems = Self.qualityInfo(frame: frame)
         suppressedQualityKeywords = frame.map(Self.suppressedQualityKeywords) ?? []
         provenanceEntries = frame != nil ? await loadProvenance(frame: frame!) : []
+        versionEntries = frame != nil ? await loadVersionChain(frame: frame!, currentPath: url.path) : []
         frameTitle = frame.flatMap(Self.displayName) ?? url.lastPathComponent
+    }
+
+    private func loadVersionChain(frame: ArchivedFrame, currentPath: String) async -> [VersionEntry] {
+        let chain = await ArchiveManager.shared.fullVersionChain(for: frame)
+        guard chain.count > 1 else { return [] }
+        var entries: [VersionEntry] = []
+        for (index, f) in chain.enumerated() {
+            let diff: FrameDiff?
+            if index + 1 < chain.count {
+                diff = await ArchiveManager.shared.frameDiff(f, predecessor: chain[index + 1])
+            } else {
+                diff = nil
+            }
+            entries.append(VersionEntry(
+                id: f.id,
+                frame: f,
+                versionNumber: chain.count - index,
+                isCurrent: f.filePath == currentPath,
+                diff: diff
+            ))
+        }
+        return entries
     }
 
     private func loadProvenance(frame: ArchivedFrame) async -> [ProvenanceEntry] {
@@ -271,6 +324,12 @@ struct InfoPanelView: View {
         return entries
     }
 
+    private func openVersion(_ frame: ArchivedFrame) {
+        let url = URL(fileURLWithPath: frame.filePath)
+        paneManager.infoURL = url
+        paneManager.showFITSViewerIfVisible(url: url)
+    }
+
     private func openFrameset(id: String) {
         Task {
             do {
@@ -281,6 +340,55 @@ struct InfoPanelView: View {
                 let content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
                 paneManager.showArchiveViewer(content: content)
             } catch {}
+        }
+    }
+
+    private static func diffSummaryLines(_ diff: FrameDiff) -> [String] {
+        var lines: [String] = []
+
+        let meaningfulChanges = diff.parameterChanges
+            .filter { !numericallyEqual($0.from, $0.to) }
+            .sorted { $0.key < $1.key }
+        if !meaningfulChanges.isEmpty {
+            let parts = meaningfulChanges.map { change in
+                let from = change.from ?? "—"
+                let to   = change.to   ?? "—"
+                return "\(formatSnakeCase(change.key)): \(from) → \(to)"
+            }
+            lines.append(parts.joined(separator: ", "))
+        }
+
+        let inputDelta = diff.inputsAdded.count - diff.inputsRemoved.count
+        if inputDelta != 0 {
+            let sign = inputDelta > 0 ? "+" : ""
+            lines.append("\(sign)\(inputDelta) input frame\(abs(inputDelta) == 1 ? "" : "s")")
+        }
+
+        let q = diff.quality
+        var qualityParts: [String] = []
+        if let from = q.fwhm.from, let to = q.fwhm.to, abs(from - to) > 0.005 {
+            qualityParts.append(String(format: "fwhm %.2f→%.2fpx", from, to))
+        }
+        if let from = q.starCount.from, let to = q.starCount.to, from != to {
+            qualityParts.append("stars \(from)→\(to)")
+        }
+        if let from = q.eccentricity.from, let to = q.eccentricity.to, abs(from - to) > 0.005 {
+            qualityParts.append(String(format: "ecc %.3f→%.3f", from, to))
+        }
+        if !qualityParts.isEmpty {
+            lines.append(qualityParts.joined(separator: ", "))
+        }
+
+        return lines
+    }
+
+    private static func numericallyEqual(_ a: String?, _ b: String?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case (nil, _), (_, nil): return false
+        case let (av?, bv?):
+            if let da = Double(av), let db = Double(bv) { return da == db }
+            return av == bv
         }
     }
 
@@ -418,6 +526,51 @@ private struct InfoRow: View {
                 .font(.caption)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
+    }
+}
+
+private struct VersionRow: View {
+    let entry: InfoPanelView.VersionEntry
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("v\(entry.versionNumber)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 110, alignment: .leading)
+            Text(entry.frame.addedAt.formatted(date: .abbreviated, time: .shortened) + "  (current)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
+    }
+}
+
+private struct VersionLinkRow: View {
+    let entry: InfoPanelView.VersionEntry
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("v\(entry.versionNumber)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Button(action: action) {
+                HStack(spacing: 3) {
+                    Text(entry.frame.addedAt.formatted(date: .abbreviated, time: .shortened))
+                    Image(systemName: "arrow.right.circle")
+                }
+                .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.link)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
