@@ -45,7 +45,8 @@ struct InfoPanelView: View {
         let frame: ArchivedFrame
         let versionNumber: Int
         let isCurrent: Bool
-        let diff: FrameDiff?  // diff between this frame and the next-older one in the chain
+        let diff: FrameDiff?
+        let canonicalParamKeys: Set<String>?  // declared `from:` keys for the pipeline; nil = unknown
     }
 
     var body: some View {
@@ -229,8 +230,13 @@ struct InfoPanelView: View {
         var entries: [VersionEntry] = []
         for (index, f) in chain.enumerated() {
             let diff: FrameDiff?
+            var canonicalKeys: Set<String>? = nil
             if index + 1 < chain.count {
                 diff = await ArchiveManager.shared.frameDiff(f, predecessor: chain[index + 1])
+                if let run = await ArchiveManager.shared.processingRun(for: f),
+                   let pipeline = PipelineRegistry.shared.get(id: run.run.pipelineID) {
+                    canonicalKeys = Set(pipeline.steps.flatMap { $0.parameters }.compactMap { $0.from })
+                }
             } else {
                 diff = nil
             }
@@ -239,7 +245,8 @@ struct InfoPanelView: View {
                 frame: f,
                 versionNumber: chain.count - index,
                 isCurrent: f.filePath == currentPath,
-                diff: diff
+                diff: diff,
+                canonicalParamKeys: canonicalKeys
             ))
         }
         return entries
@@ -485,7 +492,7 @@ private struct VersionRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let diff = entry.diff, VersionDiffPopover.hasContent(diff) {
+            if let diff = entry.diff, VersionDiffPopover.hasContent(diff, canonicalKeys: entry.canonicalParamKeys) {
                 Button { showDiff = true } label: {
                     Image(systemName: "info.circle")
                         .font(.caption)
@@ -493,7 +500,7 @@ private struct VersionRow: View {
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showDiff, arrowEdge: .trailing) {
-                    VersionDiffPopover(diff: diff)
+                    VersionDiffPopover(diff: diff, canonicalKeys: entry.canonicalParamKeys)
                 }
             }
         }
@@ -523,7 +530,7 @@ private struct VersionLinkRow: View {
             .buttonStyle(.plain)
             .foregroundStyle(.link)
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let diff = entry.diff, VersionDiffPopover.hasContent(diff) {
+            if let diff = entry.diff, VersionDiffPopover.hasContent(diff, canonicalKeys: entry.canonicalParamKeys) {
                 Button { showDiff = true } label: {
                     Image(systemName: "info.circle")
                         .font(.caption)
@@ -531,7 +538,7 @@ private struct VersionLinkRow: View {
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showDiff, arrowEdge: .trailing) {
-                    VersionDiffPopover(diff: diff)
+                    VersionDiffPopover(diff: diff, canonicalKeys: entry.canonicalParamKeys)
                 }
             }
         }
@@ -542,15 +549,18 @@ private struct VersionLinkRow: View {
 
 private struct VersionDiffPopover: View {
     let diff: FrameDiff
+    let canonicalKeys: Set<String>?
 
-    static func deduplicatedParamChanges(_ diff: FrameDiff) -> [FrameDiff.ParameterChange] {
+    static func deduplicatedParamChanges(_ diff: FrameDiff, canonicalKeys: Set<String>?) -> [FrameDiff.ParameterChange] {
         // Parameters landing on the same new value are aliases of the same setting
         // (e.g. old runs stored combine_method and stacking_method alongside method).
         // Keep the entry with the shortest key — that matches the canonical `from:`
         // name in the pipeline YAML. Prefer entries where both from and to are
         // present so we don't lose the "was X, now Y" context.
+        let changes = canonicalKeys.map { keys in diff.parameterChanges.filter { keys.contains($0.key) } }
+                      ?? diff.parameterChanges
         var seen: [String: FrameDiff.ParameterChange] = [:]
-        for change in diff.parameterChanges.sorted(by: {
+        for change in changes.sorted(by: {
             let lBoth = $0.from != nil && $0.to != nil
             let rBoth = $1.from != nil && $1.to != nil
             if lBoth != rBoth { return lBoth }
@@ -562,14 +572,14 @@ private struct VersionDiffPopover: View {
         return seen.values.sorted { $0.key < $1.key }
     }
 
-    static func hasContent(_ diff: FrameDiff) -> Bool {
+    static func hasContent(_ diff: FrameDiff, canonicalKeys: Set<String>?) -> Bool {
         let q = diff.quality
         let hasQuality =
             meaningfulChange(q.fwhm.from, q.fwhm.to, threshold: 0.005) ||
             (q.starCount.from != nil && q.starCount.from != q.starCount.to) ||
             meaningfulChange(q.eccentricity.from, q.eccentricity.to, threshold: 0.005) ||
             meaningfulChange(q.backgroundNoise.from, q.backgroundNoise.to, threshold: 0.01)
-        return !deduplicatedParamChanges(diff).isEmpty ||
+        return !deduplicatedParamChanges(diff, canonicalKeys: canonicalKeys).isEmpty ||
                diff.inputsAdded.count != diff.inputsRemoved.count ||
                hasQuality
     }
@@ -581,7 +591,7 @@ private struct VersionDiffPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            let paramChanges = Self.deduplicatedParamChanges(diff)
+            let paramChanges = Self.deduplicatedParamChanges(diff, canonicalKeys: canonicalKeys)
             if !paramChanges.isEmpty {
                 popoverSection("Parameters")
                 ForEach(paramChanges, id: \.key) { change in
