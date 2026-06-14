@@ -151,17 +151,6 @@ struct InfoPanelView: View {
                             } else {
                                 VersionLinkRow(entry: entry) { openVersion(entry.frame) }
                             }
-                            if let lines = entry.diff.map(Self.diffSummaryLines), !lines.isEmpty {
-                                ForEach(lines, id: \.self) { line in
-                                    Text(line)
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                        .padding(.leading, 122)
-                                        .padding(.trailing, 12)
-                                        .padding(.vertical, 1)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
                         }
                     }
                 }
@@ -343,42 +332,6 @@ struct InfoPanelView: View {
         }
     }
 
-    private static func diffSummaryLines(_ diff: FrameDiff) -> [String] {
-        var lines: [String] = []
-
-        if !diff.parameterChanges.isEmpty {
-            let parts = diff.parameterChanges.sorted { $0.key < $1.key }.map { change in
-                let from = change.from?.description ?? "—"
-                let to   = change.to?.description   ?? "—"
-                return "\(formatSnakeCase(change.key)): \(from) → \(to)"
-            }
-            lines.append(parts.joined(separator: ", "))
-        }
-
-        let inputDelta = diff.inputsAdded.count - diff.inputsRemoved.count
-        if inputDelta != 0 {
-            let sign = inputDelta > 0 ? "+" : ""
-            lines.append("\(sign)\(inputDelta) input frame\(abs(inputDelta) == 1 ? "" : "s")")
-        }
-
-        let q = diff.quality
-        var qualityParts: [String] = []
-        if let from = q.fwhm.from, let to = q.fwhm.to, abs(from - to) > 0.005 {
-            qualityParts.append(String(format: "fwhm %.2f→%.2fpx", from, to))
-        }
-        if let from = q.starCount.from, let to = q.starCount.to, from != to {
-            qualityParts.append("stars \(from)→\(to)")
-        }
-        if let from = q.eccentricity.from, let to = q.eccentricity.to, abs(from - to) > 0.005 {
-            qualityParts.append(String(format: "ecc %.3f→%.3f", from, to))
-        }
-        if !qualityParts.isEmpty {
-            lines.append(qualityParts.joined(separator: ", "))
-        }
-
-        return lines
-    }
-
     private static func suppressedQualityKeywords(for frame: ArchivedFrame) -> Set<String> {
         var s: Set<String> = []
         if frame.starCount           != nil { s.formUnion(["NSTARS"]) }
@@ -390,9 +343,8 @@ struct InfoPanelView: View {
         return s
     }
 
-    private static func formatSnakeCase(_ s: String) -> String {
-        s.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
-    }
+    static func formatSnakeCase(_ s: String) -> String { infoPanelFormatSnakeCase(s) }
+
 
     private static func framesetLabel(_ fs: ArchivedFrameSet) -> String {
         let parts = [fs.objectName, fs.filter].compactMap { $0 }.filter { !$0.isEmpty }
@@ -521,9 +473,10 @@ private struct InfoRow: View {
 
 private struct VersionRow: View {
     let entry: InfoPanelView.VersionEntry
+    @State private var showDiff = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(spacing: 8) {
             Text("v\(entry.versionNumber)")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -532,6 +485,17 @@ private struct VersionRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let diff = entry.diff {
+                Button { showDiff = true } label: {
+                    Image(systemName: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showDiff, arrowEdge: .trailing) {
+                    VersionDiffPopover(diff: diff)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
@@ -541,9 +505,10 @@ private struct VersionRow: View {
 private struct VersionLinkRow: View {
     let entry: InfoPanelView.VersionEntry
     let action: () -> Void
+    @State private var showDiff = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(spacing: 8) {
             Text("v\(entry.versionNumber)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -558,9 +523,92 @@ private struct VersionLinkRow: View {
             .buttonStyle(.plain)
             .foregroundStyle(.link)
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let diff = entry.diff {
+                Button { showDiff = true } label: {
+                    Image(systemName: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showDiff, arrowEdge: .trailing) {
+                    VersionDiffPopover(diff: diff)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
+    }
+}
+
+private struct VersionDiffPopover: View {
+    let diff: FrameDiff
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !diff.parameterChanges.isEmpty {
+                popoverSection("Parameters")
+                ForEach(diff.parameterChanges.sorted { $0.key < $1.key }, id: \.key) { change in
+                    popoverRow(
+                        label: InfoPanelView.formatSnakeCase(change.key),
+                        value: "\(change.from?.description ?? "—") → \(change.to?.description ?? "—")"
+                    )
+                }
+            }
+
+            let inputDelta = diff.inputsAdded.count - diff.inputsRemoved.count
+            if inputDelta != 0 {
+                popoverSection("Inputs")
+                let sign = inputDelta > 0 ? "+" : ""
+                popoverRow(
+                    label: "Frames",
+                    value: "\(sign)\(inputDelta)"
+                )
+            }
+
+            let q = diff.quality
+            let qualityRows: [(String, String)] = [
+                q.starCount.from != q.starCount.to ? ("Stars", "\(q.starCount.from.map(String.init) ?? "—") → \(q.starCount.to.map(String.init) ?? "—")") : nil,
+                hasMeaningfulChange(q.fwhm.from, q.fwhm.to, threshold: 0.005) ? ("FWHM", String(format: "%.2f → %.2f px", q.fwhm.from!, q.fwhm.to!)) : nil,
+                hasMeaningfulChange(q.eccentricity.from, q.eccentricity.to, threshold: 0.005) ? ("Eccentricity", String(format: "%.3f → %.3f", q.eccentricity.from!, q.eccentricity.to!)) : nil,
+                hasMeaningfulChange(q.backgroundNoise.from, q.backgroundNoise.to, threshold: 0.01) ? ("Background", String(format: "%.1f → %.1f", q.backgroundNoise.from!, q.backgroundNoise.to!)) : nil
+            ].compactMap { $0 }
+            if !qualityRows.isEmpty {
+                popoverSection("Quality")
+                ForEach(qualityRows, id: \.0) { label, value in
+                    popoverRow(label: label, value: value)
+                }
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 260)
+    }
+
+    private func popoverSection(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func popoverRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 1)
+    }
+
+    private func hasMeaningfulChange(_ from: Double?, _ to: Double?, threshold: Double) -> Bool {
+        guard let from, let to else { return false }
+        return abs(from - to) > threshold
     }
 }
 
@@ -589,4 +637,8 @@ private struct ProvenanceLinkRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
     }
+}
+
+private func infoPanelFormatSnakeCase(_ s: String) -> String {
+    s.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
 }
