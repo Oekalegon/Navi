@@ -27,6 +27,9 @@ func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) 
 struct ArchiveRow: Identifiable, Equatable {
     let id = UUID()
     var values: [String: String]
+
+    var isRejected: Bool { values["rejected"] == "true" }
+    var isExcluded: Bool { values["excluded"] == "true" }
 }
 
 struct ArchiveViewerContent: Equatable {

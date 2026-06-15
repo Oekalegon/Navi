@@ -163,7 +163,7 @@ struct ArchiveViewerView: View {
                 }
             }
 
-            let isRowRejected = selectedRow?.values["rejected"] == "true"
+            let isRowRejected = selectedRow?.isRejected == true
             let canToggleReject = selectedRow != nil
                 && selectedRow?.values["frames"].flatMap(Int.init) == nil
 
@@ -471,7 +471,7 @@ struct ArchiveViewerView: View {
         guard let row = selectedRow,
               let id = row.values["id"], !id.isEmpty,
               let uuid = UUID(uuidString: id) else { return }
-        let target = row.values["rejected"] != "true"
+        let target = !row.isRejected
         isRejecting = true
         defer { isRejecting = false }
         do {

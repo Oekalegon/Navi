@@ -232,7 +232,7 @@ private struct FrameTypeIcon: View {
     private var isFrameset: Bool { row.values["frames"].flatMap(Int.init) != nil }
 
     private var symbolName: String {
-        if row.values["rejected"] == "true" || row.values["excluded"] == "true" {
+        if row.isRejected || row.isExcluded {
             return "xmark.diamond.fill"
         }
         let type  = row.values["type"]?.lowercased()  ?? ""
@@ -241,8 +241,8 @@ private struct FrameTypeIcon: View {
     }
 
     private var palette: (Color, Color) {
-        if row.values["rejected"] == "true" { return (.white, .red) }
-        if row.values["excluded"] == "true" { return (Color(NSColor.black), .yellow) }
+        if row.isRejected { return (.white, .red) }
+        if row.isExcluded { return (Color(NSColor.black), .yellow) }
         if isFrameset {
             return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
         }
