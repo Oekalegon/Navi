@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import OSLog
+
+private let logger = Logger(subsystem: "com.navi", category: "ArchiveFilterSheet")
 
 struct ActiveFilterChip: View {
     let category: String
@@ -224,6 +227,7 @@ struct ArchiveFilterSheet: View {
             )) {
                 Text("All levels").tag("all")
                 Text("Raw").tag("raw")
+                Text("Calibrated").tag("calibrated")
                 Text("Stacked").tag("stacked")
                 Text("Stretched").tag("stretched")
             }
@@ -291,7 +295,9 @@ struct ArchiveFilterSheet: View {
             }
             let sorted = Array(Set(names)).sorted()
             if !sorted.isEmpty { allObjects = sorted }
-        } catch {}
+        } catch {
+            logger.warning("archive_list_objects failed: \(error)")
+        }
     }
 }
 

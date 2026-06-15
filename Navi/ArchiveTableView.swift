@@ -7,6 +7,9 @@
 
 import SwiftUI
 import AppKit
+import OSLog
+
+private let logger = Logger(subsystem: "com.navi", category: "ArchiveTableView")
 
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
@@ -78,7 +81,9 @@ struct ArchiveTableView: View {
             )
             let parsed = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
             framesetChildren[row.id] = parsed.rows
-        } catch {}
+        } catch {
+            logger.warning("archive_frameset_get failed for \(idStr): \(error)")
+        }
         loadingFramesets.remove(row.id)
     }
 
