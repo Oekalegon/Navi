@@ -162,8 +162,15 @@ final class FocusTrackerView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
-        paneManager.paneFrameProviders.removeValue(forKey: ObjectIdentifier(self))
+        // deinit is not @MainActor-isolated but both NSEvent.removeMonitor and
+        // paneFrameProviders mutations must happen on the main thread.
+        let monitor = eventMonitor
+        let key = ObjectIdentifier(self)
+        let manager = paneManager
+        DispatchQueue.main.async {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            manager.paneFrameProviders.removeValue(forKey: key)
+        }
     }
 
     override func viewDidMoveToWindow() {
