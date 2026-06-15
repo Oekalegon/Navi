@@ -70,17 +70,17 @@ Temp tracking doc. Strike through items as they are resolved.
 
 ## Minor
 
-- [ ] **[MINOR] `import AppKit` in `NaviApp.swift` not annotated as intentional** — `NaviApp.swift` ~9  
+- [x] **[MINOR] `import AppKit` in `NaviApp.swift` not annotated as intentional** — `NaviApp.swift` ~9  
   Justified (NSOpenPanel), but should carry a comment per convention.
 
-- [ ] **[MINOR] `Message` is `Codable` but `MessageType` is excluded** — `ClaudeService.swift` ~11–14, ~30–33  
+- [x] **[MINOR] `Message` is `Codable` but `MessageType` is excluded** — `ClaudeService.swift` ~11–14, ~30–33  
   Round-tripping a `Message` silently loses `messageType`. Currently safe (in-memory only) but misleading.  
   Fix: either make `MessageType` fully `Codable`, or remove `Codable` from `Message`.
 
-- [ ] **[MINOR] `DiskUsageBar` segment widths don't account for `archiveWidth` minimum clamp** — `ArchiveStatusBar.swift` ~76–84  
+- [x] **[MINOR] `DiskUsageBar` segment widths don't account for `archiveWidth` minimum clamp** — `ArchiveStatusBar.swift` ~76–84  
   `archiveWidth` uses `max(2, ...)` but `otherWidth` is computed from the raw proportion. Segments can exceed available width by 1–2pt.  
   Fix: subtract the clamped `archiveWidth` from the remaining budget before computing `otherWidth`.
 
-- [ ] **[MINOR] `processConversationTurn` uses async recursion** — `AIConversationViewModel.swift` ~103–194  
+- [x] **[MINOR] `processConversationTurn` uses async recursion** — `AIConversationViewModel.swift` ~103–194  
   10-deep async recursion. Not a real overflow risk but a loop is cleaner.  
   Fix: `for depth in 0..<maxToolRounds { ... if done { break } }`.

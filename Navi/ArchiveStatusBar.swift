@@ -77,7 +77,7 @@ private struct DiskUsageBar: View {
             let archiveWidth = usage.archiveBytes > 0
                 ? max(2, geo.size.width * Double(usage.archiveBytes) / total)
                 : 0
-            let otherWidth = geo.size.width * Double(usage.otherBytes) / total
+            let otherWidth = (geo.size.width - archiveWidth) * Double(usage.otherBytes) / total
             HStack(spacing: 0) {
                 Rectangle().fill(Self.archiveColor).frame(width: archiveWidth)
                 Rectangle().fill(Self.otherColor).frame(width: otherWidth)

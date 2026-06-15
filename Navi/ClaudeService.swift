@@ -14,7 +14,7 @@ enum MessageType {
     case toolResult(toolName: String, resultSummary: String, fullContent: String, arguments: [String: Any])
 }
 
-struct Message: Identifiable, Codable {
+struct Message: Identifiable {
     let id: UUID
     let role: String
     var content: String
@@ -25,10 +25,6 @@ struct Message: Identifiable, Codable {
         self.role = role
         self.content = content
         self.messageType = messageType
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id, role, content
     }
 }
 

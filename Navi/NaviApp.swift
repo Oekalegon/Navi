@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import AppKit
+import AppKit // NSOpenPanel in NaviCommands.showStandaloneImportPanel()
 
 private struct ImportActionKey: FocusedValueKey {
     typealias Value = () -> Void

@@ -100,98 +100,98 @@ class AIConversationViewModel {
         Task { await processConversationTurn() }
     }
 
-    private func processConversationTurn(depth: Int = 0) async {
-        guard depth < maxToolRounds else {
-            errorMessage = "Reached maximum tool-call depth (\(maxToolRounds)). Stopping."
-            isLoading = false
-            toolCallStatus = nil
-            return
-        }
-        do {
-            // ArchiveToolDefinitions uses "inputSchema" (MCP wire format);
-            // the Claude API requires "input_schema".
-            let archiveTools = archiveManager.availableTools.map { tool -> [String: Any] in
-                [
-                    "name": tool["name"] as? String ?? "",
-                    "description": tool["description"] as? String ?? "",
-                    "input_schema": tool["inputSchema"] as? [String: Any] ?? [:]
-                ]
-            }
-            let allTools = localTools + archiveTools
-
-            logger.info("Tools: \(allTools.count) (\(self.localTools.count) local + \(archiveTools.count) archive, connected: \(self.archiveManager.isConnected))")
-
-            let response = try await claudeService.sendMessage(
-                apiMessages: apiConversation,
-                tools: allTools.isEmpty ? nil : allTools,
-                system: systemPrompt
-            )
-
-            if !response.toolUses.isEmpty {
-                toolCallStatus = "Executing \(response.toolUses.count) tool(s)..."
-
-                var assistantContent: [[String: Any]] = []
-                if let text = response.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    assistantContent.append(["type": "text", "text": text])
-                    messages.append(Message(role: "assistant",
-                                            content: text.trimmingCharacters(in: .whitespacesAndNewlines),
-                                            messageType: .text))
+    private func processConversationTurn() async {
+        for _ in 0..<maxToolRounds {
+            do {
+                // ArchiveToolDefinitions uses "inputSchema" (MCP wire format);
+                // the Claude API requires "input_schema".
+                let archiveTools = archiveManager.availableTools.map { tool -> [String: Any] in
+                    [
+                        "name": tool["name"] as? String ?? "",
+                        "description": tool["description"] as? String ?? "",
+                        "input_schema": tool["inputSchema"] as? [String: Any] ?? [:]
+                    ]
                 }
-                for toolUse in response.toolUses {
-                    assistantContent.append([
-                        "type": "tool_use",
-                        "id": toolUse.id,
-                        "name": toolUse.name,
-                        "input": toolUse.input
-                    ])
-                }
-                apiConversation.append(["role": "assistant", "content": assistantContent])
+                let allTools = localTools + archiveTools
 
-                var toolResultBlocks: [[String: Any]] = []
-                for toolUse in response.toolUses {
-                    let msg = Message(role: "assistant", content: "",
-                                      messageType: .toolUse(toolName: toolUse.name, arguments: toolUse.input))
-                    messages.append(msg)
-                    let messageId = msg.id
+                logger.info("Tools: \(allTools.count) (\(self.localTools.count) local + \(archiveTools.count) archive, connected: \(self.archiveManager.isConnected))")
 
-                    let (resultText, isError) = await executeToolCall(toolUse)
+                let response = try await claudeService.sendMessage(
+                    apiMessages: apiConversation,
+                    tools: allTools.isEmpty ? nil : allTools,
+                    system: systemPrompt
+                )
 
-                    toolResultBlocks.append([
-                        "type": "tool_result",
-                        "tool_use_id": toolUse.id,
-                        "is_error": isError,
-                        "content": resultText
-                    ])
+                if !response.toolUses.isEmpty {
+                    toolCallStatus = "Executing \(response.toolUses.count) tool(s)..."
 
-                    if let idx = messages.firstIndex(where: { $0.id == messageId }) {
-                        messages[idx] = Message(
-                            id: messageId, role: "assistant", content: resultText,
-                            messageType: .toolResult(
-                                toolName: toolUse.name,
-                                resultSummary: isError ? "Error: \(resultText)" : String(resultText.prefix(100)),
-                                fullContent: isError ? "" : resultText,
-                                arguments: toolUse.input))
+                    var assistantContent: [[String: Any]] = []
+                    if let text = response.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        assistantContent.append(["type": "text", "text": text])
+                        messages.append(Message(role: "assistant",
+                                                content: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                messageType: .text))
                     }
-                }
+                    for toolUse in response.toolUses {
+                        assistantContent.append([
+                            "type": "tool_use",
+                            "id": toolUse.id,
+                            "name": toolUse.name,
+                            "input": toolUse.input
+                        ])
+                    }
+                    apiConversation.append(["role": "assistant", "content": assistantContent])
 
-                apiConversation.append(["role": "user", "content": toolResultBlocks])
-                toolCallStatus = nil
-                await processConversationTurn(depth: depth + 1)
+                    var toolResultBlocks: [[String: Any]] = []
+                    for toolUse in response.toolUses {
+                        let msg = Message(role: "assistant", content: "",
+                                          messageType: .toolUse(toolName: toolUse.name, arguments: toolUse.input))
+                        messages.append(msg)
+                        let messageId = msg.id
 
-            } else {
-                if let text = response.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    messages.append(Message(role: "assistant", content: trimmed, messageType: .text))
-                    apiConversation.append(["role": "assistant", "content": trimmed])
+                        let (resultText, isError) = await executeToolCall(toolUse)
+
+                        toolResultBlocks.append([
+                            "type": "tool_result",
+                            "tool_use_id": toolUse.id,
+                            "is_error": isError,
+                            "content": resultText
+                        ])
+
+                        if let idx = messages.firstIndex(where: { $0.id == messageId }) {
+                            messages[idx] = Message(
+                                id: messageId, role: "assistant", content: resultText,
+                                messageType: .toolResult(
+                                    toolName: toolUse.name,
+                                    resultSummary: isError ? "Error: \(resultText)" : String(resultText.prefix(100)),
+                                    fullContent: isError ? "" : resultText,
+                                    arguments: toolUse.input))
+                        }
+                    }
+
+                    apiConversation.append(["role": "user", "content": toolResultBlocks])
+                    toolCallStatus = nil
+
+                } else {
+                    if let text = response.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        messages.append(Message(role: "assistant", content: trimmed, messageType: .text))
+                        apiConversation.append(["role": "assistant", "content": trimmed])
+                    }
+                    isLoading = false
+                    toolCallStatus = nil
+                    return
                 }
+            } catch {
+                errorMessage = error.localizedDescription
                 isLoading = false
                 toolCallStatus = nil
+                return
             }
-        } catch {
-            errorMessage = error.localizedDescription
-            isLoading = false
-            toolCallStatus = nil
         }
+        errorMessage = "Reached maximum tool-call depth (\(maxToolRounds)). Stopping."
+        isLoading = false
+        toolCallStatus = nil
     }
 
     // Returns (resultText, isError). Local tools are handled here; MCP tools are forwarded.
