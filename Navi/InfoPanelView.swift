@@ -8,6 +8,9 @@
 import SwiftUI
 import AstrophotoKit
 import AstrophotoArchiveKit
+import OSLog
+
+private let logger = Logger(subsystem: "com.navi", category: "InfoPanelView")
 
 /// Right-side info pane (NAVI-27): shows the full FITS header of the current
 /// frame, grouped via FITSKeywordCatalog, followed by archive data that is not
@@ -334,7 +337,9 @@ struct InfoPanelView: View {
                 )
                 let content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
                 paneManager.showArchiveViewer(content: content)
-            } catch {}
+            } catch {
+                logger.error("openFrameset failed for id \(id): \(error)")
+            }
         }
     }
 
