@@ -47,7 +47,7 @@ class SettingsManager {
     }
 
     private func saveAPIKey(_ key: String) {
-        let data = key.data(using: .utf8)!
+        guard let data = key.data(using: .utf8) else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
