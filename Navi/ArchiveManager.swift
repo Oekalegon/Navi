@@ -114,8 +114,12 @@ final class ArchiveManager {
         // Restore sandbox access for the archive directory via its security-scoped bookmark.
         if let url = SettingsManager.shared.loadArchiveBookmark() {
             archiveBookmarkURL = url
-            archiveBookmarkURL?.startAccessingSecurityScopedResource()
-            logger.info("Archive security scope started: \(url.path)")
+            let scopeGranted = url.startAccessingSecurityScopedResource()
+            if scopeGranted {
+                logger.info("Archive security scope started: \(url.path)")
+            } else {
+                logger.warning("Security scope access denied for archive bookmark — bookmark may be stale: \(url.path)")
+            }
         }
 
         do {
