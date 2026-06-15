@@ -12,7 +12,7 @@ struct AIAssistantView: View {
     var pane: SplitPane
     @Environment(PaneManager.self) private var paneManager
     @Environment(SettingsManager.self) private var settings
-    @State private var viewModel = AIConversationViewModel(apiKey: "")
+    @State private var viewModel = AIConversationViewModel(apiKey: SettingsManager.shared.apiKey)
     @State private var archiveManager = ArchiveManager.shared
 
     var body: some View {

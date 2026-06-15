@@ -62,7 +62,7 @@ Temp tracking doc. Strike through items as they are resolved.
   `ProcessingLevel` already exists as a typed enum in `AstrophotoArchiveKit`. Magic-string comparisons scattered across files.  
   Fix: typed accessors on `ArchiveRow`, or at minimum string constants.
 
-- [ ] **[DESIGN] `AIAssistantView` initialises `viewModel` with empty API key** — `AIAssistantView.swift` ~15  
+- [x] **[DESIGN] `AIAssistantView` initialises `viewModel` with empty API key** — `AIAssistantView.swift` ~15  
   `AIConversationViewModel(apiKey: "")` relies on `.onAppear` to set the real key. Window between creation and appearance where key is empty.  
   Fix: `AIConversationViewModel(apiKey: SettingsManager.shared.apiKey)`.
 
