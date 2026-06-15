@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AstrophotoArchiveKit
 
 /// Returns the SF Symbol name for a frame or frameset based on its type and processing level.
 func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) -> String {
@@ -370,7 +371,7 @@ struct ArchiveFilter: Equatable {
     var objects: Set<String>     = []
     var types: Set<String>       = []
     var kind: String?            = nil   // nil = both | "frames" | "framesets"
-    var processingLevel: String? = nil   // nil = all  | "raw" | "stacked" | "stretched"
+    var processingLevel: String? = nil   // nil = all  | "raw" | "calibrated" | "stacked" | "stretched"
     var minFWHM: String  = ""
     var maxFWHM: String  = ""
     var minSNR: String   = ""
@@ -505,5 +506,17 @@ struct ArchiveFilter: Equatable {
             f.processingLevel = "stacked"
         }
         return f
+    }
+}
+
+// MARK: - ArchivedFrame display helpers
+
+extension ArchivedFrame {
+    /// Short display name: object · filter · capitalized processing level.
+    /// Returns nil when all components are empty (e.g. unnamed calibration frames).
+    var displayName: String? {
+        let parts = [objectName ?? "", filter ?? "", processingLevel.rawValue.capitalized]
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 }

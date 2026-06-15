@@ -216,17 +216,6 @@ struct FITSViewerView: View {
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    // Same naming convention as the archive viewer's Name column
-    // (ArchiveNameCell.displayName): object + filter + capitalized level.
-    private static func displayName(for frame: ArchivedFrame) -> String? {
-        let parts = [
-            frame.objectName ?? "",
-            frame.filter ?? "",
-            frame.processingLevel.rawValue.capitalized
-        ].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
     private func effectivePoint(_ sliderValue: Float, min: Float, max: Float) -> Float {
         applyStretch(sliderValue, min: min, max: max, stretch: stretchSettings)
     }
@@ -301,7 +290,7 @@ struct FITSViewerView: View {
         if let frame {
             frameType = frame.frameType
             frameLevel = frame.processingLevel.rawValue
-            frameTitle = Self.displayName(for: frame)
+            frameTitle = frame.displayName
             frameDateText = Self.observationDateText(for: frame)
             stretchSettings = frame.stretchSettings ?? .identity
             currentFrameID = frame.id

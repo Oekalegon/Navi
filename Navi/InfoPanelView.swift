@@ -221,7 +221,7 @@ struct InfoPanelView: View {
         suppressedQualityKeywords = frame.map(Self.suppressedQualityKeywords) ?? []
         provenanceEntries = frame != nil ? await loadProvenance(frame: frame!) : []
         versionEntries = frame != nil ? await loadVersionChain(frame: frame!, currentPath: url.path) : []
-        frameTitle = frame.flatMap(Self.displayName) ?? url.lastPathComponent
+        frameTitle = frame?.displayName ?? url.lastPathComponent
     }
 
     private func loadVersionChain(frame: ArchivedFrame, currentPath: String) async -> [VersionEntry] {
@@ -355,16 +355,6 @@ struct InfoPanelView: View {
     private static func framesetLabel(_ fs: ArchivedFrameSet) -> String {
         let parts = [fs.objectName, fs.filter].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? "Frameset" : parts.joined(separator: " ")
-    }
-
-    // Same naming convention as the FITS viewer header.
-    private static func displayName(for frame: ArchivedFrame) -> String? {
-        let parts = [
-            frame.objectName ?? "",
-            frame.filter ?? "",
-            frame.processingLevel.rawValue.capitalized
-        ].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     // Archive fields that duplicate a FITS keyword are skipped when that
