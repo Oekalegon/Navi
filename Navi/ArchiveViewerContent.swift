@@ -30,6 +30,8 @@ struct ArchiveRow: Identifiable, Equatable {
 
     var isRejected: Bool { values["rejected"] == "true" }
     var isExcluded: Bool { values["excluded"] == "true" }
+    var frameType: String { values["type"]?.lowercased() ?? "" }
+    var processingLevel: ProcessingLevel? { ProcessingLevel(rawValue: values["level"]?.lowercased() ?? "") }
 }
 
 struct ArchiveViewerContent: Equatable {
@@ -457,14 +459,14 @@ struct ArchiveFilter: Equatable {
     func apply(to rows: [ArchiveRow]) -> [ArchiveRow] {
         rows.filter { row in
             if !objects.isEmpty, !objects.contains(row.values["object"] ?? "") { return false }
-            if !types.isEmpty, !types.contains((row.values["type"] ?? "").lowercased()) { return false }
+            if !types.isEmpty, !types.contains(row.frameType) { return false }
             if let k = kind {
                 let isFrameset = row.values["frames"].flatMap(Int.init) != nil
                 if k == "frames"    && isFrameset  { return false }
                 if k == "framesets" && !isFrameset { return false }
             }
             if let lvl = processingLevel,
-               (row.values["level"] ?? "").lowercased() != lvl.lowercased() { return false }
+               row.processingLevel?.rawValue != lvl.lowercased() { return false }
             if let min = Double(minFWHM), let v = row.values["fwhm"].flatMap(Double.init), v < min { return false }
             if let max = Double(maxFWHM), let v = row.values["fwhm"].flatMap(Double.init), v > max { return false }
             if let min = Double(minSNR),  let v = row.values["snr"].flatMap(Double.init),  v < min { return false }

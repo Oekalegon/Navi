@@ -58,7 +58,7 @@ Temp tracking doc. Strike through items as they are resolved.
   Handles connection, bookmarks, FITS enumeration, MCP dispatch (~18 tools), pipeline execution, GPU readback, auto-archive, quality extraction, and import.  
   Fix: extract `ArchivePipelineRunner` (~400 lines) and `ArchiveQualityExtractor` (static methods) as a starting point.
 
-- [ ] **[DESIGN] `frameType` and `processingLevel` stored as `String` in `ArchiveRow`** — `ArchiveViewerContent.swift` ~26–29  
+- [x] **[DESIGN] `frameType` and `processingLevel` stored as `String` in `ArchiveRow`** — `ArchiveViewerContent.swift` ~26–29  
   `ProcessingLevel` already exists as a typed enum in `AstrophotoArchiveKit`. Magic-string comparisons scattered across files.  
   Fix: typed accessors on `ArchiveRow`, or at minimum string constants.
 

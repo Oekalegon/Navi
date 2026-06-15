@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import AstrophotoArchiveKit
 import OSLog
 
 private let logger = Logger(subsystem: "com.navi", category: "ArchiveTableView")
@@ -235,9 +236,7 @@ private struct FrameTypeIcon: View {
         if row.isRejected || row.isExcluded {
             return "xmark.diamond.fill"
         }
-        let type  = row.values["type"]?.lowercased()  ?? ""
-        let level = row.values["level"]?.lowercased() ?? "raw"
-        return frameTypeSymbolName(type: type, level: level, isFrameset: isFrameset)
+        return frameTypeSymbolName(type: row.frameType, level: row.processingLevel?.rawValue ?? "raw", isFrameset: isFrameset)
     }
 
     private var palette: (Color, Color) {
@@ -246,7 +245,7 @@ private struct FrameTypeIcon: View {
         if isFrameset {
             return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
         }
-        let type = row.values["type"]?.lowercased() ?? ""
+        let type = row.frameType
         if type == "light" {
             return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor))
         }
@@ -295,10 +294,10 @@ private struct ArchiveNameCell: View {
     private var displayName: String {
         let name = (row.values["name"] ?? "").trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { return name }
-        let level = (row.values["level"] ?? "").capitalized
+        let level = row.processingLevel?.rawValue.capitalized ?? ""
         let filter = row.values["filter"] ?? ""
         let parts: [String]
-        switch (row.values["type"] ?? "").lowercased() {
+        switch row.frameType {
         case "bias":
             parts = [level, "Bias"]
         case "dark":
