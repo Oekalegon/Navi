@@ -822,27 +822,34 @@ extension ArchiveManager {
                     throw ArchiveManagerError.missingArgument("Output frame has no texture data")
                 }
                 let w = texture.width, h = texture.height
-                var pixels = [Float](repeating: 0, count: w * h)
-                texture.getBytes(&pixels, bytesPerRow: w * MemoryLayout<Float>.size,
-                                 from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
                 let stackMethod  = parameters["method"]?.stringValue         ?? "average"
                 let stackNorm    = parameters["normalisation"]?.stringValue   ?? "none"
                 let stackRej     = parameters["pixel_rejection"]?.stringValue ?? "sigma_clip"
                 let stackRejLow  = parameters["rejection_low"]?.doubleValue   ?? 3.0
                 let stackRejHigh = parameters["rejection_high"]?.doubleValue  ?? 3.0
                 let inputMeta    = unanimousFrameMetadata(from: pipelineInputs)
-                try FITSTableWriter.writeStackedOutput(
-                    pixelData: pixels, width: w, height: h, registrationTable: df,
-                    method: stackMethod, normalisation: stackNorm, rejection: stackRej,
-                    rejectionLow: stackRejLow, rejectionHigh: stackRejHigh,
-                    objectName: inputMeta.objectName, camera: inputMeta.camera,
-                    telescope: inputMeta.telescope, site: inputMeta.site, to: outPath)
+                // GPU readback and FITS write are synchronous; hop off the main actor.
+                let pixels = try await Task.detached(priority: .userInitiated) {
+                    var buf = [Float](repeating: 0, count: w * h)
+                    texture.getBytes(&buf, bytesPerRow: w * MemoryLayout<Float>.size,
+                                     from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+                    try FITSTableWriter.writeStackedOutput(
+                        pixelData: buf, width: w, height: h, registrationTable: df,
+                        method: stackMethod, normalisation: stackNorm, rejection: stackRej,
+                        rejectionLow: stackRejLow, rejectionHigh: stackRejHigh,
+                        objectName: inputMeta.objectName, camera: inputMeta.camera,
+                        telescope: inputMeta.telescope, site: inputMeta.site, to: outPath)
+                    return buf
+                }.value
                 let inputFrameSet = pipelineInputs.values.compactMap { $0 as? FrameSet }.first
                 let summary = stackSummaryLine(pixels: pixels, registrationTable: df, inputFrameSet: inputFrameSet)
                 savedNote = "\nSaved stacked FITS to \(outPath).\(summary.map { "\n\($0)" } ?? "")"
             } else if let firstTable = tables.first, let df = firstTable.dataFrame {
                 let fmt: FITSTableWriter.OutputFormat = (outputFormat.lowercased() == "csv") ? .csv : .fits
-                try FITSTableWriter.writeRegistrationTable(df, to: outPath, format: fmt)
+                // File write is synchronous; hop off the main actor.
+                try await Task.detached(priority: .userInitiated) {
+                    try FITSTableWriter.writeRegistrationTable(df, to: outPath, format: fmt)
+                }.value
                 savedNote = "\nSaved table to \(outPath) (\(outputFormat.lowercased()))."
             }
         }
@@ -1007,10 +1014,6 @@ extension ArchiveManager {
             var archivedIDs: [String] = []
             for frame in frames {
                 guard let texture = frame.texture else { continue }
-                let w = texture.width, h = texture.height
-                var pixels = [Float](repeating: 0, count: w * h)
-                texture.getBytes(&pixels, bytesPerRow: w * MemoryLayout<Float>.size,
-                                 from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
                 let tempURL: URL?
                 let fileToArchive: URL
                 if let outPath = existingOutputPath, frames.count == 1 {
@@ -1018,16 +1021,26 @@ extension ArchiveManager {
                 } else {
                     let tmp = FileManager.default.temporaryDirectory
                         .appendingPathComponent("navi_result_\(UUID().uuidString).fits")
-                    try FITSTableWriter.writeResultFrame(
-                        pixelData: pixels, width: w, height: h, pipelineID: pipelineID,
-                        imageType: "Light Frame", filterName: stackFilter ?? frame.filterName,
-                        stacked: pipelineID == "frame_stacking", nframes: inputCount > 0 ? inputCount : nil,
-                        totalExposure: stackExposure, gain: stackGain, offset: stackOffset,
-                        temperature: stackTempMean, objectName: stackObjectName, camera: stackCamera,
-                        telescope: stackTelescope, site: stackSite, ra: refRA, dec: refDec,
-                        pixelScale: stackPixelScale, focalLength: stackFocalLength,
-                        tempMin: stackTempMin, tempMax: stackTempMax,
-                        dateObs: refDate, dateBeg: dateBeg, dateEnd: dateEnd, to: tmp.path)
+                    let w = texture.width, h = texture.height
+                    let filterName = stackFilter ?? frame.filterName
+                    let stacked    = pipelineID == "frame_stacking"
+                    let nframes    = inputCount > 0 ? inputCount : nil as Int?
+                    // GPU readback and FITS write are synchronous; hop off the main actor.
+                    try await Task.detached(priority: .userInitiated) {
+                        var buf = [Float](repeating: 0, count: w * h)
+                        texture.getBytes(&buf, bytesPerRow: w * MemoryLayout<Float>.size,
+                                         from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+                        try FITSTableWriter.writeResultFrame(
+                            pixelData: buf, width: w, height: h, pipelineID: pipelineID,
+                            imageType: "Light Frame", filterName: filterName,
+                            stacked: stacked, nframes: nframes,
+                            totalExposure: stackExposure, gain: stackGain, offset: stackOffset,
+                            temperature: stackTempMean, objectName: stackObjectName, camera: stackCamera,
+                            telescope: stackTelescope, site: stackSite, ra: refRA, dec: refDec,
+                            pixelScale: stackPixelScale, focalLength: stackFocalLength,
+                            tempMin: stackTempMin, tempMax: stackTempMax,
+                            dateObs: refDate, dateBeg: dateBeg, dateEnd: dateEnd, to: tmp.path)
+                    }.value
                     fileToArchive = tmp; tempURL = tmp
                 }
                 let (archived, _) = try await archive.add(fitsFile: fileToArchive, processingRunID: run.id)
