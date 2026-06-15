@@ -45,15 +45,15 @@ struct ToolUse: Identifiable {
 }
 
 enum ClaudeModel: String, CaseIterable, Identifiable {
-    case sonnet = "claude-sonnet-4-5-20250929"
-    case opus = "claude-opus-4-5-20251101"
+    case sonnet = "claude-sonnet-4-6"
+    case opus   = "claude-opus-4-8"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .sonnet: return "Claude Sonnet 4.5 (Recommended)"
-        case .opus: return "Claude Opus 4.5 (Most Capable)"
+        case .sonnet: return "Claude Sonnet 4.6 (Recommended)"
+        case .opus:   return "Claude Opus 4.8 (Most Capable)"
         }
     }
 }
