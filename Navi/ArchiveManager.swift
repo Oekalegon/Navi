@@ -309,6 +309,7 @@ final class ArchiveManager {
         case "archive_frameset_create":     return try await archiveFramesetCreate(arguments, archive: archive)
         case "archive_frameset_delete":     return try await archiveFramesetDelete(arguments, archive: archive)
         case "archive_frameset_exclude":    return try await archiveFramesetExclude(arguments, archive: archive)
+        case "archive_session_get":         return try await archiveSessionGet(arguments, archive: archive)
         case "list_pipelines":              return listPipelines()
         case "inspect_pipeline":            return try inspectPipeline(arguments)
         case "run_pipeline":                return try await runPipeline(arguments, archive: archive)
@@ -555,6 +556,23 @@ final class ArchiveManager {
         return "Frameset \(idStr) deleted."
     }
 
+    private func archiveSessionGet(_ args: [String: Any], archive: Archive) async throws -> String {
+        guard let idStr = args["id"] as? String, let uuid = UUID(uuidString: idStr) else {
+            throw ArchiveManagerError.missingArgument("id")
+        }
+        guard let session = try await archive.session(id: uuid) else {
+            throw ArchiveManagerError.missingArgument("No session found with id \(idStr)")
+        }
+        let sortDate = session.startTime ?? session.date
+        return try encodeJSON([
+            "id": session.id.uuidString,
+            "name": session.name,
+            "is_night": session.isNight,
+            "frame_count": session.frameCount,
+            "sort_date": tableDate.string(from: sortDate)
+        ] as [String: Any])
+    }
+
     private func archiveFramesetExclude(_ args: [String: Any], archive: Archive) async throws -> String {
         guard let fsIdStr = args["frameset_id"] as? String,
               let fIdStr = args["frame_id"] as? String,
@@ -580,6 +598,7 @@ final class ArchiveManager {
         if let v = f.objectName          { d["object"] = v }
         if let v = f.filter              { d["filter"] = v }
         if let v = f.camera              { d["camera"] = v }
+        if let sid = f.sessionID { d["session_id"] = sid.uuidString }
         if f.stacked, let beg = f.sessionBeg {
             d["date"] = tableDateRange(from: beg, to: f.sessionEnd ?? beg)
         } else if let obsDate = f.timestamp ?? f.fileDate {

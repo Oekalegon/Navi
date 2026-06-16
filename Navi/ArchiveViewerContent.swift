@@ -12,7 +12,7 @@ import AstrophotoArchiveKit
 func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) -> String {
     let stacked = level.lowercased() == "stacked"
     if isFrameset {
-        return "folder"
+        return "rectangle.grid.2x2"
     }
     switch type.lowercased() {
     case "light":
@@ -25,13 +25,26 @@ func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) 
 }
 
 struct ArchiveRow: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     var values: [String: String]
+    var children: [ArchiveRow]?
+
+    init(id: UUID = UUID(), values: [String: String], children: [ArchiveRow]? = nil) {
+        self.id = id
+        self.values = values
+        self.children = children
+    }
+
+    static func == (lhs: ArchiveRow, rhs: ArchiveRow) -> Bool {
+        lhs.id == rhs.id && lhs.values == rhs.values
+    }
 
     var isRejected: Bool { values["rejected"] == "true" }
     var isExcluded: Bool { values["excluded"] == "true" }
     var frameType: String { values["type"]?.lowercased() ?? "" }
     var processingLevel: ProcessingLevel? { ProcessingLevel(rawValue: values["level"]?.lowercased() ?? "") }
+    var isSession: Bool { values["_kind"] == "session" }
+    var isFrameset: Bool { !isSession && values["frames"].flatMap(Int.init) != nil }
 }
 
 struct ArchiveViewerContent: Equatable {
@@ -43,7 +56,7 @@ struct ArchiveViewerContent: Equatable {
     var isTable: Bool
 
     var iconName: String {
-        if toolName.hasPrefix("archive_frameset") { return "folder" }
+        if toolName.hasPrefix("archive_frameset") { return "rectangle.grid.2x2" }
         if toolName.hasPrefix("archive_") { return "rectangle" }
         return "archivebox"
     }
@@ -53,7 +66,7 @@ struct ArchiveViewerContent: Equatable {
     // "rejected" stays in the row values (the icon and reject toggle read it)
     // but is not shown as a column: the frame icon already conveys it.
     // "temp" is only used to construct display names for calibration frames.
-    private static let hiddenColumns: Set<String> = ["id", "rejected", "temp"]
+    private static let hiddenColumns: Set<String> = ["id", "rejected", "temp", "session_id", "_kind", "matched"]
 
     static func parse(toolName: String, content: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
@@ -314,6 +327,59 @@ struct ArchiveViewerContent: Equatable {
            let data = try? JSONSerialization.data(withJSONObject: arr),
            let str = String(data: data, encoding: .utf8) { return str }
         return "\(val)"
+    }
+
+    // MARK: - Session grouping
+
+    /// Groups rows that carry a `session_id` into collapsible session-folder rows.
+    /// Rows without a session ID (calibration frames, framesets) remain flat after the sessions.
+    func groupedBySessions(sessionInfo: [String: SessionMeta] = [:]) -> ArchiveViewerContent {
+        let withSession = rows.filter { row in
+            guard let sid = row.values["session_id"] else { return false }
+            guard !row.isFrameset && row.values["level"] == "raw" else { return false }
+            if let meta = sessionInfo[sid], !meta.isValid { return false }
+            return true
+        }
+        guard !withSession.isEmpty else { return self }
+        let withoutSession = rows.filter { row in
+            guard let sid = row.values["session_id"] else { return true }
+            if row.isFrameset || row.values["level"] != "raw" { return true }
+            if let meta = sessionInfo[sid], !meta.isValid { return true }
+            return false
+        }
+
+        var order: [String] = []
+        var grouped: [String: [ArchiveRow]] = [:]
+        for row in withSession {
+            let sid = row.values["session_id"]!
+            if grouped[sid] == nil { order.append(sid) }
+            grouped[sid, default: []].append(row)
+        }
+
+        let sessionRows: [ArchiveRow] = order.map { sid in
+            let children = grouped[sid]!
+            let matched = children.count
+            let total = sessionInfo[sid]?.total ?? matched
+            let objects = Array(
+                Set(children.compactMap { $0.values["object"]?.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty })
+            ).sorted().joined(separator: ", ")
+            var values: [String: String] = [
+                "_kind": "session",
+                "session_id": sid,
+                "matched": "\(matched)",
+                "frames": "\(total)"
+            ]
+            if !objects.isEmpty { values["object"] = objects }
+            if let sortDate = sessionInfo[sid]?.sortDate, !sortDate.isEmpty {
+                values["date"] = sortDate
+            }
+            return ArchiveRow(id: UUID(uuidString: sid) ?? UUID(), values: values, children: children)
+        }
+
+        var copy = self
+        copy.rows = sessionRows + withoutSession
+        return copy
     }
 
     // MARK: - Filtering

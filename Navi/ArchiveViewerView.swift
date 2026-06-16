@@ -17,6 +17,8 @@ struct ArchiveViewerView: View {
     @State private var selectedRow: ArchiveRow? = nil
     @State private var selectionID: ArchiveRow.ID? = nil
     @State private var isRejecting = false
+    @State private var sessionInfo: [String: SessionMeta] = [:]
+    @State private var groupedContent: ArchiveViewerContent? = nil
     private let logger = Logger(subsystem: "com.navi.app", category: "ArchiveViewer")
     @State private var showingFilter = false
     @State private var showingColumnsPopover = false
@@ -61,6 +63,12 @@ struct ArchiveViewerView: View {
             guard ArchiveManager.shared.importVersion > 0 else { return }
             await loadAllFrames()
             await ArchiveManager.shared.refreshDiskUsage()
+        }
+        .onChange(of: paneManager.archiveContent) { _, new in
+            groupedContent = new?.groupedBySessions(sessionInfo: sessionInfo)
+        }
+        .onChange(of: sessionInfo) { _, new in
+            groupedContent = paneManager.archiveContent?.groupedBySessions(sessionInfo: new)
         }
         .onChange(of: paneManager.archiveContent?.toolName) { _, _ in
             selectionID = nil
@@ -165,7 +173,8 @@ struct ArchiveViewerView: View {
 
             let isRowRejected = selectedRow?.isRejected == true
             let canToggleReject = selectedRow != nil
-                && selectedRow?.values["frames"].flatMap(Int.init) == nil
+                && selectedRow?.isFrameset != true
+                && selectedRow?.isSession != true
 
             RejectToggleButton(
                 isRejected: isRowRejected,
@@ -253,14 +262,16 @@ struct ArchiveViewerView: View {
                 emptyState("No results returned by \(content.toolName)")
             } else {
                 ArchiveTableView(
-                    content: content,
+                    content: groupedContent ?? content.groupedBySessions(sessionInfo: sessionInfo),
                     columnSettings: columnSettings,
                     selectionID: $selectionID,
                     onRowSelected: { row, isNewSelection in
                         selectedRow = row
                         if let row, isNewSelection { showFrameIfViewerVisible(row) }
                     },
-                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
+                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) },
+                    sessionInfo: sessionInfo,
+                    onSessionLoaded: { id, meta in sessionInfo[id] = meta }
                 )
             }
         } else {
@@ -284,7 +295,7 @@ struct ArchiveViewerView: View {
                 filterEmptyState()
             } else {
                 ArchiveTableView(
-                    content: filtered,
+                    content: filtered.groupedBySessions(),
                     totalRows: base.rows.count,
                     columnSettings: columnSettings,
                     selectionID: $selectionID,
@@ -292,7 +303,9 @@ struct ArchiveViewerView: View {
                         selectedRow = row
                         if let row, isNewSelection { showFrameIfViewerVisible(row) }
                     },
-                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) }
+                    onRowDoubleClicked: { row in handleFramesetDoubleClick(row) },
+                    sessionInfo: sessionInfo,
+                    onSessionLoaded: { id, meta in sessionInfo[id] = meta }
                 )
             }
         } else {
@@ -375,7 +388,7 @@ struct ArchiveViewerView: View {
     // File URL of the selected row, if it is a frame (not a frameset).
     private var selectedFileURL: URL? {
         guard let row = selectedRow,
-              row.values["frames"].flatMap(Int.init) == nil,
+              !row.isFrameset && !row.isSession,
               let path = row.values["file"] ?? row.values["path"], !path.isEmpty
         else { return nil }
         return URL(fileURLWithPath: path)
@@ -385,8 +398,7 @@ struct ArchiveViewerView: View {
     // follow this archive pane, across windows (NAVI-10). When several FITS
     // viewers could show the frame, a popover asks which one should.
     private func showFrameIfViewerVisible(_ row: ArchiveRow) {
-        let isFrameset = row.values["frames"].flatMap(Int.init) != nil
-        guard !isFrameset else { return }
+        guard !row.isFrameset && !row.isSession else { return }
         let filePath = row.values["file"] ?? row.values["path"]
         if let filePath, !filePath.isEmpty {
             let url = URL(fileURLWithPath: filePath)

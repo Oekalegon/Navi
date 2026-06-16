@@ -12,6 +12,14 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.navi", category: "ArchiveTableView")
 
+struct SessionMeta: Equatable {
+    var name: String
+    var total: Int
+    var isNight: Bool
+    var sortDate: String
+    var isValid: Bool
+}
+
 struct ArchiveTableView: View {
     let content: ArchiveViewerContent
     var totalRows: Int? = nil
@@ -22,6 +30,8 @@ struct ArchiveTableView: View {
     // callers must not re-route the frame to viewers in the latter case.
     var onRowSelected: ((ArchiveRow?, _ isNewSelection: Bool) -> Void)? = nil
     var onRowDoubleClicked: ((ArchiveRow) -> Void)? = nil
+    var sessionInfo: [String: SessionMeta] = [:]
+    var onSessionLoaded: ((String, SessionMeta) -> Void)? = nil
     @State private var sortOrder: [ColumnComparator] = []
     @State private var lastTapRowID: ArchiveRow.ID? = nil
     @State private var lastTapTime: Date = .distantPast
@@ -36,14 +46,26 @@ struct ArchiveTableView: View {
     }
 
     private var childRowIDs: Set<ArchiveRow.ID> {
-        Set(framesetChildren.values.flatMap { $0 }.map { $0.id })
+        var ids = Set<ArchiveRow.ID>()
+        for row in sortedRows where expandedFramesets.contains(row.id) {
+            if row.isSession {
+                (row.children ?? []).forEach { ids.insert($0.id) }
+            } else {
+                (framesetChildren[row.id] ?? []).forEach { ids.insert($0.id) }
+            }
+        }
+        return ids
     }
 
     private var displayedRows: [ArchiveRow] {
         var result: [ArchiveRow] = []
         for row in sortedRows {
             result.append(row)
-            if expandedFramesets.contains(row.id) {
+            guard expandedFramesets.contains(row.id) else { continue }
+            if row.isSession {
+                let children = row.children ?? []
+                result += sortOrder.isEmpty ? children : children.sorted(using: sortOrder)
+            } else {
                 result += framesetChildren[row.id] ?? []
             }
         }
@@ -66,7 +88,7 @@ struct ArchiveTableView: View {
             expandedFramesets.remove(row.id)
         } else {
             expandedFramesets.insert(row.id)
-            if framesetChildren[row.id] == nil {
+            if !row.isSession && framesetChildren[row.id] == nil {
                 Task { await loadChildren(for: row) }
             }
         }
@@ -94,17 +116,21 @@ struct ArchiveTableView: View {
         VStack(spacing: 0) {
             Table(displayedRows, selection: $selectionID, sortOrder: $sortOrder) {
                 TableColumn("Name", sortUsing: ColumnComparator(key: "name")) { row in
-                    let isFrameset = row.values["frames"].flatMap(Int.init) != nil
+                    let isExpandable = row.isFrameset || row.isSession
                     let isChild = childRowIDs.contains(row.id)
+                    let sid = row.values["session_id"]
+                    let meta = sid.flatMap { sessionInfo[$0] }
                     let cell = ArchiveNameCell(
                         row: row,
-                        isFrameset: isFrameset,
+                        isExpandable: isExpandable,
                         isChild: isChild,
                         isExpanded: expandedFramesets.contains(row.id),
-                        isLoading: loadingFramesets.contains(row.id),
+                        isLoading: !row.isSession && loadingFramesets.contains(row.id),
+                        sessionName: meta?.name,
+                        sessionTotal: meta?.total,
                         onToggle: { toggleExpand(row) }
                     )
-                    if isFrameset {
+                    if row.isFrameset {
                         cell.simultaneousGesture(TapGesture().onEnded { cellTapped(row) })
                     } else {
                         cell
@@ -114,7 +140,10 @@ struct ArchiveTableView: View {
 
                 TableColumnForEach(displayColumns.filter { $0 != "name" }, id: \.self) { col in
                     TableColumn(Self.columnTitle(for: col), sortUsing: ColumnComparator(key: col)) { row in
-                        Text(Self.formatted(row.values[col] ?? "", column: col))
+                        let value = row.isSession && !Self.sessionVisibleColumns.contains(col)
+                            ? ""
+                            : Self.formatted(row.values[col] ?? "", column: col)
+                        Text(value)
                             .font(Self.cellFont(for: col))
                             .frame(maxWidth: .infinity, maxHeight: .infinity,
                                    alignment: Self.columnAlignment(for: col))
@@ -129,8 +158,8 @@ struct ArchiveTableView: View {
                 let callback = onRowSelected
                 Task { @MainActor in callback?(row, true) }
             }
-            .onChange(of: displayedRows.first(where: { $0.id == selectionID })?.values) { _, _ in
-                guard let id = selectionID, let row = displayedRows.first(where: { $0.id == id }) else { return }
+            .onChange(of: selectedRowValues) { _, _ in
+                guard let id = selectionID, let row = findRow(id: id) else { return }
                 let callback = onRowSelected
                 Task { @MainActor in callback?(row, false) }
             }
@@ -139,12 +168,89 @@ struct ArchiveTableView: View {
                 framesetChildren.removeAll()
                 loadingFramesets.removeAll()
             }
+            .task(id: sessionIDsKey) {
+                await loadMissingSessionInfo()
+            }
 
             Divider()
 
             ArchiveStatusBar(rowCount: count, totalRowCount: total)
         }
     }
+
+    private var sessionIDsKey: String {
+        sortedRows.compactMap { $0.isSession ? $0.values["session_id"] : nil }.sorted().joined(separator: ",")
+    }
+
+    // Values of the currently selected row, found by searching content.rows and
+    // their children directly — avoids building the full displayedRows array just
+    // to detect in-place value changes (e.g. reject toggle).
+    private var selectedRowValues: [String: String]? {
+        guard let id = selectionID else { return nil }
+        for row in content.rows {
+            if row.id == id { return row.values }
+            if let child = row.children?.first(where: { $0.id == id }) { return child.values }
+        }
+        for children in framesetChildren.values {
+            if let child = children.first(where: { $0.id == id }) { return child.values }
+        }
+        return nil
+    }
+
+    private func findRow(id: ArchiveRow.ID) -> ArchiveRow? {
+        for row in content.rows {
+            if row.id == id { return row }
+            if let child = row.children?.first(where: { $0.id == id }) { return child }
+        }
+        for children in framesetChildren.values {
+            if let child = children.first(where: { $0.id == id }) { return child }
+        }
+        return nil
+    }
+
+    private func loadMissingSessionInfo() async {
+        let missing = sortedRows.compactMap { row -> String? in
+            guard row.isSession,
+                  let sid = row.values["session_id"],
+                  sessionInfo[sid] == nil else { return nil }
+            return sid
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for sid in missing {
+                group.addTask { await self.fetchSessionInfo(id: sid) }
+            }
+        }
+    }
+
+    private func fetchSessionInfo(id: String) async {
+        do {
+            let result = try await ArchiveManager.shared.callTool(
+                name: "archive_session_get",
+                arguments: ["id": id]
+            )
+            guard let data = result.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                await MainActor.run {
+                    onSessionLoaded?(id, SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false))
+                }
+                return
+            }
+            let meta = SessionMeta(
+                name: json["name"] as? String ?? "Session",
+                total: json["frame_count"] as? Int ?? 0,
+                isNight: json["is_night"] as? Bool ?? true,
+                sortDate: json["sort_date"] as? String ?? "",
+                isValid: true
+            )
+            await MainActor.run { onSessionLoaded?(id, meta) }
+        } catch {
+            await MainActor.run {
+                onSessionLoaded?(id, SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false))
+            }
+        }
+    }
+
+    private static let sessionVisibleColumns: Set<String> = ["object", "frames"]
 
     private static func columnTitle(for column: String) -> String {
         ArchiveColumnSettings.groups
@@ -230,40 +336,35 @@ private struct FrameTypeIcon: View {
             .font(.system(size: 11, weight: .regular))
     }
 
-    private var isFrameset: Bool { row.values["frames"].flatMap(Int.init) != nil }
-
     private var symbolName: String {
-        if row.isRejected || row.isExcluded {
-            return "xmark.diamond.fill"
-        }
-        return frameTypeSymbolName(type: row.frameType, level: row.processingLevel?.rawValue ?? "raw", isFrameset: isFrameset)
+        if row.isSession { return "folder" }
+        if row.isRejected || row.isExcluded { return "xmark.diamond.fill" }
+        return frameTypeSymbolName(type: row.frameType, level: row.processingLevel?.rawValue ?? "raw", isFrameset: row.isFrameset)
     }
 
     private var palette: (Color, Color) {
+        if row.isSession { return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor)) }
         if row.isRejected { return (.white, .red) }
         if row.isExcluded { return (Color(NSColor.black), .yellow) }
-        if isFrameset {
-            return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
-        }
-        let type = row.frameType
-        if type == "light" {
-            return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor))
-        }
+        if row.isFrameset { return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor)) }
+        if row.frameType == "light" { return (Color(NSColor.textBackgroundColor), Color(NSColor.labelColor)) }
         return (Color(NSColor.secondaryLabelColor), Color(NSColor.secondaryLabelColor))
     }
 }
 
 private struct ArchiveNameCell: View {
     let row: ArchiveRow
-    let isFrameset: Bool
+    let isExpandable: Bool
     let isChild: Bool
     let isExpanded: Bool
     let isLoading: Bool
+    var sessionName: String? = nil
+    var sessionTotal: Int? = nil
     let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            if isFrameset {
+            if isExpandable {
                 Group {
                     if isLoading {
                         ProgressView()
@@ -285,13 +386,26 @@ private struct ArchiveNameCell: View {
             Text(displayName)
                 .font(.system(size: 11))
                 .lineLimit(1)
+            if row.isSession { sessionBadge }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
     }
 
+    @ViewBuilder private var sessionBadge: some View {
+        let matched = Int(row.values["matched"] ?? "0") ?? 0
+        let total = sessionTotal ?? 0
+        let label = total > matched ? "\(matched) of \(total) frames" : "\(matched) frames"
+        Text(label)
+            .font(.system(size: 9).monospacedDigit())
+            .foregroundStyle(.tertiary)
+    }
+
     private var displayName: String {
+        if row.isSession {
+            return sessionName ?? "Session"
+        }
         let name = (row.values["name"] ?? "").trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { return name }
         let level = row.processingLevel?.rawValue.capitalized ?? ""
