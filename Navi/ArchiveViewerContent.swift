@@ -142,7 +142,7 @@ struct ArchiveViewerContent: Equatable {
                 "type": fs.frameType,
                 "level": fs.processingLevel.rawValue,
                 "frames": "\(fs.frameCount)",
-                "created": shortDate(fs.createdAt),
+                "added": shortDate(fs.createdAt),
             ]
             if let v = fs.objectName   { values["object"] = v }
             if let v = fs.filter       { values["filter"] = v }
@@ -158,6 +158,7 @@ struct ArchiveViewerContent: Equatable {
             if let v = fs.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
             rows.append(ArchiveRow(id: fs.id, values: values))
         }
+        rows.sort { ($0.values["added"] ?? "") > ($1.values["added"] ?? "") }
         return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
     }
 
@@ -250,7 +251,7 @@ struct ArchiveViewerContent: Equatable {
                     "level": fs.processingLevel.rawValue,
                     "type": fs.frameType,
                     "frames": "\(fs.frameCount)",
-                    "created": shortDate(fs.createdAt),
+                    "added": shortDate(fs.createdAt),
                 ]
                 if let v = fs.objectName { values["object"] = v }
                 if let v = fs.filter     { values["filter"] = v }
@@ -587,12 +588,17 @@ struct ArchiveViewerContent: Equatable {
             if !objects.isEmpty { values["object"] = objects }
             if let sortDate = sessionInfo[sid]?.sortDate, !sortDate.isEmpty {
                 values["date"] = sortDate
+                values["added"] = sortDate
+            } else {
+                // Before sessionInfo loads, approximate with the newest frame's added date.
+                values["added"] = children.compactMap { $0.values["added"] }.max() ?? ""
             }
             return ArchiveRow(id: UUID(uuidString: sid) ?? UUID(), values: values, children: children)
         }
 
         var copy = self
-        copy.rows = sessionRows + withoutSession
+        copy.rows = (sessionRows + withoutSession)
+            .sorted { ($0.values["added"] ?? "") > ($1.values["added"] ?? "") }
         return copy
     }
 
