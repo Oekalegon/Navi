@@ -324,12 +324,16 @@ struct ArchiveViewerView: View {
         }
         isLoadingFilter = true
         do {
-            var query = FrameQuery()
-            if !f.types.isEmpty { query.frameTypes = Array(f.types) }
-            if let lvl = f.processingLevel { query.processingLevel = ProcessingLevel(rawValue: lvl) }
-            let frames = try await ArchiveManager.shared.frames(matching: query)
+            var frameQuery = FrameQuery()
+            if !f.types.isEmpty { frameQuery.frameTypes = Array(f.types) }
+            if let lvl = f.processingLevel { frameQuery.processingLevel = ProcessingLevel(rawValue: lvl) }
+            var fsQuery = FrameSetQuery()
+            if !f.types.isEmpty { fsQuery.frameTypes = Array(f.types) }
+            if let lvl = f.processingLevel { fsQuery.processingLevel = ProcessingLevel(rawValue: lvl) }
+            let frames = try await ArchiveManager.shared.frames(matching: frameQuery)
+            let frameSets = try await ArchiveManager.shared.frameSets(matching: fsQuery)
             guard !Task.isCancelled else { return }
-            filterBase = ArchiveViewerContent.frames(frames, toolName: "archive_search")
+            filterBase = ArchiveViewerContent.framesAndSets(frames, frameSets, toolName: "archive_search")
         } catch {
             guard !Task.isCancelled else { return }
             filterBase = nil
@@ -436,17 +440,18 @@ struct ArchiveViewerView: View {
         }
     }
 
-    // Loads all light frames so groupedBySessions can build proper session folders.
-    // Calibration frame types (dark, flat, bias, darkflat) are excluded for now.
+    // Loads all light frames + framesets. Calibration frame types (dark, flat, bias) are excluded for now.
+    // groupedBySessions groups raw light frames by session; framesets remain flat.
     private func loadAllFrames() async {
         guard !isLoadingRecent else { return }
         isLoadingRecent = true
         defer { isLoadingRecent = false }
         do {
-            var query = FrameQuery()
-            query.frameTypes = ["light"]
-            let frames = try await ArchiveManager.shared.frames(matching: query)
-            var content = ArchiveViewerContent.frames(frames, toolName: "archive_recent")
+            var frameQuery = FrameQuery()
+            frameQuery.frameTypes = ["light"]
+            let frames = try await ArchiveManager.shared.frames(matching: frameQuery)
+            let frameSets = try await ArchiveManager.shared.frameSets(matching: FrameSetQuery())
+            var content = ArchiveViewerContent.framesAndSets(frames, frameSets, toolName: "archive_recent")
             content.title = "All Frames"
             paneManager.navigateArchiveTo(content: content)
         } catch {

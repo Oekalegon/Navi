@@ -103,6 +103,64 @@ struct ArchiveViewerContent: Equatable {
         return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
     }
 
+    static func framesAndSets(_ frames: [ArchivedFrame], _ frameSets: [ArchivedFrameSet],
+                              toolName: String) -> ArchiveViewerContent {
+        let title = Self.titleFor(toolName: toolName)
+        let iso = ISO8601DateFormatter()
+        func shortDate(_ date: Date) -> String {
+            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+        }
+        var rows: [ArchiveRow] = []
+        for f in frames {
+            var values: [String: String] = [
+                "id": f.id.uuidString,
+                "type": f.frameType,
+                "level": f.processingLevel.rawValue,
+                "file": f.filePath,
+            ]
+            values["added"] = shortDate(f.addedAt)
+            if let v = f.objectName   { values["object"] = v }
+            if let v = f.filter       { values["filter"] = v }
+            if let v = f.camera       { values["camera"] = v }
+            if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
+            if let v = f.timestamp    { values["date"] = shortDate(v) }
+            if let v = f.sessionID    { values["session_id"] = v.uuidString }
+            if f.rejected             { values["rejected"] = "true" }
+            if let v = f.starCount    { values["stars"] = "\(v)" }
+            if let px = f.medianFWHM  {
+                values["fwhm"] = f.medianFWHMArcsec
+                    .map { String(format: "%.2fpx/%.2f\"", px, $0) }
+                    ?? String(format: "%.2fpx", px)
+            }
+            if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            rows.append(ArchiveRow(id: f.id, values: values))
+        }
+        for fs in frameSets {
+            var values: [String: String] = [
+                "id": fs.id.uuidString,
+                "name": fs.name,
+                "type": fs.frameType,
+                "level": fs.processingLevel.rawValue,
+                "frames": "\(fs.frameCount)",
+                "created": shortDate(fs.createdAt),
+            ]
+            if let v = fs.objectName   { values["object"] = v }
+            if let v = fs.filter       { values["filter"] = v }
+            if let v = fs.camera       { values["camera"] = v }
+            if let v = fs.exposureTime { values["exp"] = String(format: "%.0fs", v) }
+            if let v = fs.dateFrom     { values["date"] = shortDate(v) }
+            if let v = fs.medianStarCount { values["stars"] = String(format: "%.0f", v) }
+            if let px = fs.medianFWHM  {
+                values["fwhm"] = fs.medianFWHMArcsec
+                    .map { String(format: "%.2fpx/%.2f\"", px, $0) }
+                    ?? String(format: "%.2fpx", px)
+            }
+            if let v = fs.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            rows.append(ArchiveRow(id: fs.id, values: values))
+        }
+        return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
+    }
+
     static func members(_ members: [FrameSetMember], toolName: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
         let iso = ISO8601DateFormatter()

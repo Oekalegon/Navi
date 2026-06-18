@@ -267,6 +267,11 @@ final class ArchiveManager {
         return try await archive.frames(inSession: id)
     }
 
+    func frameSets(matching query: FrameSetQuery) async throws -> [ArchivedFrameSet] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.frameSets(matching: query)
+    }
+
     func recentActivity(limit: Int?) async throws -> [RecentEntry] {
         guard let archive else { throw ArchiveManagerError.notConnected }
         return try await archive.recentActivity(limit: limit)
