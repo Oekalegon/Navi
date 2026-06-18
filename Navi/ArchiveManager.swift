@@ -250,11 +250,38 @@ final class ArchiveManager {
         }
     }
 
+    // MARK: - Typed archive accessors
+
+    func frames(matching query: FrameQuery) async throws -> [ArchivedFrame] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.frames(matching: query)
+    }
+
+    func members(inFrameSet id: UUID) async throws -> [FrameSetMember] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.members(inFrameSet: id)
+    }
+
+    func recentActivity(limit: Int?) async throws -> [RecentEntry] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.recentActivity(limit: limit)
+    }
+
+    func listObjects() async throws -> [(name: String, count: Int)] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.listObjects()
+    }
+
+    func session(id: UUID) async throws -> ObservingSession? {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.session(id: id)
+    }
+
+    // MARK: - Tools exposed to Claude (string-based dispatch for AI use)
+
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
         guard let archive else { throw ArchiveManagerError.notConnected }
         switch name {
-        // Navi-specific tools (JSON output for UI parsing — not Claude tools).
-        case "archive_session_get":  return try await archiveSessionGet(arguments, archive: archive)
         // Shared archive tools via AstrophotoToolsKit.
         case let n where n.hasPrefix("archive_"):
             let result = try await ArchiveToolHandler(archive: archive).call(name: name, arguments: arguments)
@@ -269,29 +296,8 @@ final class ArchiveManager {
         }
     }
 
-    private func archiveSessionGet(_ args: [String: Any], archive: Archive) async throws -> String {
-        guard let idStr = args["id"] as? String, let uuid = UUID(uuidString: idStr) else {
-            throw ArchiveManagerError.missingArgument("id")
-        }
-        guard let session = try await archive.session(id: uuid) else {
-            throw ArchiveManagerError.missingArgument("No session found with id \(idStr)")
-        }
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        df.timeZone = TimeZone(identifier: "UTC")
-        let sortDate = session.startTime ?? session.date
-        let dict: [String: Any] = [
-            "id": session.id.uuidString,
-            "name": session.name,
-            "is_night": session.isNight,
-            "frame_count": session.frameCount,
-            "sort_date": df.string(from: sortDate)
-        ]
-        let data = try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys])
-        return String(data: data, encoding: .utf8) ?? "{}"
-    }
-
 }
+
 
 
 struct FITSImportResult {

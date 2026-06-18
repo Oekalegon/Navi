@@ -68,6 +68,157 @@ struct ArchiveViewerContent: Equatable {
     // "temp" is only used to construct display names for calibration frames.
     private static let hiddenColumns: Set<String> = ["id", "rejected", "temp", "session_id", "_kind", "matched"]
 
+    // MARK: - Typed factories
+
+    static func frames(_ frames: [ArchivedFrame], toolName: String) -> ArchiveViewerContent {
+        let title = Self.titleFor(toolName: toolName)
+        let iso = ISO8601DateFormatter()
+        func shortDate(_ date: Date) -> String {
+            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+        }
+        let rows: [ArchiveRow] = frames.map { f in
+            var values: [String: String] = [
+                "id": f.id.uuidString,
+                "type": f.frameType,
+                "level": f.processingLevel.rawValue,
+                "file": f.filePath,
+            ]
+            if let v = f.objectName   { values["object"] = v }
+            if let v = f.filter       { values["filter"] = v }
+            if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
+            if let v = f.timestamp    { values["date"] = shortDate(v) }
+            if f.rejected             { values["rejected"] = "true" }
+            if let v = f.starCount    { values["stars"] = "\(v)" }
+            if let px = f.medianFWHM  {
+                values["fwhm"] = f.medianFWHMArcsec
+                    .map { String(format: "%.2fpx/%.2f\"", px, $0) }
+                    ?? String(format: "%.2fpx", px)
+            }
+            if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            return ArchiveRow(id: f.id, values: values)
+        }
+        return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
+    }
+
+    static func members(_ members: [FrameSetMember], toolName: String) -> ArchiveViewerContent {
+        let title = Self.titleFor(toolName: toolName)
+        let iso = ISO8601DateFormatter()
+        func shortDate(_ date: Date) -> String {
+            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+        }
+        let rows: [ArchiveRow] = members.map { m in
+            let f = m.frame
+            var values: [String: String] = [
+                "id": f.id.uuidString,
+                "type": f.frameType,
+                "level": f.processingLevel.rawValue,
+                "file": f.filePath,
+            ]
+            if m.excluded             { values["excluded"] = "true" }
+            if let v = f.objectName   { values["object"] = v }
+            if let v = f.filter       { values["filter"] = v }
+            if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
+            if let v = f.timestamp    { values["date"] = shortDate(v) }
+            if f.rejected             { values["rejected"] = "true" }
+            if let v = f.starCount    { values["stars"] = "\(v)" }
+            if let px = f.medianFWHM  {
+                values["fwhm"] = f.medianFWHMArcsec
+                    .map { String(format: "%.2fpx/%.2f\"", px, $0) }
+                    ?? String(format: "%.2fpx", px)
+            }
+            if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            return ArchiveRow(id: f.id, values: values)
+        }
+        return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
+    }
+
+    static func recentActivity(_ entries: [RecentEntry], toolName: String) -> ArchiveViewerContent {
+        let title = Self.titleFor(toolName: toolName)
+        let iso = ISO8601DateFormatter()
+        func shortDate(_ date: Date) -> String {
+            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+        }
+        let rows: [ArchiveRow] = entries.map { entry in
+            switch entry {
+            case .session(let s, let recency):
+                return ArchiveRow(id: s.id, values: [
+                    "kind": "session",
+                    "id": s.id.uuidString,
+                    "name": s.name,
+                    "type": s.isNight ? "night" : "day",
+                    "frames": "\(s.frameCount)",
+                    "recency": shortDate(recency),
+                ])
+            case .dateGroup(let label, let utcDate, let recency, let count):
+                return ArchiveRow(values: [
+                    "kind": "date_group",
+                    "name": label,
+                    "utc_date": utcDate,
+                    "frames": "\(count)",
+                    "recency": shortDate(recency),
+                ])
+            case .frame(let f):
+                var values: [String: String] = [
+                    "kind": "frame",
+                    "id": f.id.uuidString,
+                    "type": f.frameType,
+                    "level": f.processingLevel.rawValue,
+                    "added": shortDate(f.addedAt),
+                    "file": URL(fileURLWithPath: f.filePath).lastPathComponent,
+                ]
+                if let v = f.objectName   { values["object"] = v }
+                if let v = f.filter       { values["filter"] = v }
+                if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
+                if let v = f.timestamp    { values["date"] = shortDate(v) }
+                if f.rejected             { values["rejected"] = "true" }
+                if let v = f.starCount    { values["stars"] = "\(v)" }
+                if let px = f.medianFWHM  {
+                    values["fwhm"] = f.medianFWHMArcsec
+                        .map { String(format: "%.2fpx/%.2f\"", px, $0) }
+                        ?? String(format: "%.2fpx", px)
+                }
+                if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+                return ArchiveRow(id: f.id, values: values)
+            case .frameSet(let fs):
+                var values: [String: String] = [
+                    "kind": "frameset",
+                    "id": fs.id.uuidString,
+                    "name": fs.name,
+                    "level": fs.processingLevel.rawValue,
+                    "type": fs.frameType,
+                    "frames": "\(fs.frameCount)",
+                    "created": shortDate(fs.createdAt),
+                ]
+                if let v = fs.objectName { values["object"] = v }
+                if let v = fs.filter     { values["filter"] = v }
+                return ArchiveRow(id: fs.id, values: values)
+            }
+        }
+        return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
+    }
+
+    private static func makeTypedTable(title: String, toolName: String,
+                                       rows: [ArchiveRow]) -> ArchiveViewerContent {
+        guard !rows.isEmpty else {
+            return ArchiveViewerContent(title: title, toolName: toolName, rawContent: "",
+                                        columns: [], rows: [], isTable: true)
+        }
+        let priorityKeys = ["id", "name", "object", "type", "filter", "level",
+                            "frames", "exp", "stars", "fwhm", "ecc", "date", "added", "created", "file"]
+        var seen = Set<String>()
+        var columns: [String] = []
+        for key in priorityKeys where rows.contains(where: { $0.values[key] != nil }) && seen.insert(key).inserted {
+            columns.append(key)
+        }
+        for row in rows {
+            for key in row.values.keys.sorted() where seen.insert(key).inserted {
+                columns.append(key)
+            }
+        }
+        return ArchiveViewerContent(title: title, toolName: toolName, rawContent: "",
+                                    columns: columns, rows: rows, isTable: true)
+    }
+
     static func parse(toolName: String, content: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
 

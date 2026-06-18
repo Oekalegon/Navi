@@ -287,14 +287,9 @@ struct ArchiveFilterSheet: View {
         isLoadingObjects = true
         defer { isLoadingObjects = false }
         do {
-            let result = try await ArchiveManager.shared.callTool(name: "archive_list_objects", arguments: [:])
-            let parsed = ArchiveViewerContent.parse(toolName: "archive_list_objects", content: result)
-            let names = parsed.rows.compactMap { row -> String? in
-                let n = row.values["name"] ?? row.values["object"] ?? ""
-                return n.isEmpty ? nil : n
-            }
-            let sorted = Array(Set(names)).sorted()
-            if !sorted.isEmpty { allObjects = sorted }
+            let objects = try await ArchiveManager.shared.listObjects()
+            let names = objects.map(\.name).filter { !$0.isEmpty }
+            if !names.isEmpty { allObjects = names }
         } catch {
             logger.warning("archive_list_objects failed: \(error)")
         }

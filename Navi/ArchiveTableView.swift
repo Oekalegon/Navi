@@ -95,14 +95,11 @@ struct ArchiveTableView: View {
     }
 
     private func loadChildren(for row: ArchiveRow) async {
-        guard let idStr = row.values["id"], !idStr.isEmpty else { return }
+        guard let idStr = row.values["id"], let uuid = UUID(uuidString: idStr) else { return }
         loadingFramesets.insert(row.id)
         do {
-            let result = try await ArchiveManager.shared.callTool(
-                name: "archive_frameset_get",
-                arguments: ["id": idStr]
-            )
-            let parsed = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+            let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
+            let parsed = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get")
             framesetChildren[row.id] = parsed.rows
         } catch {
             logger.warning("archive_frameset_get failed for \(idStr): \(error)")
@@ -223,30 +220,30 @@ struct ArchiveTableView: View {
     }
 
     private func fetchSessionInfo(id: String) async {
+        let invalid = SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false)
+        guard let uuid = UUID(uuidString: id) else {
+            await MainActor.run { onSessionLoaded?(id, invalid) }
+            return
+        }
         do {
-            let result = try await ArchiveManager.shared.callTool(
-                name: "archive_session_get",
-                arguments: ["id": id]
-            )
-            guard let data = result.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                await MainActor.run {
-                    onSessionLoaded?(id, SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false))
-                }
+            guard let session = try await ArchiveManager.shared.session(id: uuid) else {
+                await MainActor.run { onSessionLoaded?(id, invalid) }
                 return
             }
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd HH:mm"
+            df.timeZone = TimeZone(identifier: "UTC")
+            let sortDate = df.string(from: session.startTime ?? session.date)
             let meta = SessionMeta(
-                name: json["name"] as? String ?? "Session",
-                total: json["frame_count"] as? Int ?? 0,
-                isNight: json["is_night"] as? Bool ?? true,
-                sortDate: json["sort_date"] as? String ?? "",
+                name: session.name,
+                total: session.frameCount,
+                isNight: session.isNight,
+                sortDate: sortDate,
                 isValid: true
             )
             await MainActor.run { onSessionLoaded?(id, meta) }
         } catch {
-            await MainActor.run {
-                onSessionLoaded?(id, SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false))
-            }
+            await MainActor.run { onSessionLoaded?(id, invalid) }
         }
     }
 

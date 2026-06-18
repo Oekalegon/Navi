@@ -330,12 +330,10 @@ struct InfoPanelView: View {
 
     private func openFrameset(id: String) {
         Task {
+            guard let uuid = UUID(uuidString: id) else { return }
             do {
-                let result = try await ArchiveManager.shared.callTool(
-                    name: "archive_frameset_get",
-                    arguments: ["id": id]
-                )
-                let content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+                let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
+                let content = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get")
                 paneManager.showArchiveViewer(content: content)
             } catch {
                 logger.error("openFrameset failed for id \(id): \(error)")

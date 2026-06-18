@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import AstrophotoArchiveKit
 import OSLog
 
 struct ArchiveViewerView: View {
@@ -323,12 +324,12 @@ struct ArchiveViewerView: View {
         }
         isLoadingFilter = true
         do {
-            var args: [String: Any] = ["kind": f.kind ?? "both"]
-            if !f.types.isEmpty { args["frame_types"] = Array(f.types) }
-            if let lvl = f.processingLevel { args["processing_level"] = lvl }
-            let result = try await ArchiveManager.shared.callTool(name: "archive_search", arguments: args)
+            var query = FrameQuery()
+            if !f.types.isEmpty { query.frameTypes = Array(f.types) }
+            if let lvl = f.processingLevel { query.processingLevel = ProcessingLevel(rawValue: lvl) }
+            let frames = try await ArchiveManager.shared.frames(matching: query)
             guard !Task.isCancelled else { return }
-            filterBase = ArchiveViewerContent.parse(toolName: "archive_search", content: result)
+            filterBase = ArchiveViewerContent.frames(frames, toolName: "archive_search")
         } catch {
             guard !Task.isCancelled else { return }
             filterBase = nil
@@ -420,12 +421,10 @@ struct ArchiveViewerView: View {
     }
 
     private func loadFramesetView(id: String, title: String? = nil) async {
+        guard let uuid = UUID(uuidString: id) else { return }
         do {
-            let result = try await ArchiveManager.shared.callTool(
-                name: "archive_frameset_get",
-                arguments: ["id": id]
-            )
-            var content = ArchiveViewerContent.parse(toolName: "archive_frameset_get", content: result)
+            let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
+            var content = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get")
             if let title { content.title = title }
             paneManager.navigateArchiveTo(content: content)
         } catch {
@@ -439,11 +438,8 @@ struct ArchiveViewerView: View {
         isLoadingRecent = true
         defer { isLoadingRecent = false }
         do {
-            let result = try await ArchiveManager.shared.callTool(
-                name: "archive_recent",
-                arguments: ["limit": 0]   // 0 = no limit
-            )
-            var content = ArchiveViewerContent.parse(toolName: "archive_recent", content: result)
+            let entries = try await ArchiveManager.shared.recentActivity(limit: nil)
+            var content = ArchiveViewerContent.recentActivity(entries, toolName: "archive_recent")
             content.title = "All Frames"
             paneManager.navigateArchiveTo(content: content)
         } catch {
