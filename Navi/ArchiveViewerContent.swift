@@ -586,12 +586,12 @@ struct ArchiveViewerContent: Equatable {
                 "frames": "\(total)"
             ]
             if !objects.isEmpty { values["object"] = objects }
+            // added = newest import date of member frames — keeps sessions in the same
+            // recency order as their frames when sorting the Added column.
+            values["added"] = children.compactMap { $0.values["added"] }.max() ?? ""
+            // date = observation start time (separate semantic: when the session happened).
             if let sortDate = sessionInfo[sid]?.sortDate, !sortDate.isEmpty {
                 values["date"] = sortDate
-                values["added"] = sortDate
-            } else {
-                // Before sessionInfo loads, approximate with the newest frame's added date.
-                values["added"] = children.compactMap { $0.values["added"] }.max() ?? ""
             }
             return ArchiveRow(id: UUID(uuidString: sid) ?? UUID(), values: values, children: children)
         }
