@@ -83,8 +83,10 @@ struct ArchiveViewerContent: Equatable {
                 "level": f.processingLevel.rawValue,
                 "file": f.filePath,
             ]
+            values["added"] = shortDate(f.addedAt)
             if let v = f.objectName   { values["object"] = v }
             if let v = f.filter       { values["filter"] = v }
+            if let v = f.camera       { values["camera"] = v }
             if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
             if let v = f.timestamp    { values["date"] = shortDate(v) }
             if let v = f.sessionID    { values["session_id"] = v.uuidString }
@@ -116,8 +118,10 @@ struct ArchiveViewerContent: Equatable {
                 "file": f.filePath,
             ]
             if m.excluded             { values["excluded"] = "true" }
+            values["added"] = shortDate(f.addedAt)
             if let v = f.objectName   { values["object"] = v }
             if let v = f.filter       { values["filter"] = v }
+            if let v = f.camera       { values["camera"] = v }
             if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
             if let v = f.timestamp    { values["date"] = shortDate(v) }
             if f.rejected             { values["rejected"] = "true" }
