@@ -425,7 +425,11 @@ struct ArchiveViewerView: View {
         do {
             let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
             var content = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get")
-            if let title { content.title = title }
+            if let title {
+                content.title = title
+            } else if let fs = await ArchiveManager.shared.frameSet(id: uuid) {
+                content.title = fs.name
+            }
             paneManager.navigateArchiveTo(content: content)
         } catch {
             logger.error("loadFramesetView failed: \(error)")
