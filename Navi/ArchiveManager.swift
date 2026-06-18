@@ -262,6 +262,11 @@ final class ArchiveManager {
         return try await archive.members(inFrameSet: id)
     }
 
+    func frames(inSession id: UUID) async throws -> [ArchivedFrame] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.frames(inSession: id)
+    }
+
     func recentActivity(limit: Int?) async throws -> [RecentEntry] {
         guard let archive else { throw ArchiveManagerError.notConnected }
         return try await archive.recentActivity(limit: limit)

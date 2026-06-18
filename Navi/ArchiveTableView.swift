@@ -98,11 +98,15 @@ struct ArchiveTableView: View {
         guard let idStr = row.values["id"], let uuid = UUID(uuidString: idStr) else { return }
         loadingFramesets.insert(row.id)
         do {
-            let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
-            let parsed = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get")
-            framesetChildren[row.id] = parsed.rows
+            if row.values["kind"] == "session" {
+                let frames = try await ArchiveManager.shared.frames(inSession: uuid)
+                framesetChildren[row.id] = ArchiveViewerContent.frames(frames, toolName: "archive_session_frames").rows
+            } else {
+                let fetched = try await ArchiveManager.shared.members(inFrameSet: uuid)
+                framesetChildren[row.id] = ArchiveViewerContent.members(fetched, toolName: "archive_frameset_get").rows
+            }
         } catch {
-            logger.warning("archive_frameset_get failed for \(idStr): \(error)")
+            logger.warning("loadChildren failed for \(idStr): \(error)")
         }
         loadingFramesets.remove(row.id)
     }

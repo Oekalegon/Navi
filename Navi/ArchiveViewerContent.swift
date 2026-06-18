@@ -87,6 +87,7 @@ struct ArchiveViewerContent: Equatable {
             if let v = f.filter       { values["filter"] = v }
             if let v = f.exposureTime { values["exp"] = String(format: "%.0fs", v) }
             if let v = f.timestamp    { values["date"] = shortDate(v) }
+            if let v = f.sessionID    { values["session_id"] = v.uuidString }
             if f.rejected             { values["rejected"] = "true" }
             if let v = f.starCount    { values["stars"] = "\(v)" }
             if let px = f.medianFWHM  {
