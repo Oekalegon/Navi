@@ -432,14 +432,17 @@ struct ArchiveViewerView: View {
         }
     }
 
-    // Shows every frame in the archive, sorted by added date (newest first).
+    // Loads all light frames so groupedBySessions can build proper session folders.
+    // Calibration frame types (dark, flat, bias, darkflat) are excluded for now.
     private func loadAllFrames() async {
         guard !isLoadingRecent else { return }
         isLoadingRecent = true
         defer { isLoadingRecent = false }
         do {
-            let entries = try await ArchiveManager.shared.recentActivity(limit: nil)
-            var content = ArchiveViewerContent.recentActivity(entries, toolName: "archive_recent")
+            var query = FrameQuery()
+            query.frameTypes = ["light"]
+            let frames = try await ArchiveManager.shared.frames(matching: query)
+            var content = ArchiveViewerContent.frames(frames, toolName: "archive_recent")
             content.title = "All Frames"
             paneManager.navigateArchiveTo(content: content)
         } catch {
