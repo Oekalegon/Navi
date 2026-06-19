@@ -15,6 +15,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Checkout AstroKit (local dependency)
+      uses: actions/checkout@v4
+      with:
+        repository: Oekalegon/AstroKit
+        path: ../AstroKit
+
     - name: Build
       run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' build
 
