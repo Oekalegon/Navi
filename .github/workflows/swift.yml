@@ -25,7 +25,7 @@ jobs:
       run: ln -s "$GITHUB_WORKSPACE/AstroKit" "$(dirname "$GITHUB_WORKSPACE")/AstroKit"
 
     - name: Build
-      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' build
+      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
     - name: Run tests
-      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' test -skip-testing:NaviUITests
+      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' test -skip-testing:NaviUITests CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
