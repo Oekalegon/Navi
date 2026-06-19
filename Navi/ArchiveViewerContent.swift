@@ -269,15 +269,14 @@ struct ArchiveViewerContent: Equatable {
         }
         let priorityKeys = ["id", "name", "object", "type", "filter", "level",
                             "frames", "exp", "stars", "fwhm", "ecc", "date", "added", "created", "file"]
+        let allKeys = rows.reduce(into: Set<String>()) { $0.formUnion($1.values.keys) }
         var seen = Set<String>()
         var columns: [String] = []
-        for key in priorityKeys where rows.contains(where: { $0.values[key] != nil }) && seen.insert(key).inserted {
+        for key in priorityKeys where allKeys.contains(key) && seen.insert(key).inserted {
             columns.append(key)
         }
-        for row in rows {
-            for key in row.values.keys.sorted() where seen.insert(key).inserted {
-                columns.append(key)
-            }
+        for key in allKeys.sorted() where seen.insert(key).inserted {
+            columns.append(key)
         }
         return ArchiveViewerContent(title: title, toolName: toolName, rawContent: "",
                                     columns: columns, rows: rows, isTable: true)

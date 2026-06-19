@@ -216,9 +216,42 @@ struct ArchiveTableView: View {
                   sessionInfo[sid] == nil else { return nil }
             return sid
         }
-        await withTaskGroup(of: Void.self) { group in
-            for sid in missing {
-                group.addTask { await self.fetchSessionInfo(id: sid) }
+        guard !missing.isEmpty else { return }
+
+        let invalid = SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HH:mm"
+        df.timeZone = TimeZone(identifier: "UTC")
+
+        do {
+            let allSessions = try await ArchiveManager.shared.sessions()
+            let neededIDs = Set(missing)
+            var updates: [String: SessionMeta] = [:]
+            for session in allSessions where neededIDs.contains(session.id.uuidString) {
+                let sortDate = df.string(from: session.startTime ?? session.date)
+                updates[session.id.uuidString] = SessionMeta(
+                    name: session.name,
+                    total: session.frameCount,
+                    isNight: session.isNight,
+                    sortDate: sortDate,
+                    isValid: true
+                )
+            }
+            for sid in missing where updates[sid] == nil {
+                updates[sid] = invalid
+            }
+            // Single MainActor dispatch so SwiftUI batches all sessionInfo mutations
+            // into one groupedBySessions() recompute instead of one per session.
+            let callback = onSessionLoaded
+            await MainActor.run {
+                for (id, meta) in updates { callback?(id, meta) }
+            }
+        } catch {
+            // Archive unavailable — fall back to per-session fetches
+            await withTaskGroup(of: Void.self) { group in
+                for sid in missing {
+                    group.addTask { await self.fetchSessionInfo(id: sid) }
+                }
             }
         }
     }

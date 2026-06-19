@@ -287,6 +287,11 @@ final class ArchiveManager {
         return try await archive.session(id: id)
     }
 
+    func sessions() async throws -> [ObservingSession] {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.sessions()
+    }
+
     // MARK: - Tools exposed to Claude (string-based dispatch for AI use)
 
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
