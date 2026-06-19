@@ -1,0 +1,22 @@
+name: Swift
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: macos-15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build
+      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' build
+
+    - name: Run tests
+      run: xcodebuild -project Navi.xcodeproj -scheme Navi -destination 'platform=macOS' test -skip-testing:NaviUITests
