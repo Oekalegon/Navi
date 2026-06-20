@@ -62,7 +62,8 @@ final class WindowRegistry {
         let manager: PaneManager
         if let s = staged.removeValue(forKey: token.id) {
             manager = s
-        } else if entries.isEmpty, let restored = PaneManager.fromSavedLayout() {
+        } else if entries.isEmpty, token.rootType == .aiAssistant,
+                  let restored = PaneManager.fromSavedLayout() {
             manager = restored
         } else {
             manager = PaneManager(rootType: token.rootType)
