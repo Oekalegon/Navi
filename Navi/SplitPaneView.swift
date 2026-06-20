@@ -13,35 +13,184 @@ struct SplitPaneView: View {
     var paneManager: PaneManager
 
     var body: some View {
-        if let children = pane.children, let direction = pane.direction {
-            if direction == .horizontal {
-                HSplitView {
-                    ForEach(children) { child in
-                        StableSplitPaneHost(pane: child, paneManager: paneManager,
-                                            splitAutosaveName: pane.id.uuidString)
-                            .frame(idealWidth: child.preferredWidth, maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-            } else {
-                VSplitView {
-                    ForEach(children) { child in
-                        StableSplitPaneHost(pane: child, paneManager: paneManager,
-                                            splitAutosaveName: pane.id.uuidString)
-                            .frame(maxWidth: .infinity, idealHeight: child.preferredHeight, maxHeight: .infinity)
-                    }
-                }
-            }
+        if let direction = pane.direction, pane.children != nil {
+            ManagedSplitView(pane: pane, paneManager: paneManager,
+                             isHorizontal: direction == .horizontal)
         } else {
             PaneContentView(pane: pane)
         }
     }
 }
 
-// Thin NSView shell that hosts an NSHostingView<AnyView> and fires onPlaced
-// exactly once, after the view has joined the window hierarchy.
+// MARK: - Managed NSSplitView
+
+// NSViewRepresentable that owns an NSSplitView directly, acting as its own
+// NSSplitViewDelegate. This gives us synchronous control over divider positions
+// when panes are added — the delegate's resizeSubviewsWithOldSize fires inside
+// addSubview, before any layout pass, so no async timing tricks are needed.
+struct ManagedSplitView: NSViewRepresentable {
+    let pane: SplitPane
+    let paneManager: PaneManager
+    let isHorizontal: Bool
+
+    func makeNSView(context: Context) -> ManagedSplitContainer {
+        ManagedSplitContainer(pane: pane, paneManager: paneManager, isHorizontal: isHorizontal)
+    }
+
+    func updateNSView(_ nsView: ManagedSplitContainer, context: Context) {
+        // Children sync is driven by withObservationTracking inside the container.
+    }
+}
+
+final class ManagedSplitContainer: NSView, NSSplitViewDelegate {
+    let splitView = NSSplitView()
+    private let pane: SplitPane
+    private let paneManager: PaneManager
+    private let isHorizontal: Bool
+    // Maps each child pane's UUID to its host view inside the split.
+    private var paneViews: [UUID: StablePaneHostView] = [:]
+
+    init(pane: SplitPane, paneManager: PaneManager, isHorizontal: Bool) {
+        self.pane = pane
+        self.paneManager = paneManager
+        self.isHorizontal = isHorizontal
+        super.init(frame: .zero)
+
+        splitView.isVertical = isHorizontal   // vertical dividers = left/right layout
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.autoresizingMask = [.width, .height]
+        addSubview(splitView)
+
+        syncChildren()
+
+        // Set autosave name after initial sync so restoreState() fires with
+        // the correct number of subviews already in place.
+        splitView.autosaveName = NSSplitView.AutosaveName(pane.id.uuidString)
+
+        observeChildren()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Child synchronisation
+
+    func syncChildren() {
+        guard let children = pane.children else { return }
+
+        // Add views for children that don't have one yet.
+        for (idx, child) in children.enumerated() {
+            guard paneViews[child.id] == nil else { continue }
+            let view = makeHostView(for: child)
+            paneViews[child.id] = view
+            // Insert at the correct position in the split.
+            if idx < splitView.subviews.count {
+                splitView.addSubview(view, positioned: .below, relativeTo: splitView.subviews[idx])
+            } else {
+                splitView.addSubview(view)
+            }
+            // addSubview triggers resizeSubviewsWithOldSize synchronously;
+            // the delegate applies the pending initial width there.
+        }
+
+        // Remove views for children that no longer exist.
+        let liveIDs = Set(children.map(\.id))
+        for (id, view) in paneViews where !liveIDs.contains(id) {
+            view.removeFromSuperview()
+            paneViews.removeValue(forKey: id)
+        }
+    }
+
+    private func makeHostView(for child: SplitPane) -> StablePaneHostView {
+        let rootView = AnyView(
+            SplitPaneView(pane: child, paneManager: paneManager)
+                .environment(paneManager)
+        )
+        let view = StablePaneHostView(rootView: rootView)
+        view.autoresizingMask = [.width, .height]
+        return view
+    }
+
+    // MARK: - NSSplitViewDelegate
+
+    func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
+        guard let children = pane.children, !splitView.subviews.isEmpty else { return }
+
+        let totalSize  = isHorizontal ? splitView.bounds.width  : splitView.bounds.height
+        let divSize    = splitView.dividerThickness
+        let available  = totalSize - CGFloat(max(0, splitView.subviews.count - 1)) * divSize
+        guard available > 0 else { return }
+
+        // Find any child that is being newly opened (has a pending initial size).
+        var newIdx: Int?
+        var newSize: CGFloat?
+        for (i, child) in children.prefix(splitView.subviews.count).enumerated() {
+            if let pw = paneManager.pendingInitialWidths.removeValue(forKey: child.id) {
+                newIdx  = i
+                newSize = isHorizontal ? pw : (child.preferredHeight ?? pw)
+                break
+            }
+        }
+
+        if let idx = newIdx, let desired = newSize {
+            // Give the new pane its preferred size; scale the others proportionally.
+            let capped      = min(desired, available * 0.9)
+            let otherAvail  = available - capped
+            let existingSum = splitView.subviews.enumerated()
+                .filter { $0.offset != idx }
+                .reduce(0.0) { sum, pair in
+                    isHorizontal ? sum + pair.element.frame.width
+                                 : sum + pair.element.frame.height
+                }
+
+            var coord: CGFloat = 0
+            for (i, sub) in splitView.subviews.enumerated() {
+                let size: CGFloat
+                if i == idx {
+                    size = capped
+                } else {
+                    let frac = existingSum > 0
+                        ? (isHorizontal ? sub.frame.width : sub.frame.height) / existingSum
+                        : 1.0 / CGFloat(max(1, splitView.subviews.count - 1))
+                    size = otherAvail * frac
+                }
+                if isHorizontal {
+                    sub.frame = CGRect(x: coord, y: 0, width: size, height: splitView.bounds.height)
+                    coord += size + divSize
+                } else {
+                    sub.frame = CGRect(x: 0, y: coord, width: splitView.bounds.width, height: size)
+                    coord += size + divSize
+                }
+            }
+        } else {
+            // No new panes — use NSSplitView's default proportional resize,
+            // which also restores autosaved divider positions.
+            splitView.adjustSubviews()
+        }
+    }
+
+    // MARK: - Observation
+
+    private func observeChildren() {
+        withObservationTracking {
+            _ = pane.children?.map(\.id)  // track the child list
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.syncChildren()
+                self?.observeChildren()
+            }
+        }
+    }
+}
+
+// MARK: - Stable pane host
+
+// Thin NSView shell around NSHostingView<AnyView>.  Sitting as a direct
+// subview of NSSplitView ensures FocusTrackerView.findPaneRoot() stops here
+// (its parent IS an NSSplitView), and the stable identity means NSSplitView
+// never sees a subview swap when a leaf turns into a split node.
 final class StablePaneHostView: NSView {
     let hostingView: NSHostingView<AnyView>
-    var onPlaced: (() -> Void)?
 
     init(rootView: AnyView) {
         hostingView = NSHostingView(rootView: rootView)
@@ -51,109 +200,9 @@ final class StablePaneHostView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil, let callback = onPlaced else { return }
-        onPlaced = nil
-        // Double-defer: SwiftUI may schedule adjustSubviews as a deferred
-        // layout pass (one async hop), so a second hop guarantees we land
-        // after it regardless of which was queued first.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async { callback() }
-        }
-    }
 }
 
-// Wraps SplitPaneView in a stable StablePaneHostView so the parent NSSplitView
-// never sees a subview add/remove when pane content changes type
-// (e.g. PaneContentView → VSplitView). NSSplitView only re-runs adjustSubviews
-// on structural subview changes, so the user-set divider position is preserved.
-//
-// splitAutosaveName: the UUID string of the *parent* SplitPane, used as the
-// NSSplitView autosave name so AppKit persists divider positions across launches.
-struct StableSplitPaneHost: NSViewRepresentable {
-    let pane: SplitPane
-    let paneManager: PaneManager
-    let splitAutosaveName: String
-
-    func makeNSView(context: Context) -> StablePaneHostView {
-        let container = StablePaneHostView(rootView: content)
-        container.autoresizingMask = [.width, .height]
-
-        // Seed the frame width so adjustSubviews uses the preferred width
-        // as its proportional baseline rather than 0 or the placeholder's
-        // intrinsic size (~150 px icon).  onPlaced then sets the exact
-        // position once the layout has settled.
-        if let pw = pane.preferredWidth {
-            container.frame.size.width = pw
-        }
-
-        let name = splitAutosaveName
-        let paneID = pane.id
-        let managerRef = paneManager
-
-        // onPlaced fires via viewDidMoveToWindow + one async deferral, so the
-        // view is guaranteed to be in the hierarchy and adjustSubviews is done.
-        container.onPlaced = { [weak container] in
-            guard let container else { return }
-
-            // Walk up to the parent NSSplitView.
-            var sv: NSSplitView?
-            var current: NSView? = container.superview
-            while let v = current {
-                if let splitView = v as? NSSplitView { sv = splitView; break }
-                current = v.superview
-            }
-            guard let sv else { return }
-
-            // Find our slot in the split — container may be a direct subview or
-            // wrapped by a SwiftUI layout container.
-            let slot: NSView?
-            if sv.subviews.contains(container) {
-                slot = container
-            } else {
-                slot = sv.subviews.first { container.isDescendant(of: $0) }
-            }
-            guard let slot, let idx = sv.subviews.firstIndex(of: slot),
-                  sv.subviews.count > 1 else { return }
-
-            // For panes opened during a session (not restored from disk), apply
-            // the preferred initial width before setting the autosave name so
-            // autosave can override it on subsequent launches with the user's
-            // last-chosen position.
-            if let pw = managerRef.pendingInitialWidths.removeValue(forKey: paneID) {
-                let total = sv.bounds.width
-                if idx == sv.subviews.count - 1 {
-                    sv.setPosition(max(0, total - pw), ofDividerAt: idx - 1)
-                } else if idx == 0 {
-                    sv.setPosition(min(pw, total), ofDividerAt: 0)
-                }
-            }
-
-            // Setting autosave name triggers restoreState(), which overwrites
-            // the position above with the user's saved choice on subsequent launches.
-            let autosaveName = NSSplitView.AutosaveName(name)
-            if sv.autosaveName != autosaveName { sv.autosaveName = autosaveName }
-        }
-
-        return container
-    }
-
-    func updateNSView(_ nsView: StablePaneHostView, context: Context) {
-        // SplitPane and PaneManager are both @Observable, so every view inside
-        // the hosting view re-renders automatically when their properties change.
-        // Re-setting rootView here would break AnyView type-identity tracking,
-        // causing SwiftUI to lose @State (e.g. table selectionID) on every update.
-    }
-
-    private var content: AnyView {
-        AnyView(
-            SplitPaneView(pane: pane, paneManager: paneManager)
-                .environment(paneManager)
-        )
-    }
-}
+// MARK: - Pane content
 
 struct PaneContentView: View {
     var pane: SplitPane
@@ -218,6 +267,8 @@ private struct PaneFocusTriangle: Shape {
         }
     }
 }
+
+// MARK: - Focus tracking
 
 // Observes NSWindow.firstResponder via KVO. When first responder becomes a
 // descendant of this pane's NSHostingView, marks the pane as focused.

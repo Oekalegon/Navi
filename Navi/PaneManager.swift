@@ -23,7 +23,7 @@ class PaneManager {
     var focusedPaneID: UUID? = nil
 
     // Initial widths for panes that were just opened (not restored from disk).
-    // StableSplitPaneHost consumes these once to call NSSplitView.setPosition,
+    // ManagedSplitContainer's delegate consumes these synchronously inside addSubview
     // overriding the proportional redistribution that adjustSubviews applies
     // when a new subview is added. Restored panes don't get an entry here, so
     // autosave positions are left untouched on subsequent launches.
