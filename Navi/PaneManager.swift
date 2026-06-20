@@ -307,13 +307,13 @@ class PaneManager {
         }
         if rootPane.children != nil, rootPane.direction == .horizontal {
             let ai = SplitPane(type: .aiAssistant)
-            ai.preferredWidth = 300
+            ai.preferredWidth = 700
             rootPane.children?.insert(ai, at: 0)
             saveLayout()
             return
         }
         insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
-                   preferredWidth: 300)
+                   preferredWidth: 700)
     }
 
     var isInfoPanelVisible: Bool {
@@ -346,13 +346,13 @@ class PaneManager {
         }
         if rootPane.children != nil, rootPane.direction == .horizontal {
             let info = SplitPane(type: .infoPanel)
-            info.preferredWidth = 300
+            info.preferredWidth = 700
             rootPane.children?.append(info)
             saveLayout()
             return
         }
         insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
-                   preferredWidth: 300)
+                   preferredWidth: 700)
     }
 
     // FITS viewer splits the archive viewer vertically with FITS on top.
