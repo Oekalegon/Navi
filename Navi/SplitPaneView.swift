@@ -55,16 +55,36 @@ struct StableSplitPaneHost: NSViewRepresentable {
         // Defer until the next run loop cycle when the view is in the hierarchy
         // and its parent NSSplitView is known.
         let name = splitAutosaveName
-        DispatchQueue.main.async {
+        let paneRef = pane
+        let managerRef = paneManager
+        DispatchQueue.main.async { [weak view] in
+            guard let view else { return }
+            var sv: NSSplitView?
             var current: NSView? = view.superview
             while let v = current {
-                if let sv = v as? NSSplitView {
-                    let autosaveName = NSSplitView.AutosaveName(name)
-                    if sv.autosaveName != autosaveName { sv.autosaveName = autosaveName }
-                    return
-                }
+                if let splitView = v as? NSSplitView { sv = splitView; break }
                 current = v.superview
             }
+            guard let sv else { return }
+
+            // If this pane was explicitly opened (not restored from disk),
+            // set its preferred width now — before autosave is applied —
+            // so NSSplitView's proportional adjustSubviews doesn't leave it tiny.
+            if let pw = managerRef.pendingInitialWidths.removeValue(forKey: paneRef.id),
+               let idx = sv.subviews.firstIndex(where: { view.isDescendant(of: $0) }),
+               sv.subviews.count > 1 {
+                let total = sv.bounds.width
+                if idx == sv.subviews.count - 1 {
+                    sv.setPosition(max(0, total - pw), ofDividerAt: idx - 1)
+                } else if idx == 0 {
+                    sv.setPosition(min(pw, total), ofDividerAt: 0)
+                }
+            }
+
+            // Apply autosave name — on subsequent launches this triggers
+            // restoreState() which overrides the above with the user's last choice.
+            let autosaveName = NSSplitView.AutosaveName(name)
+            if sv.autosaveName != autosaveName { sv.autosaveName = autosaveName }
         }
         return view
     }

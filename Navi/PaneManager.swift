@@ -22,6 +22,13 @@ class PaneManager {
     var infoURL: URL?
     var focusedPaneID: UUID? = nil
 
+    // Initial widths for panes that were just opened (not restored from disk).
+    // StableSplitPaneHost consumes these once to call NSSplitView.setPosition,
+    // overriding the proportional redistribution that adjustSubviews applies
+    // when a new subview is added. Restored panes don't get an entry here, so
+    // autosave positions are left untouched on subsequent launches.
+    @ObservationIgnored var pendingInitialWidths: [UUID: CGFloat] = [:]
+
     // Live pane-frame providers, registered by each pane's FocusTrackerView and
     // keyed by tracker identity so a transient duplicate tracker for the same
     // pane can never clobber the live one. Frames are queried on demand (when
@@ -308,12 +315,14 @@ class PaneManager {
         if rootPane.children != nil, rootPane.direction == .horizontal {
             let ai = SplitPane(type: .aiAssistant)
             ai.preferredWidth = 700
+            pendingInitialWidths[ai.id] = 700
             rootPane.children?.insert(ai, at: 0)
             saveLayout()
             return
         }
-        insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
-                   preferredWidth: 700)
+        let ai = insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
+                            preferredWidth: 700)
+        pendingInitialWidths[ai.id] = 700
     }
 
     var isInfoPanelVisible: Bool {
@@ -347,12 +356,14 @@ class PaneManager {
         if rootPane.children != nil, rootPane.direction == .horizontal {
             let info = SplitPane(type: .infoPanel)
             info.preferredWidth = 700
+            pendingInitialWidths[info.id] = 700
             rootPane.children?.append(info)
             saveLayout()
             return
         }
-        insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
-                   preferredWidth: 700)
+        let info = insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
+                              preferredWidth: 700)
+        pendingInitialWidths[info.id] = 700
     }
 
     // FITS viewer splits the archive viewer vertically with FITS on top.
