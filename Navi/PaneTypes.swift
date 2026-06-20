@@ -8,7 +8,7 @@
 import Foundation
 
 // Direction for splitting a pane
-enum SplitDirection {
+enum SplitDirection: String, Codable {
     case horizontal // Left/Right split
     case vertical   // Up/Down split
 }

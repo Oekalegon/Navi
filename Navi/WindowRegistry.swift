@@ -59,7 +59,14 @@ final class WindowRegistry {
     func adopt(_ token: WindowToken) -> PaneManager {
         if let entry = entries.first(where: { $0.id == token.id }) { return entry.paneManager }
         guard !released.contains(token.id) else { return PaneManager(rootType: token.rootType) }
-        let manager = staged.removeValue(forKey: token.id) ?? PaneManager(rootType: token.rootType)
+        let manager: PaneManager
+        if let s = staged.removeValue(forKey: token.id) {
+            manager = s
+        } else if entries.isEmpty, let restored = PaneManager.fromSavedLayout() {
+            manager = restored
+        } else {
+            manager = PaneManager(rootType: token.rootType)
+        }
         entries.append(Entry(id: token.id, paneManager: manager, number: nextNumber))
         nextNumber += 1
         return manager

@@ -17,14 +17,16 @@ struct SplitPaneView: View {
             if direction == .horizontal {
                 HSplitView {
                     ForEach(children) { child in
-                        StableSplitPaneHost(pane: child, paneManager: paneManager)
+                        StableSplitPaneHost(pane: child, paneManager: paneManager,
+                                            splitAutosaveName: pane.id.uuidString)
                             .frame(idealWidth: child.preferredWidth, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             } else {
                 VSplitView {
                     ForEach(children) { child in
-                        StableSplitPaneHost(pane: child, paneManager: paneManager)
+                        StableSplitPaneHost(pane: child, paneManager: paneManager,
+                                            splitAutosaveName: pane.id.uuidString)
                             .frame(maxWidth: .infinity, idealHeight: child.preferredHeight, maxHeight: .infinity)
                     }
                 }
@@ -39,13 +41,31 @@ struct SplitPaneView: View {
 // never sees a subview add/remove when pane content changes type
 // (e.g. PaneContentView → VSplitView). NSSplitView only re-runs adjustSubviews
 // on structural subview changes, so the user-set divider position is preserved.
+//
+// splitAutosaveName: the UUID string of the *parent* SplitPane whose NSSplitView
+// should have its autosave name set so AppKit persists divider positions.
 struct StableSplitPaneHost: NSViewRepresentable {
     let pane: SplitPane
     let paneManager: PaneManager
+    let splitAutosaveName: String
 
     func makeNSView(context: Context) -> NSHostingView<AnyView> {
         let view = NSHostingView(rootView: content)
         view.autoresizingMask = [.width, .height]
+        // Defer until the next run loop cycle when the view is in the hierarchy
+        // and its parent NSSplitView is known.
+        let name = splitAutosaveName
+        DispatchQueue.main.async {
+            var current: NSView? = view.superview
+            while let v = current {
+                if let sv = v as? NSSplitView {
+                    let autosaveName = NSSplitView.AutosaveName(name)
+                    if sv.autosaveName != autosaveName { sv.autosaveName = autosaveName }
+                    return
+                }
+                current = v.superview
+            }
+        }
         return view
     }
 
