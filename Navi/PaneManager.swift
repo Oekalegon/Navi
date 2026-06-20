@@ -22,6 +22,13 @@ class PaneManager {
     var infoURL: URL?
     var focusedPaneID: UUID? = nil
 
+    // Initial widths for panes that were just opened (not restored from disk).
+    // ManagedSplitContainer's delegate consumes these synchronously inside addSubview
+    // overriding the proportional redistribution that adjustSubviews applies
+    // when a new subview is added. Restored panes don't get an entry here, so
+    // autosave positions are left untouched on subsequent launches.
+    @ObservationIgnored var pendingInitialWidths: [UUID: CGFloat] = [:]
+
     // Live pane-frame providers, registered by each pane's FocusTrackerView and
     // keyed by tracker identity so a transient duplicate tracker for the same
     // pane can never clobber the live one. Frames are queried on demand (when
@@ -38,8 +45,24 @@ class PaneManager {
         return frames
     }
 
+    private static let layoutKey = "navi.mainWindowLayout"
+
     init(rootType: PaneType = .aiAssistant) {
         self.rootPane = SplitPane(type: rootType)
+    }
+
+    func saveLayout() {
+        guard let data = try? JSONEncoder().encode(rootPane.snapshot()) else { return }
+        UserDefaults.standard.set(data, forKey: Self.layoutKey)
+    }
+
+    static func fromSavedLayout() -> PaneManager? {
+        guard let data = UserDefaults.standard.data(forKey: layoutKey),
+              let snapshot = try? JSONDecoder().decode(PaneTreeSnapshot.self, from: data)
+        else { return nil }
+        let manager = PaneManager()
+        manager.rootPane = SplitPane(snapshot: snapshot)
+        return manager
     }
 
     func findPane(ofType type: PaneType, in pane: SplitPane) -> SplitPane? {
@@ -83,6 +106,7 @@ class PaneManager {
         node.children = before ? [newPane, existing] : [existing, newPane]
         node.preferredWidth = nil
         node.preferredHeight = nil
+        saveLayout()
         return newPane
     }
 
@@ -101,6 +125,7 @@ class PaneManager {
         guard let target = widestLeafPane(in: rootPane) else { return }
         if target.paneType == .empty {
             target.paneType = .archiveViewer
+            saveLayout()
         } else if target.paneType == .aiAssistant {
             // Never stack below the assistant column: pin it to 300pt on the
             // left and give the archive the remaining width.
@@ -185,11 +210,19 @@ class PaneManager {
     func removeLeaf(_ leaf: SplitPane) {
         if rootPane === leaf {
             rootPane.paneType = .empty
+            saveLayout()
             return
         }
         guard leaf.isLeaf,
               let (parent, index) = findParent(of: leaf, in: rootPane),
-              let children = parent.children, children.count == 2 else { return }
+              let children = parent.children else { return }
+        // N-ary split (3+ children): just remove the one leaf.
+        if children.count > 2 {
+            parent.children?.remove(at: index)
+            if focusedPaneID == leaf.id { focusedPaneID = nil }
+            saveLayout()
+            return
+        }
         let sibling = children[1 - index]
         parent.paneType = sibling.paneType
         parent.direction = sibling.direction
@@ -201,6 +234,7 @@ class PaneManager {
         if focusedPaneID == leaf.id || focusedPaneID == sibling.id {
             focusedPaneID = nil
         }
+        saveLayout()
     }
 
     // Exchange the contents of two leaves; geometry stays with the position.
@@ -215,25 +249,31 @@ class PaneManager {
         } else if focusedPaneID == b.id {
             focusedPaneID = a.id
         }
+        saveLayout()
     }
 
-    // Move a leaf to a new position: remove it (sibling absorbs the space),
-    // then split the target node and place the pane on the chosen side.
+    // Move a leaf to a new position: remove it, then split the target and
+    // place the pane on the chosen side.
     func movePane(_ leaf: SplitPane, toTarget targetID: UUID,
                   direction: SplitDirection, before: Bool) {
         guard leaf.isLeaf,
               let (parent, index) = findParent(of: leaf, in: rootPane),
-              let children = parent.children, children.count == 2,
+              let children = parent.children,
               let preTarget = findPane(id: targetID, in: rootPane),
               preTarget !== leaf else { return }
-        let sibling = children[1 - index]
         let type = leaf.paneType
         let width = leaf.preferredWidth
         let height = leaf.preferredHeight
         removeLeaf(leaf)
-        // The sibling node is absorbed into the parent during removal, so a
-        // move targeting the sibling must re-target the parent.
-        let target = preTarget === sibling ? parent : preTarget
+        // For binary parents: the sibling absorbs the parent's space after
+        // removal, so a target pointing at the sibling must redirect to parent.
+        let target: SplitPane
+        if children.count == 2 {
+            let sibling = children[1 - index]
+            target = preTarget === sibling ? parent : preTarget
+        } else {
+            target = preTarget
+        }
         let newLeaf = insertPane(type, at: target, direction: direction, before: before,
                                  preferredWidth: width, preferredHeight: height)
         focusedPaneID = newLeaf.id
@@ -263,15 +303,26 @@ class PaneManager {
     }
 
     // AI assistant prefers the left edge: reuse an empty pane if available,
-    // otherwise wrap the whole tree so AI sits to the left of everything.
+    // or prepend directly to an existing horizontal root (avoids root-wrap
+    // which resets all dividers), otherwise wrap the whole tree.
     private func openAIAssistantPane() {
         if findPane(ofType: .aiAssistant, in: rootPane) != nil { return }
         if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .aiAssistant
+            saveLayout()
             return
         }
-        insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
-                   preferredWidth: 300)
+        if rootPane.children != nil, rootPane.direction == .horizontal {
+            let ai = SplitPane(type: .aiAssistant)
+            ai.preferredWidth = 400
+            pendingInitialWidths[ai.id] = 400
+            rootPane.children?.insert(ai, at: 0)
+            saveLayout()
+            return
+        }
+        let ai = insertPane(.aiAssistant, at: rootPane, direction: .horizontal, before: true,
+                            preferredWidth: 400)
+        pendingInitialWidths[ai.id] = 400
     }
 
     var isInfoPanelVisible: Bool {
@@ -293,15 +344,26 @@ class PaneManager {
     }
 
     // Info panel is a tall column at the right edge: reuse an empty pane if
-    // available, otherwise wrap the whole tree so it sits right of everything.
+    // available, or append directly to an existing horizontal root (avoids
+    // root-wrap which resets all dividers), otherwise wrap the whole tree.
     private func openInfoPane() {
         if findPane(ofType: .infoPanel, in: rootPane) != nil { return }
         if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .infoPanel
+            saveLayout()
             return
         }
-        insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
-                   preferredWidth: 300)
+        if rootPane.children != nil, rootPane.direction == .horizontal {
+            let info = SplitPane(type: .infoPanel)
+            info.preferredWidth = 400
+            pendingInitialWidths[info.id] = 400
+            rootPane.children?.append(info)
+            saveLayout()
+            return
+        }
+        let info = insertPane(.infoPanel, at: rootPane, direction: .horizontal, before: false,
+                              preferredWidth: 400)
+        pendingInitialWidths[info.id] = 400
     }
 
     // FITS viewer splits the archive viewer vertically with FITS on top.
@@ -330,6 +392,7 @@ class PaneManager {
             splitPane(archive, direction: .vertical, newPaneType: .fitsViewer, prepend: true)
         } else if let empty = findPane(ofType: .empty, in: rootPane) {
             empty.paneType = .fitsViewer
+            saveLayout()
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             ai.preferredWidth = 300
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)

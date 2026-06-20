@@ -69,7 +69,12 @@ struct ContentView: View {
                 SettingsView()
                     .environment(settings)
             }
-            .onDisappear { WindowRegistry.shared.release(token.id) }
+            .onDisappear {
+                if WindowRegistry.shared.entries.first?.id == token.id {
+                    paneManager.saveLayout()
+                }
+                WindowRegistry.shared.release(token.id)
+            }
     }
 }
 
