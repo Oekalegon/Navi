@@ -38,9 +38,7 @@ struct SplitPaneView: View {
 }
 
 // Thin NSView shell that hosts an NSHostingView<AnyView> and fires onPlaced
-// exactly once, after the view has joined the window hierarchy.  Deferring one
-// additional run loop past viewDidMoveToWindow guarantees we land after
-// NSSplitView.adjustSubviews, which fires synchronously inside addSubview.
+// exactly once, after the view has joined the window hierarchy.
 final class StablePaneHostView: NSView {
     let hostingView: NSHostingView<AnyView>
     var onPlaced: (() -> Void)?
@@ -58,7 +56,12 @@ final class StablePaneHostView: NSView {
         super.viewDidMoveToWindow()
         guard window != nil, let callback = onPlaced else { return }
         onPlaced = nil
-        DispatchQueue.main.async { callback() }
+        // Double-defer: SwiftUI may schedule adjustSubviews as a deferred
+        // layout pass (one async hop), so a second hop guarantees we land
+        // after it regardless of which was queued first.
+        DispatchQueue.main.async {
+            DispatchQueue.main.async { callback() }
+        }
     }
 }
 
@@ -77,6 +80,14 @@ struct StableSplitPaneHost: NSViewRepresentable {
     func makeNSView(context: Context) -> StablePaneHostView {
         let container = StablePaneHostView(rootView: content)
         container.autoresizingMask = [.width, .height]
+
+        // Seed the frame width so adjustSubviews uses the preferred width
+        // as its proportional baseline rather than 0 or the placeholder's
+        // intrinsic size (~150 px icon).  onPlaced then sets the exact
+        // position once the layout has settled.
+        if let pw = pane.preferredWidth {
+            container.frame.size.width = pw
+        }
 
         let name = splitAutosaveName
         let paneID = pane.id
