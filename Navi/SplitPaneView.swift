@@ -37,42 +37,81 @@ struct SplitPaneView: View {
     }
 }
 
-// Wraps SplitPaneView in a stable NSHostingView so the parent NSSplitView
+// Thin NSView shell that hosts an NSHostingView<AnyView> and fires onPlaced
+// exactly once, after the view has joined the window hierarchy.  Deferring one
+// additional run loop past viewDidMoveToWindow guarantees we land after
+// NSSplitView.adjustSubviews, which fires synchronously inside addSubview.
+final class StablePaneHostView: NSView {
+    let hostingView: NSHostingView<AnyView>
+    var onPlaced: (() -> Void)?
+
+    init(rootView: AnyView) {
+        hostingView = NSHostingView(rootView: rootView)
+        super.init(frame: .zero)
+        addSubview(hostingView)
+        hostingView.autoresizingMask = [.width, .height]
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, let callback = onPlaced else { return }
+        onPlaced = nil
+        DispatchQueue.main.async { callback() }
+    }
+}
+
+// Wraps SplitPaneView in a stable StablePaneHostView so the parent NSSplitView
 // never sees a subview add/remove when pane content changes type
 // (e.g. PaneContentView → VSplitView). NSSplitView only re-runs adjustSubviews
 // on structural subview changes, so the user-set divider position is preserved.
 //
-// splitAutosaveName: the UUID string of the *parent* SplitPane whose NSSplitView
-// should have its autosave name set so AppKit persists divider positions.
+// splitAutosaveName: the UUID string of the *parent* SplitPane, used as the
+// NSSplitView autosave name so AppKit persists divider positions across launches.
 struct StableSplitPaneHost: NSViewRepresentable {
     let pane: SplitPane
     let paneManager: PaneManager
     let splitAutosaveName: String
 
-    func makeNSView(context: Context) -> NSHostingView<AnyView> {
-        let view = NSHostingView(rootView: content)
-        view.autoresizingMask = [.width, .height]
-        // Defer until the next run loop cycle when the view is in the hierarchy
-        // and its parent NSSplitView is known.
+    func makeNSView(context: Context) -> StablePaneHostView {
+        let container = StablePaneHostView(rootView: content)
+        container.autoresizingMask = [.width, .height]
+
         let name = splitAutosaveName
-        let paneRef = pane
+        let paneID = pane.id
         let managerRef = paneManager
-        DispatchQueue.main.async { [weak view] in
-            guard let view else { return }
+
+        // onPlaced fires via viewDidMoveToWindow + one async deferral, so the
+        // view is guaranteed to be in the hierarchy and adjustSubviews is done.
+        container.onPlaced = { [weak container] in
+            guard let container else { return }
+
+            // Walk up to the parent NSSplitView.
             var sv: NSSplitView?
-            var current: NSView? = view.superview
+            var current: NSView? = container.superview
             while let v = current {
                 if let splitView = v as? NSSplitView { sv = splitView; break }
                 current = v.superview
             }
             guard let sv else { return }
 
-            // If this pane was explicitly opened (not restored from disk),
-            // set its preferred width now — before autosave is applied —
-            // so NSSplitView's proportional adjustSubviews doesn't leave it tiny.
-            if let pw = managerRef.pendingInitialWidths.removeValue(forKey: paneRef.id),
-               let idx = sv.subviews.firstIndex(where: { view.isDescendant(of: $0) }),
-               sv.subviews.count > 1 {
+            // Find our slot in the split — container may be a direct subview or
+            // wrapped by a SwiftUI layout container.
+            let slot: NSView?
+            if sv.subviews.contains(container) {
+                slot = container
+            } else {
+                slot = sv.subviews.first { container.isDescendant(of: $0) }
+            }
+            guard let slot, let idx = sv.subviews.firstIndex(of: slot),
+                  sv.subviews.count > 1 else { return }
+
+            // For panes opened during a session (not restored from disk), apply
+            // the preferred initial width before setting the autosave name so
+            // autosave can override it on subsequent launches with the user's
+            // last-chosen position.
+            if let pw = managerRef.pendingInitialWidths.removeValue(forKey: paneID) {
                 let total = sv.bounds.width
                 if idx == sv.subviews.count - 1 {
                     sv.setPosition(max(0, total - pw), ofDividerAt: idx - 1)
@@ -81,15 +120,16 @@ struct StableSplitPaneHost: NSViewRepresentable {
                 }
             }
 
-            // Apply autosave name — on subsequent launches this triggers
-            // restoreState() which overrides the above with the user's last choice.
+            // Setting autosave name triggers restoreState(), which overwrites
+            // the position above with the user's saved choice on subsequent launches.
             let autosaveName = NSSplitView.AutosaveName(name)
             if sv.autosaveName != autosaveName { sv.autosaveName = autosaveName }
         }
-        return view
+
+        return container
     }
 
-    func updateNSView(_ nsView: NSHostingView<AnyView>, context: Context) {
+    func updateNSView(_ nsView: StablePaneHostView, context: Context) {
         // SplitPane and PaneManager are both @Observable, so every view inside
         // the hosting view re-renders automatically when their properties change.
         // Re-setting rootView here would break AnyView type-identity tracking,
