@@ -289,7 +289,7 @@ final class ArchiveManager {
 
     func sessions() async throws -> [ObservingSession] {
         guard let archive else { throw ArchiveManagerError.notConnected }
-        return try await archive.sessions()
+        return try await archive.allSessions()
     }
 
     // MARK: - Tools exposed to Claude (string-based dispatch for AI use)
