@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import AstroKit
+import AstroKitUI
 import AstrophotoKit
 import AstrophotoArchiveKit
 import OSLog
@@ -31,7 +33,7 @@ struct InfoPanelView: View {
 
     struct InfoItem: Identifiable {
         let label: String
-        let value: String
+        let value: AttributedString
         var id: String { label }
     }
 
@@ -106,8 +108,13 @@ struct InfoPanelView: View {
                                 $0.group != .quality
                             }, id: \.group) { section in
                         sectionHeader(section.group.rawValue)
-                        ForEach(section.entries, id: \.keyword) { entry in
-                            InfoRow(label: entry.displayName, value: entry.displayValue,
+                        let deduped: [FITSHeaderEntry] = {
+                            var seen = Set<String>()
+                            return section.entries.filter { seen.insert($0.displayName).inserted }
+                        }()
+                        ForEach(deduped, id: \.keyword) { entry in
+                            InfoRow(label: entry.displayName,
+                                    value: angleAttributed(for: entry) ?? AttributedString(entry.displayValue),
                                     detail: entry.keyword)
                         }
                         if section.group == .camera {
@@ -117,7 +124,8 @@ struct InfoPanelView: View {
                                 if let fq = fitsQuality {
                                     ForEach(fq.entries.filter { !suppressedQualityKeywords.contains($0.keyword) },
                                             id: \.keyword) { entry in
-                                        InfoRow(label: entry.displayName, value: entry.displayValue,
+                                        InfoRow(label: entry.displayName,
+                                                value: AttributedString(entry.displayValue),
                                                 detail: entry.keyword)
                                     }
                                 }
@@ -181,6 +189,35 @@ struct InfoPanelView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 3)
+    }
+
+    /// Returns an `AttributedString` for FITS keywords that store angles in degrees,
+    /// using `AngleFormatter.attributedString(from:)` from AstroKitUI. Returns `nil`
+    /// when the keyword is not an angle field or the stored value is not numeric.
+    private func angleAttributed(for entry: FITSHeaderEntry) -> AttributedString? {
+        let deg: Double
+        switch entry.value {
+        case .floatingPoint(let d): deg = d
+        case .integer(let i):       deg = Double(i)
+        default:                    return nil
+        }
+        let rad = deg * .pi / 180
+        let formatter: AngleFormatter
+        switch entry.keyword {
+        case "OBJCTRA", "RA":
+            formatter = AngleFormatter(format: .hms,  precision: 3)
+        case "OBJCTDEC", "DEC":
+            formatter = AngleFormatter(format: .sdms, precision: 3)
+        case "SITELAT", "GPS-LAT", "LAT-OBS", "OBSGEO-B":
+            formatter = AngleFormatter(format: .sdms, precision: 2)
+        case "SITELONG", "GPS-LON", "LONG-OBS", "OBSGEO-L":
+            formatter = AngleFormatter(format: .dms,  precision: 2)
+        case "POSANGLE", "PA", "ROTATANG":
+            formatter = AngleFormatter(format: .dms,  precision: 2)
+        default:
+            return nil
+        }
+        return formatter.attributedString(from: rad)
     }
 
     private func emptyState(_ message: String) -> some View {
@@ -368,14 +405,17 @@ struct InfoPanelView: View {
     private static func archiveInfo(frame: ArchivedFrame?,
                                     header: [String: FITSHeaderValue]) -> [InfoItem] {
         guard let f = frame else {
-            return [InfoItem(label: "Archive", value: "Not in archive")]
+            return [InfoItem(label: "Archive", value: AttributedString("Not in archive"))]
         }
         func missing(_ keywords: String...) -> Bool {
             !keywords.contains { header[$0] != nil }
         }
         var items: [InfoItem] = []
         func add(_ label: String, _ value: String?) {
-            if let value, !value.isEmpty { items.append(InfoItem(label: label, value: value)) }
+            if let value, !value.isEmpty { items.append(InfoItem(label: label, value: AttributedString(value))) }
+        }
+        func addAngle(_ label: String, _ value: AttributedString?) {
+            if let value { items.append(InfoItem(label: label, value: value)) }
         }
 
         add("ID", f.id.uuidString)
@@ -417,11 +457,27 @@ struct InfoPanelView: View {
             add("Pixel scale", f.pixelScale.map { String(format: "%.3f \"/px", $0) })
         }
         if missing("POSANGLE", "PA", "ROTATANG") {
-            add("Position angle", f.positionAngle.map { String(format: "%.1f°", $0) })
+            addAngle("Position angle", f.positionAngle.map { pa in
+                AngleFormatter(format: .dms, precision: 2).attributedString(from: pa * .pi / 180)
+            })
         }
-        if missing("OBJCTRA", "RA"),
-           let ra = f.ra, let dec = f.dec {
-            add("RA / Dec", String(format: "%.4f° / %.4f°", ra, dec))
+        // Only show from archive when the FITS header is missing these keywords entirely
+        // (the header section already shows them with proper angle formatting).
+        if missing("OBJCTRA", "RA"), let ra = f.ra {
+            addAngle("RA", AngleFormatter(format: .hms, precision: 3).attributedString(from: ra * .pi / 180))
+        }
+        if missing("OBJCTDEC", "DEC"), let dec = f.dec {
+            addAngle("Dec", AngleFormatter(format: .sdms, precision: 3).attributedString(from: dec * .pi / 180))
+        }
+        if missing("SITELAT", "GPS-LAT", "LAT-OBS", "OBSGEO-B") {
+            addAngle("Site latitude", f.siteLatitude.map { lat in
+                AngleFormatter(format: .sdms, precision: 2).attributedString(from: lat * .pi / 180)
+            })
+        }
+        if missing("SITELONG", "GPS-LON", "LONG-OBS", "OBSGEO-L") {
+            addAngle("Site longitude", f.siteLongitude.map { lon in
+                AngleFormatter(format: .dms, precision: 2).attributedString(from: lon * .pi / 180)
+            })
         }
         return items
     }
@@ -432,7 +488,10 @@ struct InfoPanelView: View {
         guard let f = frame else { return [] }
         var items: [InfoItem] = []
         func add(_ label: String, _ value: String?) {
-            if let value, !value.isEmpty { items.append(InfoItem(label: label, value: value)) }
+            if let value, !value.isEmpty { items.append(InfoItem(label: label, value: AttributedString(value))) }
+        }
+        func addAngle(_ label: String, _ value: AttributedString?) {
+            if let value { items.append(InfoItem(label: label, value: value)) }
         }
         add("Stars", f.starCount.map { "\($0)" })
         if let px = f.medianFWHM {
@@ -447,14 +506,35 @@ struct InfoPanelView: View {
         }
         if let v = f.saturatedStarCount, v > 0 { add("Saturated stars", "\(v)") }
         if let v = f.hotPixelCount, v > 0 { add("Hot pixels", "≈\(v)") }
+        if let v = f.sunAltitude {
+            addAngle("Sun altitude", AngleFormatter(format: .sdms, precision: 2).attributedString(from: v * .pi / 180))
+        }
+        if let v = f.moonSeparation {
+            addAngle("Moon separation", AngleFormatter(format: .dms, precision: 2).attributedString(from: v * .pi / 180))
+        }
+        if let v = f.moonIllumination {
+            add("Moon illumination", String(format: "%.0f%%", v * 100))
+        }
         return items
     }
 }
 
 private struct InfoRow: View {
     let label: String
-    let value: String
+    let value: AttributedString
     var detail: String? = nil   // e.g. the raw FITS keyword, shown as tooltip
+
+    init(label: String, value: String, detail: String? = nil) {
+        self.label  = label
+        self.value  = AttributedString(value)
+        self.detail = detail
+    }
+
+    init(label: String, value: AttributedString, detail: String? = nil) {
+        self.label  = label
+        self.value  = value
+        self.detail = detail
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
