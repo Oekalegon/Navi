@@ -12,6 +12,7 @@
 		C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */; };
 		C77AEC1A2FD06CD300D555A3 /* AstrophotoKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC192FD06CD300D555A3 /* AstrophotoKit */; };
 		C77AEC1C2FD06CD300D555A3 /* AstroKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1B2FD06CD300D555A3 /* AstroKit */; };
+		0D5B27670CCE4C918F2FE153 /* AstroKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = BD4766DD34E84514975DB584 /* AstroKitUI */; };
 		C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1D2FD06CD300D555A3 /* VSOP */; };
 		C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = C79ED7062FCCE3B20035ED86 /* MarkdownUI */; };
 /* End PBXBuildFile section */
@@ -65,6 +66,7 @@
 				C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */,
 				C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */,
 				C77AEC1C2FD06CD300D555A3 /* AstroKit in Frameworks */,
+				0D5B27670CCE4C918F2FE153 /* AstroKitUI in Frameworks */,
 				C77AEC1A2FD06CD300D555A3 /* AstrophotoKit in Frameworks */,
 				C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */,
 				2AE17E15387746B28F17ABAE /* AstrophotoToolDefinitions in Frameworks */,
@@ -144,6 +146,7 @@
 				6772E6E1338588A6B7E54B54 /* AstrophotoToolsKit */,
 				C77AEC1B2FD06CD300D555A3 /* AstroKit */,
 				C77AEC1D2FD06CD300D555A3 /* VSOP */,
+				BD4766DD34E84514975DB584 /* AstroKitUI */,
 			);
 			productName = Navi;
 			productReference = C78BF8242FCC656900C2CEFA /* Navi.app */;
@@ -666,6 +669,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
 			productName = AstroKit;
+		};
+		BD4766DD34E84514975DB584 /* AstroKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
+			productName = AstroKitUI;
 		};
 		C77AEC1D2FD06CD300D555A3 /* VSOP */ = {
 			isa = XCSwiftPackageProductDependency;
