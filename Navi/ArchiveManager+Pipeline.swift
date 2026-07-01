@@ -447,7 +447,7 @@ extension ArchiveManager {
         inputFilePath: String?,
         archive: Archive
     ) async -> String? {
-        let perFrame = ArchiveQualityExtractor.extractPerFrameQuality(from: tables)
+        let perFrame = PipelineQualityExtractor.extractPerFrameQuality(from: tables)
         if !perFrame.isEmpty {
             var notes: [String] = []
             do {
@@ -466,10 +466,11 @@ extension ArchiveManager {
             } catch { return "Quality update failed: \(error.localizedDescription)" }
             return notes.isEmpty ? nil : "Quality metrics stored on \(notes.count) frame(s)."
         }
-        let metrics = ArchiveQualityExtractor.extractGlobalQuality(from: tables)
+        let metrics = PipelineQualityExtractor.extractGlobalQuality(from: tables)
         guard metrics.starCount != nil || metrics.medianFWHM != nil || metrics.backgroundNoise != nil
                 || metrics.medianEccentricity != nil || metrics.saturatedStarCount != nil
-                || metrics.hotPixelCount != nil else { return nil }
+                || metrics.hotPixelCount != nil || metrics.sunAltitude != nil
+                || metrics.moonSeparation != nil else { return nil }
         do {
             let targetID: UUID?
             if let id = inputFrameID { targetID = id }
@@ -482,7 +483,10 @@ extension ArchiveManager {
                                                   backgroundNoise: metrics.backgroundNoise,
                                                   medianEccentricity: metrics.medianEccentricity,
                                                   saturatedStarCount: metrics.saturatedStarCount,
-                                                  hotPixelCount: metrics.hotPixelCount)
+                                                  hotPixelCount: metrics.hotPixelCount,
+                                                  sunAltitude: metrics.sunAltitude,
+                                                  moonSeparation: metrics.moonSeparation,
+                                                  moonIllumination: metrics.moonIllumination)
             var parts: [String] = []
             if let v = metrics.starCount          { parts.append("stars: \(v)") }
             if let v = metrics.saturatedStarCount { parts.append("sat: \(v)") }

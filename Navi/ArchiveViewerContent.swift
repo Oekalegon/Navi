@@ -8,6 +8,11 @@
 import Foundation
 import AstrophotoArchiveKit
 
+private let _iso8601 = ISO8601DateFormatter()
+private func shortDate(_ date: Date) -> String {
+    String(_iso8601.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+}
+
 /// Returns the SF Symbol name for a frame or frameset based on its type and processing level.
 func frameTypeSymbolName(type: String, level: String, isFrameset: Bool = false) -> String {
     let stacked = level.lowercased() == "stacked"
@@ -41,6 +46,7 @@ struct ArchiveRow: Identifiable, Equatable {
 
     var isRejected: Bool { values["rejected"] == "true" }
     var isExcluded: Bool { values["excluded"] == "true" }
+    var isMaster: Bool   { values["is_master"] == "true" }
     var frameType: String { values["type"]?.lowercased() ?? "" }
     var processingLevel: ProcessingLevel? { ProcessingLevel(rawValue: values["level"]?.lowercased() ?? "") }
     var isSession: Bool { values["_kind"] == "session" }
@@ -66,16 +72,12 @@ struct ArchiveViewerContent: Equatable {
     // "rejected" stays in the row values (the icon and reject toggle read it)
     // but is not shown as a column: the frame icon already conveys it.
     // "temp" is only used to construct display names for calibration frames.
-    private static let hiddenColumns: Set<String> = ["id", "rejected", "temp", "session_id", "_kind", "matched"]
+    private static let hiddenColumns: Set<String> = ["id", "rejected", "temp", "session_id", "_kind", "matched", "is_master"]
 
     // MARK: - Typed factories
 
     static func frames(_ frames: [ArchivedFrame], toolName: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
-        let iso = ISO8601DateFormatter()
-        func shortDate(_ date: Date) -> String {
-            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
-        }
         let rows: [ArchiveRow] = frames.map { f in
             var values: [String: String] = [
                 "id": f.id.uuidString,
@@ -98,6 +100,8 @@ struct ArchiveViewerContent: Equatable {
                     ?? String(format: "%.2fpx", px)
             }
             if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            if let v = f.temperature { values["temp"] = String(format: "%g", v) }
+            if f.isMaster            { values["is_master"] = "true" }
             return ArchiveRow(id: f.id, values: values)
         }
         return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
@@ -106,10 +110,7 @@ struct ArchiveViewerContent: Equatable {
     static func framesAndSets(_ frames: [ArchivedFrame], _ frameSets: [ArchivedFrameSet],
                               toolName: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
-        let iso = ISO8601DateFormatter()
-        func shortDate(_ date: Date) -> String {
-            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
-        }
+
         var rows: [ArchiveRow] = []
         for f in frames {
             var values: [String: String] = [
@@ -133,6 +134,8 @@ struct ArchiveViewerContent: Equatable {
                     ?? String(format: "%.2fpx", px)
             }
             if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            if let v = f.temperature { values["temp"] = String(format: "%g", v) }
+            if f.isMaster            { values["is_master"] = "true" }
             rows.append(ArchiveRow(id: f.id, values: values))
         }
         for fs in frameSets {
@@ -164,10 +167,7 @@ struct ArchiveViewerContent: Equatable {
 
     static func members(_ members: [FrameSetMember], toolName: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
-        let iso = ISO8601DateFormatter()
-        func shortDate(_ date: Date) -> String {
-            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
-        }
+
         let rows: [ArchiveRow] = members.map { m in
             let f = m.frame
             var values: [String: String] = [
@@ -191,6 +191,8 @@ struct ArchiveViewerContent: Equatable {
                     ?? String(format: "%.2fpx", px)
             }
             if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+            if let v = f.temperature { values["temp"] = String(format: "%g", v) }
+            if f.isMaster            { values["is_master"] = "true" }
             return ArchiveRow(id: f.id, values: values)
         }
         return makeTypedTable(title: title, toolName: toolName, rows: rows).hidingColumns()
@@ -198,10 +200,7 @@ struct ArchiveViewerContent: Equatable {
 
     static func recentActivity(_ entries: [RecentEntry], toolName: String) -> ArchiveViewerContent {
         let title = Self.titleFor(toolName: toolName)
-        let iso = ISO8601DateFormatter()
-        func shortDate(_ date: Date) -> String {
-            String(iso.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
-        }
+
         let rows: [ArchiveRow] = entries.map { entry in
             switch entry {
             case .session(let s, let recency):
@@ -242,6 +241,8 @@ struct ArchiveViewerContent: Equatable {
                         ?? String(format: "%.2fpx", px)
                 }
                 if let v = f.medianEccentricity { values["ecc"] = String(format: "%.3f", v) }
+                if let v = f.temperature { values["temp"] = String(format: "%g", v) }
+                if f.isMaster            { values["is_master"] = "true" }
                 return ArchiveRow(id: f.id, values: values)
             case .frameSet(let fs):
                 var values: [String: String] = [
@@ -802,11 +803,27 @@ struct ArchiveFilter: Equatable {
 // MARK: - ArchivedFrame display helpers
 
 extension ArchivedFrame {
-    /// Short display name: object · filter · capitalized processing level.
-    /// Returns nil when all components are empty (e.g. unnamed calibration frames).
+    /// Short display name suited to the frame type.
+    /// Returns nil when all components are empty.
     var displayName: String? {
-        let parts = [objectName ?? "", filter ?? "", processingLevel.rawValue.capitalized]
-            .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
+        let level = processingLevel.rawValue.capitalized
+        let parts: [String]
+        switch frameType.lowercased() {
+        case "masterbias":
+            parts = ["Master Bias", camera ?? ""]
+        case "masterdark":
+            let exp = exposureTime.map { String(format: "%gs", $0) } ?? ""
+            let temp = temperature.map { String(format: "%g°C", $0) } ?? ""
+            parts = [exp, temp, "Master Dark", camera ?? ""]
+        case "masterdarkflat":
+            let temp = temperature.map { String(format: "%g°C", $0) } ?? ""
+            parts = [temp, "Master DarkFlat", camera ?? ""]
+        case "masterflat":
+            parts = [filter ?? "", "Master Flat", camera ?? ""]
+        default:
+            parts = [objectName ?? "", filter ?? "", level]
+        }
+        let joined = parts.filter { !$0.isEmpty }.joined(separator: " ")
+        return joined.isEmpty ? nil : joined
     }
 }
