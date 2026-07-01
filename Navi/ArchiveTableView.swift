@@ -444,16 +444,25 @@ private struct ArchiveNameCell: View {
         if !name.isEmpty { return name }
         let level = row.processingLevel?.rawValue.capitalized ?? ""
         let filter = row.values["filter"] ?? ""
+        let camera = row.values["camera"] ?? ""
         let parts: [String]
         switch row.frameType {
-        case "bias":
-            parts = [level, "Bias"]
-        case "dark":
-            parts = [exposureLabel, temperatureLabel, level, "Dark"]
-        case "darkflat", "dark-flat", "dark flat":
-            parts = [temperatureLabel, level, "DarkFlat"]
-        case "flat":
-            parts = [filter, level, "Flat"]
+        case "bias", "masterbias":
+            parts = row.isMaster || row.frameType == "masterbias"
+                ? ["Master Bias", camera]
+                : [level, "Bias"]
+        case "dark", "masterdark":
+            parts = row.isMaster || row.frameType == "masterdark"
+                ? [exposureLabel, temperatureLabel, "Master Dark", camera]
+                : [exposureLabel, temperatureLabel, level, "Dark"]
+        case "darkflat", "dark-flat", "dark flat", "masterdarkflat":
+            parts = row.isMaster || row.frameType == "masterdarkflat"
+                ? [temperatureLabel, "Master Dark Flat", camera]
+                : [temperatureLabel, level, "Dark Flat"]
+        case "flat", "masterflat":
+            parts = row.isMaster || row.frameType == "masterflat"
+                ? [filter, "Master Flat", camera]
+                : [filter, level, "Flat"]
         default:
             parts = [row.values["object"] ?? "", filter, level]
         }

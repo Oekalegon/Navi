@@ -163,10 +163,12 @@ func paneMoveOptions(for movingPane: SplitPane, root: SplitPane,
           let (parent, index) = snapshot.root.findParent(of: movingPane.id),
           let removedRoot = removingLeaf(moving.id, from: snapshot.root)
     else { return nil }
-    let sibling = parent.children[1 - index]
-    // After removal the sibling takes the parent's place; if the parent was
-    // the root, the sibling subtree is the whole remaining window.
-    let remainingRootID = parent.id == snapshot.root.id ? sibling.id : snapshot.root.id
+    let isBinaryParent = parent.children.count == 2
+    // For binary splits the parent collapses into the sibling in removedRoot;
+    // for N-ary splits the parent stays in removedRoot with one fewer child.
+    let sibling: PaneLayoutSnapshot.Node? = isBinaryParent ? parent.children[1 - index] : nil
+    let remainingRootID: UUID = (isBinaryParent && parent.id == snapshot.root.id)
+        ? sibling!.id : snapshot.root.id
 
     let swaps = snapshot.root.leaves
         .filter { $0.id != moving.id }
@@ -181,14 +183,28 @@ func paneMoveOptions(for movingPane: SplitPane, root: SplitPane,
     var inserts: [PaneMoveOption] = []
     var seenRects: Set<String> = []
     for target in snapshot.root.nodesPostOrder {
-        // The moving leaf is removed and its parent collapses into the
-        // sibling, so neither is a valid insertion target.
-        guard target.id != moving.id, target.id != parent.id else { continue }
+        // The moving leaf is always an invalid insertion target.
+        // For binary splits the parent also collapses and vanishes from removedRoot.
+        guard target.id != moving.id else { continue }
+        if isBinaryParent, target.id == parent.id { continue }
         for direction in insertDirections(for: movingPane) {
             for before in [true, false] {
                 // Skip the insertion that recreates the current position.
-                if target.id == sibling.id, direction == parent.direction,
-                   before == (index == 0) { continue }
+                if isBinaryParent {
+                    if target.id == sibling!.id, direction == parent.direction,
+                       before == (index == 0) { continue }
+                } else {
+                    // N-ary: inserting before the next sibling or after the previous
+                    // sibling (along parent's direction) recreates the current position.
+                    if direction == parent.direction {
+                        if index < parent.children.count - 1 {
+                            if target.id == parent.children[index + 1].id, before { continue }
+                        }
+                        if index > 0 {
+                            if target.id == parent.children[index - 1].id, !before { continue }
+                        }
+                    }
+                }
                 guard let preview = inserting(moving, at: target.id, direction: direction,
                                               before: before, in: removedRoot),
                       seenRects.insert(rectKey(preview.movedRect)).inserted else { continue }
@@ -239,15 +255,55 @@ private func insertTitle(direction: SplitDirection, before: Bool,
     return "\(side) \(name)"
 }
 
-// The remaining layout after removing a leaf: its sibling subtree expands to
-// fill the parent's rectangle, mirroring PaneManager.removeLeaf.
+// The remaining layout after removing a leaf, mirroring PaneManager.removeLeaf.
+// Binary split: sibling expands to fill the parent's rectangle.
+// N-ary split: remaining siblings redistribute their space proportionally.
 private func removingLeaf(_ leafID: UUID,
                           from root: PaneLayoutSnapshot.Node) -> PaneLayoutSnapshot.Node? {
-    guard let (parent, index) = root.findParent(of: leafID),
-          parent.children.count == 2 else { return nil }
-    let sibling = parent.children[1 - index]
-    let expanded = remap(sibling, from: sibling.rect, to: parent.rect)
-    return replacing(parent.id, with: expanded, in: root)
+    guard let (parent, index) = root.findParent(of: leafID) else { return nil }
+    if parent.children.count == 2 {
+        let sibling = parent.children[1 - index]
+        let expanded = remap(sibling, from: sibling.rect, to: parent.rect)
+        return replacing(parent.id, with: expanded, in: root)
+    }
+    // N-ary (3+): remove the leaf and expand remaining siblings proportionally.
+    guard let direction = parent.direction else { return nil }
+    let remaining = parent.children.filter { $0.id != leafID }
+    let newChildren = redistributeRects(remaining, into: parent.rect, direction: direction)
+    let newParent = PaneLayoutSnapshot.Node(id: parent.id, paneType: parent.paneType,
+                                            direction: direction, children: newChildren,
+                                            rect: parent.rect)
+    return replacing(parent.id, with: newParent, in: root)
+}
+
+// Scale a sequence of same-direction nodes to fill `parentRect`, preserving their
+// relative sizes along the split axis.
+private func redistributeRects(_ nodes: [PaneLayoutSnapshot.Node], into parentRect: CGRect,
+                                direction: SplitDirection) -> [PaneLayoutSnapshot.Node] {
+    switch direction {
+    case .horizontal:
+        let total = nodes.reduce(0.0) { $0 + $1.rect.width }
+        guard total > 0 else { return nodes }
+        let scale = parentRect.width / total
+        var x = parentRect.minX
+        return nodes.map { node in
+            let w = node.rect.width * scale
+            let newRect = CGRect(x: x, y: parentRect.minY, width: w, height: parentRect.height)
+            x += w
+            return remap(node, from: node.rect, to: newRect)
+        }
+    case .vertical:
+        let total = nodes.reduce(0.0) { $0 + $1.rect.height }
+        guard total > 0 else { return nodes }
+        let scale = parentRect.height / total
+        var y = parentRect.minY
+        return nodes.map { node in
+            let h = node.rect.height * scale
+            let newRect = CGRect(x: parentRect.minX, y: y, width: parentRect.width, height: h)
+            y += h
+            return remap(node, from: node.rect, to: newRect)
+        }
+    }
 }
 
 // The layout after splitting `targetID` in half and placing `moving` on the

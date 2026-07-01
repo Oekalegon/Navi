@@ -115,6 +115,37 @@ struct PaneLayoutTests {
                                 frames: [:]) == nil)
     }
 
+    // NAVI-39: AI/Info panes are added via direct N-ary append to rootPane.children
+    // when the root is already a horizontal split. paneMoveOptions must not return
+    // nil for panes whose parent has 3+ children.
+    @Test func naryParentExposesMovePaneOptions() throws {
+        let manager = PaneManager()
+        let ai = SplitPane(type: .aiAssistant)
+        ai.preferredWidth = 400
+        let archive = SplitPane(type: .archiveViewer)
+        let info = SplitPane(type: .infoPanel)
+        info.preferredWidth = 400
+        let root = manager.rootPane
+        root.direction = .horizontal
+        root.children = [ai, archive, info]
+
+        // AI pane (index 0 of 3) must have move options.
+        let aiOptions = try #require(paneMoveOptions(for: ai, root: root, frames: [:]))
+        #expect(aiOptions.swaps.count == 2)
+        let aiTitles = Set(aiOptions.inserts.map(\.title))
+        #expect(!aiTitles.contains("Left of Archive"))   // current position — must be absent
+        #expect(aiTitles.contains("Right of Archive"))
+        #expect(aiTitles.contains("Left of Info"))
+
+        // Info pane (index 2 of 3) must also have move options.
+        let infoOptions = try #require(paneMoveOptions(for: info, root: root, frames: [:]))
+        #expect(infoOptions.swaps.count == 2)
+        let infoTitles = Set(infoOptions.inserts.map(\.title))
+        #expect(!infoTitles.contains("Right of Archive"))  // current position — must be absent
+        #expect(infoTitles.contains("Left of Archive"))
+        #expect(infoTitles.contains("Left of AI Assistant"))
+    }
+
     @Test func swapExchangesContentAndFocusFollows() {
         let f = makeFixture()
         f.manager.focusedPaneID = f.y.id
