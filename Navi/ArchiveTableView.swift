@@ -219,16 +219,17 @@ struct ArchiveTableView: View {
         guard !missing.isEmpty else { return }
 
         let invalid = SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false)
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd HH:mm"
 
         do {
             let allSessions = try await ArchiveManager.shared.sessions()
             let neededIDs = Set(missing)
             var updates: [String: SessionMeta] = [:]
             for session in allSessions where neededIDs.contains(session.id.uuidString) {
-                let sortDate = df.string(from: session.startTime ?? session.date)
+                // Must use the same shortDate() as frame rows' "date" column (see
+                // ArchiveViewerContent.swift) — the "date" column comparator sorts
+                // session and frame rows as plain strings, so a mismatched format
+                // or time zone here would sort sessions out of order.
+                let sortDate = shortDate(session.startTime ?? session.date)
                 updates[session.id.uuidString] = SessionMeta(
                     name: session.name,
                     total: session.frameCount,
@@ -267,10 +268,7 @@ struct ArchiveTableView: View {
                 await MainActor.run { onSessionLoaded?(id, invalid) }
                 return
             }
-            let df = DateFormatter()
-            df.locale = Locale(identifier: "en_US_POSIX")
-            df.dateFormat = "yyyy-MM-dd HH:mm"
-            let sortDate = df.string(from: session.startTime ?? session.date)
+            let sortDate = shortDate(session.startTime ?? session.date)
             let meta = SessionMeta(
                 name: session.name,
                 total: session.frameCount,
