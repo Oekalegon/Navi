@@ -8,9 +8,14 @@
 import Foundation
 import AstrophotoArchiveKit
 
-private let _iso8601 = ISO8601DateFormatter()
+private let _shortDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    return f
+}()
 private func shortDate(_ date: Date) -> String {
-    String(_iso8601.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+    _shortDateFormatter.string(from: date)
 }
 
 /// Returns the SF Symbol name for a frame or frameset based on its type and processing level.

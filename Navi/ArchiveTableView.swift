@@ -220,8 +220,8 @@ struct ArchiveTableView: View {
 
         let invalid = SessionMeta(name: "", total: 0, isNight: true, sortDate: "", isValid: false)
         let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd HH:mm"
-        df.timeZone = TimeZone(identifier: "UTC")
 
         do {
             let allSessions = try await ArchiveManager.shared.sessions()
@@ -268,8 +268,8 @@ struct ArchiveTableView: View {
                 return
             }
             let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
             df.dateFormat = "yyyy-MM-dd HH:mm"
-            df.timeZone = TimeZone(identifier: "UTC")
             let sortDate = df.string(from: session.startTime ?? session.date)
             let meta = SessionMeta(
                 name: session.name,
