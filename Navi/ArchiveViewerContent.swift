@@ -8,9 +8,24 @@
 import Foundation
 import AstrophotoArchiveKit
 
-private let _iso8601 = ISO8601DateFormatter()
-private func shortDate(_ date: Date) -> String {
-    String(_iso8601.string(from: date).prefix(16)).replacingOccurrences(of: "T", with: " ")
+private let _shortDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    return f
+}()
+
+/// Renders a timestamp for the Archive Table's date/added/created columns.
+/// Defaults to the system's local time zone; `timeZone` is overridable for tests
+/// so the local-time behavior (vs. the previous, incorrect UTC rendering) can be
+/// asserted deterministically regardless of the machine running the test.
+func shortDate(_ date: Date, timeZone: TimeZone = .current) -> String {
+    guard timeZone != .current else { return _shortDateFormatter.string(from: date) }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    f.timeZone = timeZone
+    return f.string(from: date)
 }
 
 /// Returns the SF Symbol name for a frame or frameset based on its type and processing level.
