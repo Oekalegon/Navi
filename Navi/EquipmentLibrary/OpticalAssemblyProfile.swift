@@ -8,27 +8,6 @@
 import Foundation
 import SwiftData
 
-/// The optical design of an `OpticalAssemblyProfile`'s tube — manual input, not INDI-derived.
-enum OpticalDesign: String, Codable, CaseIterable, Sendable {
-    case refractor
-    case newtonian
-    case schmidtCassegrain
-    case ritcheyChretien
-    case maksutovCassegrain
-    case other
-}
-
-/// Which role an `OpticalAssemblyProfile` plays when composed into a `RigProfile`.
-///
-/// Distinguishes "the main imaging tube" from "a piggyback guide scope" — a
-/// `GuideCameraProfile` pairs with a `.guideScope`-purposed assembly (§4.3); the main imaging
-/// assembly is always `.mainImaging`. Both are ordinary, independently-reusable
-/// `OpticalAssemblyProfile` records — this is just a label on how one is being used.
-enum OpticalAssemblyPurpose: String, Codable, CaseIterable, Sendable {
-    case mainImaging
-    case guideScope
-}
-
 /// A reusable optical-tube-assembly definition in Navi's local equipment library — a telescope
 /// tube plus its focuser, combined as one unit (§4.3: a focuser is normally semi-permanently
 /// mounted to one tube, so an actual focuser swap is rare enough to just edit this record when it

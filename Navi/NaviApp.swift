@@ -59,7 +59,11 @@ struct NaviApp: App {
     private let equipmentLibraryContainer: ModelContainer = {
         let schema = Schema(EquipmentLibrarySchema.models)
         do {
-            return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema)])
+            return try ModelContainer(
+                for: schema,
+                migrationPlan: EquipmentLibraryMigrationPlan.self,
+                configurations: [ModelConfiguration(schema: schema)]
+            )
         } catch {
             fatalError("Failed to create equipment library ModelContainer: \(error)")
         }

@@ -8,23 +8,6 @@
 import Foundation
 import SwiftData
 
-/// One filter-wheel slot: slot number to filter name.
-///
-/// A plain `Codable` struct, not `[Int: String]` directly — SwiftData's attribute encoding
-/// doesn't reliably support `Dictionary` with a non-`String` key (it crashes inside SwiftData's
-/// internal `Encodable` machinery at save time, confirmed empirically), even though `Codable`/
-/// `JSONEncoder` alone support it fine. An array of a small struct is SwiftData's well-supported
-/// path for this kind of structured attribute data.
-struct FilterSlotEntry: Codable, Hashable {
-    var slot: Int
-    var name: String
-
-    init(slot: Int, name: String) {
-        self.slot = slot
-        self.name = name
-    }
-}
-
 /// A reusable imaging-train definition in Navi's local equipment library — the camera, filter
 /// wheel, and rotator that sit behind an `OpticalAssemblyProfile` (§4.3). An imaging train pairs
 /// freely with any optical assembly; no compatibility constraint is modeled — image-circle/

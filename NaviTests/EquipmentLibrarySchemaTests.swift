@@ -97,6 +97,52 @@ struct EquipmentLibrarySchemaTests {
         #expect(rig.hasStaleLibraryReferences == true)
     }
 
+    @Test func filterWheelSlotsRoundTripsIncludingBackToNil() throws {
+        let container = try makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let train = ImagingTrainProfile(
+            name: "Test Train",
+            filterWheelSlots: [FilterSlotEntry(slot: 1, name: "Luminance")]
+        )
+        context.insert(train)
+        try context.save()
+
+        let fetchedID = train.persistentModelID
+        var fetched = try #require(context.model(for: fetchedID) as? ImagingTrainProfile)
+        #expect(fetched.filterWheelSlots?.first?.name == "Luminance")
+
+        // Setting it back to nil after being populated must actually persist as nil, not leave
+        // stale JSON Data behind — exactly the class of bug the Data-backed workaround exists for.
+        fetched.filterWheelSlots = nil
+        try context.save()
+
+        fetched = try #require(context.model(for: fetchedID) as? ImagingTrainProfile)
+        #expect(fetched.filterWheelSlots == nil)
+    }
+
+    @Test func standaloneComponentsDefaultsToEmptyAndRoundTrips() throws {
+        let container = try makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let rig = RigProfile(serverRigID: "rig-003", name: "Empty Standalone Components Rig")
+        context.insert(rig)
+        try context.save()
+
+        let fetchedID = rig.persistentModelID
+        var fetched = try #require(context.model(for: fetchedID) as? RigProfile)
+        #expect(fetched.standaloneComponents.isEmpty)
+
+        fetched.standaloneComponents = [
+            StandaloneComponentEntry(id: "dew-1", role: "dewHeater", deviceName: "Pegasus DewHeater")
+        ]
+        try context.save()
+
+        fetched = try #require(context.model(for: fetchedID) as? RigProfile)
+        #expect(fetched.standaloneComponents.count == 1)
+        #expect(fetched.standaloneComponents.first?.role == "dewHeater")
+    }
+
     @Test func opticalAssemblyReportsWhetherItHasAFocuser() {
         let withFocuser = OpticalAssemblyProfile(name: "Main OTA", focuserDeviceName: "ZWO EAF")
         #expect(withFocuser.hasFocuser == true)
