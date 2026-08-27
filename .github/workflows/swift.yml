@@ -21,8 +21,17 @@ jobs:
         repository: Oekalegon/AstroKit
         path: AstroKit
 
+    - name: Checkout INDIMCPKit (local dependency)
+      uses: actions/checkout@v4
+      with:
+        repository: Oekalegon/INDIMCPKit
+        path: INDIMCPKit
+
     - name: Symlink AstroKit as sibling of Navi
       run: ln -s "$GITHUB_WORKSPACE/AstroKit" "$(dirname "$GITHUB_WORKSPACE")/AstroKit"
+
+    - name: Symlink INDIMCPKit as sibling of Navi
+      run: ln -s "$GITHUB_WORKSPACE/INDIMCPKit" "$(dirname "$GITHUB_WORKSPACE")/INDIMCPKit"
 
     - name: Install CFITSIO
       run: brew install cfitsio
