@@ -170,13 +170,31 @@ INDI-specific folder) so the Archive's existing file-management assumptions (sec
 data root) keep holding; exact subfolder/naming scheme (e.g. by rig/date/frame-id) still to be worked out when
 this is implemented.
 
-### I-3: Progress model for capture and slew — polling vs. streaming, and how far Navi commits to it
+### I-3: Progress model for capture and slew — polling vs. streaming, and how far Navi commits to it — **partially resolved**
 Every hardware command is fire-and-return-runId. Navi needs a consistent pattern (probably `scriptEvents` as the
 live feed, with `waitForTerminalStatus` or a resync timer as the fallback/catch-up path, mirroring what
-`ObservableDevice` already does internally for messaging) used uniformly across capture, slew, cooling-wait, etc.,
-plus cancellation semantics tied to view lifecycle (task cancelled on pane close mid-capture — does the exposure
-keep running server-side? almost certainly yes, so the UI must be able to re-attach to an in-flight `runId` rather
-than assuming a fresh pane means no capture is running).
+`ObservableDevice` already does internally for messaging) used uniformly across capture, slew, cooling-wait, etc.
+
+**Confirmed:** an in-progress exposure keeps running on the Pi regardless of what Navi's UI does — closing the
+pane, backgrounding the app, even quitting Navi entirely does not stop the capture. This settles the cancellation
+question: Navi must treat "no local task tracking this `runId`" as completely uninformative about whether the
+hardware is actually idle, and design for **re-attaching to an in-flight run** as a first-class case, not an edge
+case:
+- `TelescopeSessionManager` should persist the active `runId` (per rig/role) somewhere that survives a pane close
+  and an app relaunch — not just in-memory view state. `UserDefaults` (keyed by rig id) is probably sufficient
+  since it's just a String; no need for anything heavier.
+- On reconnect/pane-open, before assuming the camera is idle, check for a persisted `runId` and query
+  `getScriptStatus`/re-subscribe to `scriptEvents(runId:)` to recover live progress — the UI's "Capture" button
+  should come up already showing progress (or an abort option) rather than a stale idle state if a run is still
+  going.
+- Corollary: an "Abort" action in the UI is a real, separate operation from "the pane went away" — `abortExposure`
+  must be an explicit user action (mirrors the mockup's existing separate Capture/Abort buttons), never something
+  Navi does implicitly on pane close or app quit.
+- Still open: exactly which of `scriptEvents` streaming vs. `waitForTerminalStatus` polling vs. a periodic resync
+  is primary vs. fallback for each command family (capture vs. slew vs. cooling-wait), and whether that pattern
+  gets its own small reusable helper (mirroring `ObservableDevice`'s internal snapshot+stream approach) rather
+  than being reimplemented per device type — worth settling when this is actually built, not blocking Phase 1/2
+  scoping.
 
 ### I-4: Error surface is split across three channels — needs one Navi-side model
 `INDIMCPClientError` (transport/tool-call rejection), `DeviceControlError` (client-side pre-flight), and
