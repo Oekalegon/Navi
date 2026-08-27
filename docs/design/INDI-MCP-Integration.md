@@ -96,8 +96,12 @@ UI surface (new, not in the current mockup — the mockup starts *after* a rig i
   to show which declared components are actually present/connected, surfaced as a per-component badge (this maps
   directly onto the mockup's `ConnectionBadge`/`DeviceStateBadge` components already in
   `TelescopeControlComponents.swift`).
-- Rig **authoring** (creating/editing a rig's component list) is explicitly **not** in Phase 1 scope — see
-  [I-6](#i-6).
+- Rig **authoring** — creating/editing a rig's component list (add/remove components, assign roles, resolve each
+  component to an INDI device name, set role-specific metadata like camera pixel geometry or filter-wheel slot
+  names) — is **in scope for Phase 1** (resolved, [I-6](#i-6-is-rig-authoring-in-scope-or-read-only-rig-selection-only--resolved-yes)),
+  built on `saveRig`. This is a materially bigger UI surface than "connect and control" — a form/editor over
+  `Rig`/`Component`, not just a picker — so it should be scoped as its own chunk of work within Phase 1 rather
+  than an afterthought bolted onto the rig picker.
 
 ## 5. Phase 2 scope — camera functions
 
@@ -135,12 +139,36 @@ also means the endpoint config (§4) should default to whatever's easiest for a 
 only `indiserver` and driver start/stop are ever within Navi's control (§4's "Server control"/"Driver list" items
 already scope correctly to that; no change needed there).
 
-### I-2: Where do downloaded frames live, and how do they join the Archive?
+### I-2: Where do downloaded frames live, and how do they join the Archive? — **Resolved: auto-import, grouped into a frameset per capture run**
 `downloadFrame` writes to a caller-supplied local `URL`. Need: a storage location decision consistent with
 `SettingsManager.dataPath`/security-scoped bookmarks, a dedupe/naming scheme, and a decision on whether captured
 frames auto-import into the Archive or require a user action (the existing Archive flow is explicitly
-"button-driven, not automatic" per [Panel Architecture] — probably the same philosophy applies here, but worth
-confirming since a capture session could produce dozens of frames unattended).
+"button-driven, not automatic" per [Panel Architecture] — that pattern doesn't apply here).
+
+**Decision:** captured frames are imported into the Archive automatically, with no user click required — unlike
+the AI-chat "Browse in Archive" flow, a capture session can produce dozens of unattended frames overnight and
+nobody should have to come back and manually pull each one in. This changes the shape of the work from "wire a
+button" to "run an import pipeline as a side effect of every completed capture," which needs its own small state
+machine per frame: `ScriptRunStatus.completed` → `listFrames`/`getFrameMetadata` → `downloadFrame` to a local path
+→ `verifyChecksum` → `ArchiveManager.importFITS(urls:)` → on success, `confirmFrameTransfer(frameId:)` (only after
+the archive import itself succeeds — a checksum-verified download that then fails to import must **not** be
+confirmed/purged server-side, or the frame becomes unrecoverable). Failures at any step should be visible (not
+another silent `catch {}`, per [I-4](#i-4-error-surface-is-split-across-three-channels--needs-one-navi-side-model))
+but shouldn't block the capture sequence from continuing.
+
+Frames from one capture run belong together, not as loose singles in the Archive table — they should be grouped
+into a frameset (Archive already has frameset creation/membership APIs, e.g. `archive_frameset_create`/
+`archive_frameset_add`, used today for calibration sessions per NAVI-38). Still open, and worth a follow-up pass
+once this is actually built rather than blocking Phase 2 on it: what defines "one run" for grouping purposes —
+one `TelescopeSessionManager` capture sequence (e.g. an N-frame light-frame set kicked off from one UI action), or
+something coarser like "everything captured in one connected session/night" the way calibration sessions are
+grouped today. Leaning toward the former (one explicit capture sequence = one frameset) since it maps directly to
+a single user-initiated action and avoids having to infer session boundaries from idle time or local midnight.
+
+Local storage location: alongside existing archived data under `SettingsManager.dataPath` (not a separate
+INDI-specific folder) so the Archive's existing file-management assumptions (security-scoped bookmark, single
+data root) keep holding; exact subfolder/naming scheme (e.g. by rig/date/frame-id) still to be worked out when
+this is implemented.
 
 ### I-3: Progress model for capture and slew — polling vs. streaming, and how far Navi commits to it
 Every hardware command is fire-and-return-runId. Navi needs a consistent pattern (probably `scriptEvents` as the
@@ -167,11 +195,15 @@ silent auto-reconnect while a slew is in progress seems risky; leaning toward us
 automatic) and a timeout wrapper (race every `async throws` call against a `Task.sleep`) around commands so the UI
 never spins forever on an unresponsive server.
 
-### I-6: Is rig authoring in scope, or read-only rig selection only?
-`saveRig` exists but Phase 1 above scopes only listing/selecting an existing rig. If rigs are currently authored
-via `INDIMCPKitTestApp` or hand-edited YAML on the server, confirm that stays true for the foreseeable future —
-otherwise Phase 1's UI needs a rig editor, which is a much bigger surface (component list, role assignment, device
-name resolution) than "connect and control."
+### I-6: Is rig authoring in scope, or read-only rig selection only? — **Resolved: yes, in scope**
+`saveRig` exists and Navi's Phase 1 rig UI is not just a picker over rigs authored elsewhere (`INDIMCPKitTestApp`,
+hand-edited YAML) — it needs a real editor: add/remove `Component`s, assign each a `Role`, resolve it to an INDI
+device name, and set role-specific metadata (telescope aperture/focal length, camera pixel geometry, focuser
+travel range, filter-wheel slot names). This is the single biggest unknown left in Phase 1's scope, since none of
+that editing surface exists in the mockup or in INDIMCPKit's device model beyond the raw `saveRig(_:overwrite:)`
+call — needs UI/UX design (form vs. wizard, how device-name resolution is presented — does Navi query `indiserver`
+for currently-visible device names to populate a picker, or is it a free-text field?) before implementation, and
+should be estimated/sequenced as its own piece of Phase 1 work rather than folded into "rig picker."
 
 ### I-7: `INDI messaging` sequencing is a foot-gun
 Several calls (`ensureConnected`, `checkRig`, `getDeviceProperties`) fail with a generic `toolCallFailed` — not a
@@ -209,13 +241,13 @@ drift that produces confusing runtime failures otherwise.
 
 ## 7. Suggested sequencing
 
-1. Resolve I-6 (rig authoring scope) first — it changes what Phase 1's UI actually needs to contain. (I-1,
-   deployment model, is now resolved — see above.)
-2. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
-3. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
+1. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
+2. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
    beyond a connect button and status text yet.
-4. Wire the Phase 1 UI (§4) against that manager; retire the mock connection state in `TelescopeControlView`.
-5. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
+3. Wire the Phase 1 UI (§4) against that manager; retire the mock connection state in `TelescopeControlView`.
+   Design and build the rig editor (I-6) as its own sub-step here — it has open UX questions (device-name
+   resolution UI in particular) that should get a quick design pass before coding starts.
+4. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
    chunk of new work in this phase.
 6. Defer Mount beyond "does the connection work" (see §1) to a follow-up design pass, since its API is thin enough
    that a real mount panel needs product decisions (e.g. how to present park/tracking state without any Mount
