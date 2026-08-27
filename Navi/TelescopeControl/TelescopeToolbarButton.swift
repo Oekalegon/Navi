@@ -17,6 +17,11 @@ struct TelescopeToolbarButton: View {
     @State private var telescope = TelescopeSessionManager.shared
     @State private var showingSelection = false
 
+    // Resolved once per armed-id change, not re-fetched on every body re-render (e.g. every
+    // telescope.state change) the way a plain computed property reading modelContext would.
+    @State private var armedObservatoryName: String?
+    @State private var armedRigName: String?
+
     var body: some View {
         HStack(spacing: 6) {
             Button(action: { showingSelection = true }) {
@@ -34,6 +39,9 @@ struct TelescopeToolbarButton: View {
         .sheet(isPresented: $showingSelection) {
             TelescopeSelectionSheet()
         }
+        .onAppear { refreshArmedNames() }
+        .onChange(of: telescope.armedObservatoryID) { refreshArmedNames() }
+        .onChange(of: telescope.armedRigID) { refreshArmedNames() }
     }
 
     private var selectionLabel: String {
@@ -45,18 +53,17 @@ struct TelescopeToolbarButton: View {
         }
     }
 
-    private var armedObservatoryName: String? {
-        guard let id = telescope.armedObservatoryID else { return nil }
-        let descriptor = FetchDescriptor<ObservatoryProfile>(
-            predicate: #Predicate { $0.serverObservatoryID == id }
-        )
-        return try? modelContext.fetch(descriptor).first?.name
-    }
-
-    private var armedRigName: String? {
-        guard let id = telescope.armedRigID else { return nil }
-        let descriptor = FetchDescriptor<RigProfile>(predicate: #Predicate { $0.serverRigID == id })
-        return try? modelContext.fetch(descriptor).first?.name
+    private func refreshArmedNames() {
+        armedObservatoryName = telescope.armedObservatoryID.flatMap { id in
+            let descriptor = FetchDescriptor<ObservatoryProfile>(
+                predicate: #Predicate { $0.serverObservatoryID == id }
+            )
+            return try? modelContext.fetch(descriptor).first?.name
+        }
+        armedRigName = telescope.armedRigID.flatMap { id in
+            let descriptor = FetchDescriptor<RigProfile>(predicate: #Predicate { $0.serverRigID == id })
+            return try? modelContext.fetch(descriptor).first?.name
+        }
     }
 
     @ViewBuilder

@@ -208,7 +208,12 @@ final class TelescopeSessionManager {
     /// I-4: `INDIMCPClientError`/`DeviceControlError`/`TelescopeSessionError` all funnel into one
     /// string here. A lost MCP connection has no dedicated error case of its own — it surfaces as
     /// whatever the underlying transport throws, hence the generic fallback.
-    nonisolated private static func describe(_ error: Error) -> String {
+    ///
+    /// Not `private` — other telescope-control views (e.g. `TelescopeSelectionSheet`) surfacing
+    /// their own errors into `errorMessage` should format them the same way, rather than falling
+    /// back to `error.localizedDescription`, which doesn't use these types' `CustomStringConvertible`
+    /// descriptions (they don't conform to `LocalizedError`).
+    nonisolated static func describe(_ error: Error) -> String {
         if let error = error as? TelescopeSessionError { return error.description }
         if let error = error as? INDIMCPClientError { return error.description }
         if let error = error as? DeviceControlError { return error.description }

@@ -170,21 +170,28 @@ struct TelescopeSelectionSheet: View {
         .cornerRadius(6)
         .contentShape(Rectangle())
         .opacity(isConnected ? 1 : 0.5)
-        .onTapGesture { if isConnected { select() } }
+        .allowsHitTesting(isConnected)
+        .onTapGesture { select() }
     }
 
     private func refreshObservatories() async {
         isRefreshingObservatories = true
         defer { isRefreshingObservatories = false }
-        guard let summaries = try? await telescope.listObservatories() else { return }
-        for summary in summaries {
-            if let existing = observatories.first(where: { $0.serverObservatoryID == summary.id }) {
-                existing.name = summary.name
-                existing.cachedAt = .now
-            } else {
-                modelContext.insert(ObservatoryProfile(serverObservatoryID: summary.id, name: summary.name))
+        do {
+            let summaries = try await telescope.listObservatories()
+            for summary in summaries {
+                if let existing = observatories.first(where: { $0.serverObservatoryID == summary.id }) {
+                    existing.name = summary.name
+                    existing.cachedAt = .now
+                } else {
+                    modelContext.insert(ObservatoryProfile(serverObservatoryID: summary.id, name: summary.name))
+                }
             }
+            try modelContext.save()
+        } catch {
+            // I-4: funnel into TelescopeSessionManager's one error-surfacing property rather than
+            // dropping this silently — a failed background refresh should still be visible.
+            telescope.errorMessage = "Couldn't refresh the observatory list: \(TelescopeSessionManager.describe(error))"
         }
-        try? modelContext.save()
     }
 }
