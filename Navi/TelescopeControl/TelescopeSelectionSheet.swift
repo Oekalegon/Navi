@@ -8,7 +8,6 @@
 import SwiftUI
 import SwiftData
 import INDIMCPKit
-import CoreLocation
 
 /// The toolbar's "selection button" modal (§4.1): pick an Observatory and a Rig, confirming
 /// updates `TelescopeSessionManager`'s *armed* selection — it never connects anything itself.
@@ -30,16 +29,6 @@ struct TelescopeSelectionSheet: View {
     @State private var selectedObservatoryID: String?
     @State private var isRefreshingObservatories = false
 
-    // "Current Location" quick-create (§4.1) — visible only when Location Services access is
-    // available, never an error on tap if it isn't. Saving the new observatory still needs a
-    // live connection (`saveObservatory` is server-side), same gating as every other row here.
-    @State private var locationFetcher = CurrentLocationFetcher()
-    @State private var isFetchingLocation = false
-    @State private var pendingLocation: CLLocation?
-    @State private var newObservatoryName = ""
-    @State private var isPresentingLocationNamePrompt = false
-    @State private var locationErrorMessage: String?
-
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
@@ -54,7 +43,11 @@ struct TelescopeSelectionSheet: View {
                     emptyMessage: isConnected ? "No observatories yet." : "Connect to load observatories."
                 ) {
                     if CurrentLocationFetcher.isAvailable {
-                        currentLocationRow
+                        CurrentLocationQuickCreateRow(
+                            isConnected: isConnected,
+                            observatories: observatories,
+                            onObservatorySelected: { selectedObservatoryID = $0 }
+                        )
                     }
                     ForEach(observatories) { observatory in
                         row(
@@ -94,100 +87,6 @@ struct TelescopeSelectionSheet: View {
             if isConnected {
                 Task { await refreshObservatories() }
             }
-        }
-        .alert("New Observatory", isPresented: $isPresentingLocationNamePrompt) {
-            TextField("Name", text: $newObservatoryName)
-            Button("Cancel", role: .cancel) {
-                pendingLocation = nil
-                newObservatoryName = ""
-            }
-            Button("Save") { Task { await saveCurrentLocationObservatory() } }
-                .disabled(newObservatoryName.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("Everything else — coordinates and elevation — is filled in from your current location.")
-        }
-        .alert(
-            "Couldn't Get Your Location",
-            isPresented: Binding(
-                get: { locationErrorMessage != nil },
-                set: { if !$0 { locationErrorMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { locationErrorMessage = nil }
-        } message: {
-            Text(locationErrorMessage ?? "")
-        }
-    }
-
-    private var currentLocationRow: some View {
-        HStack {
-            Image(systemName: "location.fill")
-                .font(.caption)
-                .foregroundStyle(Color.accentColor)
-            Text("Current Location")
-                .font(.callout)
-            Spacer()
-            if isFetchingLocation {
-                ProgressView().controlSize(.small)
-            }
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 10)
-        .contentShape(Rectangle())
-        .opacity(isConnected ? 1 : 0.5)
-        .allowsHitTesting(isConnected && !isFetchingLocation)
-        .onTapGesture { Task { await useCurrentLocation() } }
-    }
-
-    private func useCurrentLocation() async {
-        isFetchingLocation = true
-        defer { isFetchingLocation = false }
-        do {
-            pendingLocation = try await locationFetcher.requestCurrentLocation()
-            newObservatoryName = ""
-            isPresentingLocationNamePrompt = true
-        } catch {
-            locationErrorMessage = (error as? CurrentLocationFetcher.FetchError)?.description ?? error.localizedDescription
-        }
-    }
-
-    private func saveCurrentLocationObservatory() async {
-        guard let location = pendingLocation else { return }
-        let trimmedName = newObservatoryName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
-        defer {
-            pendingLocation = nil
-            newObservatoryName = ""
-        }
-
-        let observatory = Observatory(
-            id: ObservatoryIDSlug.make(from: trimmedName),
-            name: trimmedName,
-            latitudeDeg: location.coordinate.latitude,
-            longitudeDeg: location.coordinate.longitude,
-            elevationMeters: location.altitude
-        )
-        do {
-            let saved = try await telescope.saveObservatory(observatory)
-            if let existing = observatories.first(where: { $0.serverObservatoryID == saved.id }) {
-                existing.name = saved.name
-                existing.latitudeDeg = saved.latitudeDeg
-                existing.longitudeDeg = saved.longitudeDeg
-                existing.elevationMeters = saved.elevationMeters
-                existing.cachedAt = .now
-            } else {
-                modelContext.insert(ObservatoryProfile(
-                    serverObservatoryID: saved.id,
-                    name: saved.name,
-                    latitudeDeg: saved.latitudeDeg,
-                    longitudeDeg: saved.longitudeDeg,
-                    elevationMeters: saved.elevationMeters
-                ))
-            }
-            try modelContext.save()
-            selectedObservatoryID = saved.id
-        } catch {
-            telescope.errorMessage = "Couldn't save the new observatory: \(TelescopeSessionManager.describe(error))"
         }
     }
 
