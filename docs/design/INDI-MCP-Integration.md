@@ -239,11 +239,17 @@ call — needs UI/UX design (form vs. wizard, how device-name resolution is pres
 for currently-visible device names to populate a picker, or is it a free-text field?) before implementation, and
 should be estimated/sequenced as its own piece of Phase 1 work rather than folded into "rig picker."
 
-### I-7: `INDI messaging` sequencing is a foot-gun
+### I-7: `INDI messaging` sequencing is a foot-gun — **resolved, no decision needed: already handled by §3.2's ordering**
 Several calls (`ensureConnected`, `checkRig`, `getDeviceProperties`) fail with a generic `toolCallFailed` — not a
-distinct "messaging not started" error — if `startINDIMessaging()` hasn't run yet. The connect state machine in
-§3.2 needs to make this an explicit, ordered step (and probably retry/prompt specifically when a failure pattern
-looks like "messaging not running" rather than surfacing a raw tool-call error string to the user).
+distinct "messaging not started" error — if `startINDIMessaging()` hasn't run yet. This is fully addressed by the
+connect state machine already specified in §3.2: `startINDIMessaging` is its own explicit, ordered step (MCP
+connect → server status/start → **messaging** → rigs/devices), so as long as `TelescopeSessionManager` gates rig-
+and device-level calls behind that step actually completing, the class of error this issue describes can't happen
+from Navi's own code paths — nothing further to design here. The one implementation nicety worth keeping in mind
+when this is built: if a `toolCallFailed` still surfaces from a device-level call outside that gated flow (e.g. a
+race where messaging silently died server-side after startup), pattern-matching its message to show something
+better than the raw string is a nice-to-have, not a requirement — falls out of the I-4 error-message plumbing
+rather than needing separate design.
 
 ### I-8: One shared device session across panes/windows, not one per view
 Navi supports multiple windows, and per [Panel Architecture] a pane type can appear in more than one window.
