@@ -45,10 +45,12 @@ architecture, not discovered later:
   (`http://host:port/mcp`), not a subprocess Navi spawns and pipes to.
 - **INDIMCP-server is a separate, long-running Python process** (the `indi-mcp` project) that in turn manages
   `indiserver` and INDI driver child processes. It is *not* part of INDIMCPKit and Navi has no code-level
-  relationship to it beyond talking to its HTTP endpoint. See open issue [I-1](#i-1) — whether Navi ever needs to
-  launch this process itself, or always connects to one that's already running.
-- Because it's HTTP, the server the user talks to could be **on the same Mac, on a Mac mini at the telescope, or
-  anywhere reachable on the local network** — the endpoint is user/observatory-configured, not hardcoded.
+  relationship to it beyond talking to its HTTP endpoint. Resolved in [I-1](#i-1-does-navi-ever-launch-indimcp-server-itself--resolved-no):
+  it runs as a boot-time system service on a Raspberry Pi at the observatory — Navi never launches or manages that
+  process, only connects to it.
+- Because it's HTTP, the server the user talks to is expected to be **a Raspberry Pi on the local network at the
+  telescope**, not the Mac running Navi itself — the endpoint is user/observatory-configured (hostname/IP + port),
+  not hardcoded.
 
 ### 3.2 Session/service layer
 
@@ -118,13 +120,20 @@ Wire `CameraPanelView`'s mock state to `Camera`/`ObservableDevice`:
 
 ## 6. Open issues to resolve before implementation
 
-### I-1: Does Navi ever launch INDIMCP-server itself?
+### I-1: Does Navi ever launch INDIMCP-server itself? — **Resolved: no**
 `startINDIServer`/`stopINDIServer` control **`indiserver`**, a process the *already-running* INDIMCP-server
 manages. They say nothing about the INDIMCP-server process itself — if it's not running, `INDIMCPClient.connect()`
-just fails to reach the endpoint. Decide: is the INDIMCP-server assumed to be a standing service on the observatory
-host (Navi only ever connects to a URL, full stop), or does Navi need a "start remote/local server" story too
-(e.g. SSH-launch, or a bundled local instance for a single-Mac setup)? This changes what "Connect" even means in
-the UI and whether there's a process-management surface beyond `indiserver`/drivers.
+just fails to reach the endpoint.
+
+**Decision:** INDIMCP-server is assumed to be a standing system service on a Raspberry Pi at the observatory,
+started at boot (e.g. a systemd unit) and always up whenever the Pi is powered. Navi never launches, stops, or
+manages that process — no SSH-launch story, no bundled local instance. "Connect" in the UI means only "reach the
+configured URL and run the MCP handshake"; if that fails, the failure mode to surface to the user is "can't reach
+the Pi" (network/DNS/Pi-powered-off) rather than "server not started," since Navi has no lever to start it. This
+also means the endpoint config (§4) should default to whatever's easiest for a Pi-on-the-local-network setup
+(e.g. `<hostname>.local`), and the connect-state-machine UI copy (§3.2) shouldn't offer a "start server" action —
+only `indiserver` and driver start/stop are ever within Navi's control (§4's "Server control"/"Driver list" items
+already scope correctly to that; no change needed there).
 
 ### I-2: Where do downloaded frames live, and how do they join the Archive?
 `downloadFrame` writes to a caller-supplied local `URL`. Need: a storage location decision consistent with
@@ -186,10 +195,11 @@ never hold a `Mount`/`Camera` handle directly and call it themselves.
 
 ### I-10: Security posture of the HTTP endpoint
 Both the MCP tool-call transport and frame download are plain HTTP with `URLSession` defaults — no TLS, no auth
-mentioned anywhere in INDIMCPKit. Fine on a trusted local network (Mac ↔ Mac-mini-at-the-telescope on the same
-LAN/VPN), but worth stating explicitly as an assumption in this doc (and in Settings UI copy) rather than silently
-inheriting it: **do not expose the INDI-MCP endpoint to an untrusted network**, and don't add a "remote over the
-internet" convenience feature without revisiting this.
+mentioned anywhere in INDIMCPKit. Given I-1's resolution (a Pi on the observatory's local network), this is the
+expected deployment shape and is fine on a trusted LAN/VPN — but worth stating explicitly as an assumption in this
+doc (and in Settings UI copy) rather than silently inheriting it: **do not expose the INDI-MCP endpoint to an
+untrusted network**, and don't add a "reach the Pi over the internet" convenience feature (e.g. port-forwarding,
+cloud relay) without revisiting this — there's no auth layer to fall back on if the LAN assumption breaks.
 
 ### I-11: Version drift — pre-1.0, no changelog
 INDIMCPKit tracks INDIMCP-server `0.1.0` and states breaking changes should be expected release-to-release. Worth
@@ -199,8 +209,8 @@ drift that produces confusing runtime failures otherwise.
 
 ## 7. Suggested sequencing
 
-1. Resolve I-1 (deployment model) and I-6 (rig authoring scope) first — both change what Phase 1's UI actually
-   needs to contain.
+1. Resolve I-6 (rig authoring scope) first — it changes what Phase 1's UI actually needs to contain. (I-1,
+   deployment model, is now resolved — see above.)
 2. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
 3. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
    beyond a connect button and status text yet.
