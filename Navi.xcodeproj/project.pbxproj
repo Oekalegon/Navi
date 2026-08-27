@@ -15,6 +15,7 @@
 		0D5B27670CCE4C918F2FE153 /* AstroKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = BD4766DD34E84514975DB584 /* AstroKitUI */; };
 		C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1D2FD06CD300D555A3 /* VSOP */; };
 		C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = C79ED7062FCCE3B20035ED86 /* MarkdownUI */; };
+		694099895C06257E6974C9BC /* INDIMCPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 78C416C30ABC1CC79BC510EE /* INDIMCPKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +72,7 @@
 				C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */,
 				2AE17E15387746B28F17ABAE /* AstrophotoToolDefinitions in Frameworks */,
 				2B070C5AF8995833E897F71A /* AstrophotoToolsKit in Frameworks */,
+				694099895C06257E6974C9BC /* INDIMCPKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -147,6 +149,7 @@
 				C77AEC1B2FD06CD300D555A3 /* AstroKit */,
 				C77AEC1D2FD06CD300D555A3 /* VSOP */,
 				BD4766DD34E84514975DB584 /* AstroKitUI */,
+				78C416C30ABC1CC79BC510EE /* INDIMCPKit */,
 			);
 			productName = Navi;
 			productReference = C78BF8242FCC656900C2CEFA /* Navi.app */;
@@ -233,6 +236,7 @@
 			packageReferences = (
 				C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */,
 				C79ED7042FCCE31A0035ED86 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C78BF8252FCC656900C2CEFA /* Products */;
@@ -641,6 +645,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstroKit;
 		};
+		3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../INDIMCPKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -694,6 +702,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
 			productName = AstrophotoToolsKit;
+		};
+		78C416C30ABC1CC79BC510EE /* INDIMCPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */;
+			productName = INDIMCPKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
