@@ -7,15 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D5B27670CCE4C918F2FE153 /* AstroKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = BD4766DD34E84514975DB584 /* AstroKitUI */; };
 		2AE17E15387746B28F17ABAE /* AstrophotoToolDefinitions in Frameworks */ = {isa = PBXBuildFile; productRef = D4816A52D55B417DAAA9D922 /* AstrophotoToolDefinitions */; };
 		2B070C5AF8995833E897F71A /* AstrophotoToolsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6772E6E1338588A6B7E54B54 /* AstrophotoToolsKit */; };
+		694099895C06257E6974C9BC /* INDIMCPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 78C416C30ABC1CC79BC510EE /* INDIMCPKit */; };
 		C77AEC182FD06CD300D555A3 /* AstrophotoArchiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */; };
 		C77AEC1A2FD06CD300D555A3 /* AstrophotoKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC192FD06CD300D555A3 /* AstrophotoKit */; };
 		C77AEC1C2FD06CD300D555A3 /* AstroKit in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1B2FD06CD300D555A3 /* AstroKit */; };
-		0D5B27670CCE4C918F2FE153 /* AstroKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = BD4766DD34E84514975DB584 /* AstroKitUI */; };
 		C77AEC1E2FD06CD300D555A3 /* VSOP in Frameworks */ = {isa = PBXBuildFile; productRef = C77AEC1D2FD06CD300D555A3 /* VSOP */; };
 		C79ED7072FCCE3B20035ED86 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = C79ED7062FCCE3B20035ED86 /* MarkdownUI */; };
-		694099895C06257E6974C9BC /* INDIMCPKit in Frameworks */ = {isa = PBXBuildFile; productRef = 78C416C30ABC1CC79BC510EE /* INDIMCPKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -452,12 +452,13 @@
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Navi uses your current location to quickly create a new observatory entry with its coordinates filled in automatically.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -496,12 +497,13 @@
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Navi uses your current location to quickly create a new observatory entry with its coordinates filled in automatically.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -641,13 +643,13 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../AstroKit;
-		};
 		3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../INDIMCPKit;
+		};
+		C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstroKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -663,6 +665,21 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		6772E6E1338588A6B7E54B54 /* AstrophotoToolsKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
+			productName = AstrophotoToolsKit;
+		};
+		78C416C30ABC1CC79BC510EE /* INDIMCPKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */;
+			productName = INDIMCPKit;
+		};
+		BD4766DD34E84514975DB584 /* AstroKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
+			productName = AstroKitUI;
+		};
 		C77AEC172FD06CD300D555A3 /* AstrophotoArchiveKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
@@ -678,11 +695,6 @@
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
 			productName = AstroKit;
 		};
-		BD4766DD34E84514975DB584 /* AstroKitUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
-			productName = AstroKitUI;
-		};
 		C77AEC1D2FD06CD300D555A3 /* VSOP */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
@@ -697,16 +709,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
 			productName = AstrophotoToolDefinitions;
-		};
-		6772E6E1338588A6B7E54B54 /* AstrophotoToolsKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C78BF8F52FCC8E1A00C2CEFA /* XCLocalSwiftPackageReference "../AstroKit" */;
-			productName = AstrophotoToolsKit;
-		};
-		78C416C30ABC1CC79BC510EE /* INDIMCPKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3859D1575D7F9A340E2724DD /* XCLocalSwiftPackageReference "../INDIMCPKit" */;
-			productName = INDIMCPKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

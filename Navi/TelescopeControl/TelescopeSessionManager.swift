@@ -141,6 +141,21 @@ final class TelescopeSessionManager {
         return try await client.listObservatories()
     }
 
+    /// The full definition of one observatory (§4.2's editor needs this — `listObservatories()`
+    /// only returns id/name, not coordinates/horizon profile).
+    func getObservatory(id: String) async throws -> Observatory {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.getObservatory(id: id)
+    }
+
+    /// Saves an observatory definition (§4.2). `overwrite` matches `INDIMCPClient.saveObservatory`
+    /// — required to replace an existing one, so a reused id can't silently destroy a prior save.
+    @discardableResult
+    func saveObservatory(_ observatory: Observatory, overwrite: Bool = false) async throws -> Observatory {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.saveObservatory(observatory, overwrite: overwrite)
+    }
+
     private func startLiveness(client: INDIMCPClient) {
         connectionEventsTask = Task { [weak self] in
             guard let self else { return }
