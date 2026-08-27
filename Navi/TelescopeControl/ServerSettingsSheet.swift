@@ -24,6 +24,7 @@ struct ServerSettingsSheet: View {
 
     @State private var editingServer: ServerProfile?
     @State private var isPresentingNewServer = false
+    @State private var serverPendingDeletion: ServerProfile?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +37,6 @@ struct ServerSettingsSheet: View {
                     ForEach(servers) { server in
                         row(for: server)
                     }
-                    .onDelete(perform: delete)
                 }
             }
         }
@@ -46,6 +46,22 @@ struct ServerSettingsSheet: View {
         }
         .sheet(isPresented: $isPresentingNewServer) {
             ServerEditForm(server: nil)
+        }
+        .confirmationDialog(
+            "Delete “\(serverPendingDeletion?.name ?? "")”?",
+            isPresented: Binding(
+                get: { serverPendingDeletion != nil },
+                set: { if !$0 { serverPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let server = serverPendingDeletion { delete(server) }
+                serverPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { serverPendingDeletion = nil }
+        } message: {
+            Text("Any rig that defaults to this server will need a new default server chosen before it can connect.")
         }
     }
 
@@ -93,23 +109,27 @@ struct ServerSettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Edit") { editingServer = server }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+            // Explicit buttons, not a gesture/swipe: macOS's List(selection:)+.onDelete idiom
+            // (the iOS edit-mode/swipe convention) has no reachable UI path here without a
+            // selection binding — plain buttons are the reliable, discoverable macOS pattern.
+            Button(action: { serverPendingDeletion = server }) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Delete Server")
         }
         .contentShape(Rectangle())
         .onTapGesture { editingServer = server }
     }
 
-    private func delete(at offsets: IndexSet) {
+    private func delete(_ server: ServerProfile) {
         // Deleting a server that some RigProfile.defaultServer points to nullifies that
         // reference (RigProfile.defaultServer is @Relationship(deleteRule: .nullify), verified in
-        // EquipmentLibrarySchemaTests) rather than blocking the delete — no warning shown here,
-        // since there's no Rig editor yet (NAVI-55) to actually create that reference through the
-        // UI. Revisit once one exists.
-        for index in offsets {
-            modelContext.delete(servers[index])
-        }
+        // EquipmentLibrarySchemaTests) rather than blocking the delete — the confirmation dialog
+        // above is the warning; there's no Rig editor yet (NAVI-55) to show which rigs it'd
+        // affect by name, so the message stays generic for now.
+        modelContext.delete(server)
         try? modelContext.save()
     }
 }
