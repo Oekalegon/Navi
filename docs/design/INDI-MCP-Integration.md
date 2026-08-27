@@ -196,14 +196,20 @@ case:
   than being reimplemented per device type — worth settling when this is actually built, not blocking Phase 1/2
   scoping.
 
-### I-4: Error surface is split across three channels — needs one Navi-side model
+### I-4: Error surface is split across three channels — needs one Navi-side model — **resolved from existing convention, not a product decision**
 `INDIMCPClientError` (transport/tool-call rejection), `DeviceControlError` (client-side pre-flight), and
-`ScriptRunStatus.failed` (mid-run failure, not a thrown error at all) all need to collapse into whatever Navi
-already uses for surfacing errors to the user (toasts? inline banners? — check existing pattern, e.g. how
-`ArchiveTableView`/`ArchiveFilterSheet`'s currently-silent `catch {}` blocks were flagged in `code-review.md` as a
-quality issue). A lost MCP connection specifically does **not** have a dedicated error case — it surfaces as
-whatever the underlying `swift-sdk` transport throws, so Navi's catch sites need to treat "any Error" as a possible
-disconnect, not just the two named enums.
+`ScriptRunStatus.failed` (mid-run failure, not a thrown error at all) all need to collapse into one place. This
+didn't need a call from Don — Navi already has a settled, consistent pattern for this across `ArchiveManager` and
+`AIConversationViewModel`: an owning manager exposes `var errorMessage: String?`, set on failure/cleared on
+success, and the view reads it and renders inline (`AIAssistantView.swift` ~60, ~103) — no toasts, no `.alert()`
+sheets anywhere in the app. `TelescopeSessionManager` follows the same shape: one `errorMessage: String?` (or,
+given three distinct failure shapes feeding it, a small internal enum that formats down to that one String) that
+all three error channels funnel into via `catch`, replacing the placeholder silent-`catch{}` anti-pattern already
+flagged elsewhere in the codebase (`code-review.md`). This is pure implementation work, not something to resolve
+at design-doc time — noted here only so the "which of three error types do I catch" question doesn't get
+re-litigated per call site. A lost MCP connection specifically does **not** have a dedicated error case — it
+surfaces as whatever the underlying `swift-sdk` transport throws, so catch sites need to treat "any `Error`" as a
+possible disconnect, not just the two named enums, when deciding what string to show.
 
 ### I-5: No auto-reconnect, no request timeout — both are Navi's responsibility
 `INDIMCPClient` has no built-in reconnect/backoff and is single-use after `disconnect()` ("create a new one").
