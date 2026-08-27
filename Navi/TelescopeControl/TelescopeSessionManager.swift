@@ -1,0 +1,171 @@
+//
+//  TelescopeSessionManager.swift
+//  Navi
+//
+//  See docs/design/INDI-MCP-Integration.md §3.2, §4.4, §4.5.
+//
+
+import Foundation
+import INDIMCPKit
+
+/// Owns Navi's single live INDI-MCP session — the connect/disconnect cascade (§4.4), liveness
+/// detection (§3.2), and one shared `ObservableDevice` per role (§4.5/I-8) so every pane/window
+/// observes the same live state instead of each spinning up its own subscription. Also the single
+/// choke point for hardware commands (I-9): a device command should go through this manager's
+/// `device(for:)`, never construct its own `ObservableDevice` or hold an `INDIMCPClient` directly.
+///
+/// Owned once, the same way `ArchiveManager`/`SettingsManager` are — created a single time and
+/// referenced by panes, not one instance per pane/window.
+@MainActor
+@Observable
+final class TelescopeSessionManager {
+    static let shared = TelescopeSessionManager()
+
+    enum ConnectionState: Equatable {
+        case disconnected
+        case connecting
+        case connected
+    }
+
+    private(set) var state: ConnectionState = .disconnected
+    /// I-4's existing convention: one place errors surface, read directly by views — no toasts
+    /// or `.alert()` sheets.
+    var errorMessage: String?
+
+    private(set) var currentServer: ServerProfile?
+    private(set) var currentRig: Rig?
+
+    private var client: INDIMCPClient?
+    private var devices: [Role: ObservableDevice] = [:]
+    private var connectionEventsTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+
+    /// Connects to `server` and brings up `rigID`'s devices via the §4.4 cascade. No-ops if
+    /// already connecting/connected — press Disconnect first to switch rigs/servers (§4.1: rig/
+    /// server selection only ever *arms* a choice, Connect is always a separate, explicit action).
+    func connect(server: ServerProfile, rigID: String) async {
+        guard state == .disconnected else { return }
+        state = .connecting
+        errorMessage = nil
+
+        let client = INDIMCPClient(endpoint: server.url)
+        do {
+            let rig = try await TelescopeConnectCascade.run(client: client, rigID: rigID)
+            self.client = client
+            self.currentRig = rig
+            self.currentServer = server
+            state = .connected
+            startLiveness(client: client)
+        } catch {
+            errorMessage = Self.describe(error)
+            state = .disconnected
+        }
+    }
+
+    /// The deliberate, symmetric "shut it down" action (§4.4): stops every device this session
+    /// started, then `indiserver` itself, then closes the MCP session. Distinct from Navi simply
+    /// quitting or crashing, which touches nothing on the Pi.
+    func disconnect() async {
+        guard state != .disconnected else { return }
+        stopLiveness()
+
+        for device in devices.values { await device.stop() }
+        devices.removeAll()
+
+        if let client, let rig = currentRig {
+            for component in rig.components where component.device != nil {
+                _ = try? await client.disconnectDevice(rigId: rig.id, role: component.role.rawValue)
+            }
+            _ = try? await client.stopINDIServer()
+            await client.disconnect()
+        }
+
+        self.client = nil
+        currentRig = nil
+        currentServer = nil
+        state = .disconnected
+    }
+
+    /// Returns the shared `ObservableDevice` for `role` in the currently-connected rig, creating
+    /// and starting it on first access. `nil` if not connected, or if the current rig has no
+    /// device bound for that role. I-8: one instance per role, shared across every pane/window
+    /// that asks for it, rather than each constructing its own.
+    func device(for role: Role) -> ObservableDevice? {
+        guard let client, let rig = currentRig, state == .connected else { return nil }
+        guard rig.components.contains(where: { $0.role == role && $0.device != nil }) else { return nil }
+        if let existing = devices[role] { return existing }
+        let observable = ObservableDevice(client: client, rigId: rig.id, role: role)
+        devices[role] = observable
+        Task { await observable.start() }
+        return observable
+    }
+
+    private func startLiveness(client: INDIMCPClient) {
+        connectionEventsTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await events in client.connectionEvents(target: nil) {
+                    await self.handle(events)
+                }
+            } catch {
+                await self.handleConnectionLost(Self.describe(error))
+            }
+        }
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled, let self else { return }
+                do {
+                    _ = try await withTimeout(seconds: 10) { try await client.getINDIServerStatus() }
+                } catch {
+                    await self.handleConnectionLost("Heartbeat failed: \(Self.describe(error))")
+                    return
+                }
+            }
+        }
+    }
+
+    private func stopLiveness() {
+        connectionEventsTask?.cancel()
+        heartbeatTask?.cancel()
+        connectionEventsTask = nil
+        heartbeatTask = nil
+    }
+
+    private func handle(_ events: [ConnectionEvent]) {
+        for event in events where event.kind == .connectionLost {
+            // "server" here is INDIMCP-server's own link to indiserver (not Navi's MCP session to
+            // INDIMCP-server, which has no dedicated event — see ConnectionEvent's doc comment
+            // and I-4). Both "server" and "indiserver" losing their connection mean nothing
+            // device-related can work; a single driver's label losing connection is narrower and
+            // is ObservableDevice's own concern via its messageEvents subscription, not a reason
+            // to tear down the whole session.
+            guard event.target == "server" || event.target == "indiserver" else { continue }
+            handleConnectionLost(event.message ?? "The INDI-MCP server lost its connection to indiserver.")
+        }
+    }
+
+    /// Only tears down `.connected` state — a lost-connection signal arriving after an explicit
+    /// `disconnect()` (or a duplicate signal) is a no-op, not a re-entrant teardown.
+    private func handleConnectionLost(_ message: String) {
+        guard state == .connected else { return }
+        errorMessage = message
+        stopLiveness()
+        for device in devices.values { Task { await device.stop() } }
+        devices.removeAll()
+        client = nil
+        currentRig = nil
+        currentServer = nil
+        state = .disconnected
+    }
+
+    /// I-4: `INDIMCPClientError`/`DeviceControlError`/`TelescopeSessionError` all funnel into one
+    /// string here. A lost MCP connection has no dedicated error case of its own — it surfaces as
+    /// whatever the underlying transport throws, hence the generic fallback.
+    nonisolated private static func describe(_ error: Error) -> String {
+        if let error = error as? TelescopeSessionError { return error.description }
+        if let error = error as? INDIMCPClientError { return error.description }
+        if let error = error as? DeviceControlError { return error.description }
+        return error.localizedDescription
+    }
+}
