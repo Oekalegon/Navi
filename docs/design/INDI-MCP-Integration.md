@@ -1,8 +1,9 @@
 # INDI-MCP Integration — Design Document
 
-Status: **Draft** — Phase 1 scoping
+Status: **Draft** — Phase 1 scoping. All open issues below are resolved except the Rig/Observatory editor UI design
+pass (§7, step 1), which is still pending and blocks implementation start.
 Owner: Don Willems
-Related: [NAVI-42](.), `Navi/TelescopeControl/*` (static mockup, precedes this doc), INDIMCPKit (`/Users/donwillems/Personal/Development/INDIMCPKit`), INDIMCP-server (`/Users/donwillems/Personal/Development/INDIMCP-server`)
+Related: `Navi/TelescopeControl/*` (static mockup, precedes this doc), INDIMCPKit (`/Users/donwillems/Personal/Development/INDIMCPKit`), INDIMCP-server (`/Users/donwillems/Personal/Development/INDIMCP-server`)
 
 ## 1. Goal
 
@@ -251,19 +252,21 @@ race where messaging silently died server-side after startup), pattern-matching 
 better than the raw string is a nice-to-have, not a requirement — falls out of the I-4 error-message plumbing
 rather than needing separate design.
 
-### I-8: One shared device session across panes/windows, not one per view
+### I-8: One shared device session across panes/windows, not one per view — **resolved, no decision needed: already the §3.2 design**
 Navi supports multiple windows, and per [Panel Architecture] a pane type can appear in more than one window.
 `ObservableDevice` is `@MainActor` and cheap to create, but nothing stops two independent instances for the same
 rig+role from each polling and subscribing separately — wasteful, and worse, doubles the "harmless no-op" surface
-if both independently retry something. `TelescopeSessionManager` (§3.2) should own one `ObservableDevice` per
-role and let multiple panes observe the same instance, matching how `WindowRegistry`/`PaneManager` already
-centralize state rather than duplicating it per pane.
+if both independently retry something. This is already the design: §3.2 has `TelescopeSessionManager` own one
+`ObservableDevice` per role and let multiple panes observe the same instance, matching how
+`WindowRegistry`/`PaneManager` already centralize state rather than duplicating it per pane. Nothing further to
+decide — just an implementation constraint to hold to.
 
-### I-9: Command serialization — prevent two panes issuing conflicting hardware commands
+### I-9: Command serialization — prevent two panes issuing conflicting hardware commands — **resolved, no decision needed: already the §3.2 design**
 Nothing in INDIMCPKit itself prevents concurrent `slew`/`captureFrame`/etc. calls to the same device from two call
-sites. With a single shared session (I-8) this is mostly solved by construction (one owner, one place commands
-originate), but worth an explicit rule: hardware-command methods live only on `TelescopeSessionManager`, views
-never hold a `Mount`/`Camera` handle directly and call it themselves.
+sites. With the single shared session from I-8, this is solved by construction as long as one rule holds:
+hardware-command methods live only on `TelescopeSessionManager`; views never hold a `Mount`/`Camera` handle
+directly and call it themselves. Stated here as an explicit constraint for whoever implements this, not a decision
+point.
 
 ### I-10: Security posture of the HTTP endpoint
 Both the MCP tool-call transport and frame download are plain HTTP with `URLSession` defaults — no TLS, no auth
@@ -273,11 +276,12 @@ doc (and in Settings UI copy) rather than silently inheriting it: **do not expos
 untrusted network**, and don't add a "reach the Pi over the internet" convenience feature (e.g. port-forwarding,
 cloud relay) without revisiting this — there's no auth layer to fall back on if the LAN assumption breaks.
 
-### I-11: Version drift — pre-1.0, no changelog
-INDIMCPKit tracks INDIMCP-server `0.1.0` and states breaking changes should be expected release-to-release. Worth
-a lightweight startup check (`getServerInfo().matchesAlignedVersion`) surfaced as a non-blocking warning banner
+### I-11: Version drift — pre-1.0, no changelog — **resolved: non-blocking warning banner, low-stakes default**
+INDIMCPKit tracks INDIMCP-server `0.1.0` and states breaking changes should be expected release-to-release. A
+lightweight startup check (`getServerInfo().matchesAlignedVersion`) surfaced as a non-blocking warning banner
 ("server version doesn't match the kit Navi was built against") rather than skipped — this is exactly the kind of
-drift that produces confusing runtime failures otherwise.
+drift that produces confusing runtime failures otherwise. Low enough stakes (a warning, not a hard gate) that it
+doesn't need sign-off beyond this — implement as described when this piece of work comes up.
 
 ## 7. Suggested sequencing
 
