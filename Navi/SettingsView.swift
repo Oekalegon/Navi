@@ -13,6 +13,7 @@ struct SettingsView: View {
     @Environment(SettingsManager.self) private var settings
     @State private var apiKeyInput: String = ""
     @State private var showingKey: Bool = false
+    @State private var showingServerSettings = false
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -117,6 +118,19 @@ struct SettingsView: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
 
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Telescope Servers").font(.headline)
+                Text("Named INDI-MCP servers a rig can connect to")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Button("Manage Servers…") { showingServerSettings = true }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+
             Spacer()
 
             HStack {
@@ -130,7 +144,10 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 500, height: 460)
+        .frame(width: 500, height: 560)
         .onAppear { apiKeyInput = settings.apiKey }
+        .sheet(isPresented: $showingServerSettings) {
+            ServerSettingsSheet()
+        }
     }
 }
