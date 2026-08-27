@@ -85,6 +85,10 @@ struct ObservatoryEditForm: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    // Always reachable, overriding the form-wide .disabled(!isConnected) below —
+                    // dismissing isn't a server action, and the user must never get stuck in this
+                    // sheet if the connection drops while it's open.
+                    .disabled(false)
                 Button("Save") { Task { await save() } }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
