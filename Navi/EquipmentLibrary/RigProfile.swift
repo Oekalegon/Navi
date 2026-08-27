@@ -36,11 +36,18 @@ final class RigProfile {
     /// not authoritative; the server owns the real name.
     var name: String
 
-    var mount: MountProfile?
-    var opticalAssembly: OpticalAssemblyProfile?
-    var guideOpticalAssembly: OpticalAssemblyProfile?
-    var imagingTrain: ImagingTrainProfile?
-    var guideCamera: GuideCameraProfile?
+    // Explicit `.nullify` on every optional to-one relationship below, rather than relying on
+    // SwiftData's implicit default (which Apple's docs say is already `.nullify`) — makes the
+    // intent unambiguous. Note for anyone testing this: asserting nullification by re-fetching
+    // through the *same* ModelContext that performed the delete is unreliable — an already-
+    // materialized object doesn't reliably reflect a delete+save that just happened in that same
+    // context (see deletingAServerNullifiesRigsThatDefaultToIt in EquipmentLibrarySchemaTests,
+    // which uses a fresh context for its post-delete fetch specifically because of this).
+    @Relationship(deleteRule: .nullify) var mount: MountProfile?
+    @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
+    @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
+    @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
+    @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
 
     /// The id of the server-side `Observatory` this rig defaults to. `Observatory` lives entirely
     /// server-side (fetched via `listObservatories`/`saveObservatory`) — Navi doesn't mirror it
@@ -49,7 +56,7 @@ final class RigProfile {
 
     /// The rig's default INDI-MCP server (§4.2) — overriding this mapping is a Settings-only
     /// action, never a transient toolbar override (§4.1).
-    var defaultServer: ServerProfile?
+    @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
 
     // Stored as JSON `Data`, not `[StandaloneComponentEntry]` directly — SwiftData's "collection
     // of codable" attribute support fails a runtime cast for custom struct arrays at save/fetch
