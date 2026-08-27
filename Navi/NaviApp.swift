@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import AppKit // NSOpenPanel in NaviCommands.showStandaloneImportPanel()
 
 private struct ImportActionKey: FocusedValueKey {
@@ -52,6 +53,18 @@ struct NaviCommands: Commands {
 
 @main
 struct NaviApp: App {
+    // Explicit container (rather than `.modelContainer(for:)`'s single-root-type relationship
+    // inference) so `EquipmentLibrarySchema.models` stays the one source of truth for what's in
+    // the store.
+    private let equipmentLibraryContainer: ModelContainer = {
+        let schema = Schema(EquipmentLibrarySchema.models)
+        do {
+            return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema)])
+        } catch {
+            fatalError("Failed to create equipment library ModelContainer: \(error)")
+        }
+    }()
+
     var body: some Scene {
         // Every window — the initial one, File > New Window, and panes detached
         // via the move-pane menu's New Window item (NAVI-10) — is keyed by a
@@ -63,5 +76,6 @@ struct NaviApp: App {
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands { NaviCommands() }
+        .modelContainer(equipmentLibraryContainer)
     }
 }
