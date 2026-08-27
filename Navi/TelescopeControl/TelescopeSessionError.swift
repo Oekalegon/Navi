@@ -12,9 +12,14 @@ enum TelescopeSessionError: Error, CustomStringConvertible, Sendable {
     /// has no built-in request timeout, so this is Navi's own responsibility per I-5.
     case timedOut
 
+    /// A call that needs a live session (e.g. `TelescopeSessionManager.listObservatories()`) was
+    /// made while disconnected.
+    case notConnected
+
     var description: String {
         switch self {
         case .timedOut: return "The telescope server didn't respond in time."
+        case .notConnected: return "Not connected to a telescope server."
         }
     }
 }
