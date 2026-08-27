@@ -16,6 +16,15 @@ import INDIMCPKit
 ///
 /// Owned once, the same way `ArchiveManager`/`SettingsManager` are — created a single time and
 /// referenced by panes, not one instance per pane/window.
+///
+/// **Testing note:** the connect-cascade *decision logic* (idempotent skips, per-component device
+/// connection, error/timeout propagation) is covered by `TelescopeConnectCascadeTests` against a
+/// fake `TelescopeClient`. This class's own orchestration on top of that — state transitions,
+/// `handleConnectionLost`'s idempotency guard, `device(for:)`'s guard logic — is *not*
+/// independently unit-tested: `connect(server:rigID:)` constructs a concrete `INDIMCPClient`
+/// directly (required for `ObservableDevice`, which only accepts that concrete type, not a
+/// protocol), so this layer can only be exercised against a real or fake INDIMCP-server, not a
+/// substitutable client. A deliberate, documented gap, not an oversight.
 @MainActor
 @Observable
 final class TelescopeSessionManager {
@@ -57,6 +66,10 @@ final class TelescopeSessionManager {
             state = .connected
             startLiveness(client: client)
         } catch {
+            // The cascade may have already completed the MCP handshake before a later step
+            // failed — disconnect the locally-constructed client so that session doesn't dangle;
+            // nothing else holds a reference to it since `self.client` is only set on success.
+            await client.disconnect()
             errorMessage = Self.describe(error)
             state = .disconnected
         }
@@ -116,7 +129,9 @@ final class TelescopeSessionManager {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled, let self else { return }
                 do {
-                    _ = try await withTimeout(seconds: 10) { try await client.getINDIServerStatus() }
+                    _ = try await TelescopeConnectCascade.withTimeout(seconds: 10) {
+                        try await client.getINDIServerStatus()
+                    }
                 } catch {
                     await self.handleConnectionLost("Heartbeat failed: \(Self.describe(error))")
                     return
@@ -132,7 +147,7 @@ final class TelescopeSessionManager {
         heartbeatTask = nil
     }
 
-    private func handle(_ events: [ConnectionEvent]) {
+    private func handle(_ events: [ConnectionEvent]) async {
         for event in events where event.kind == .connectionLost {
             // "server" here is INDIMCP-server's own link to indiserver (not Navi's MCP session to
             // INDIMCP-server, which has no dedicated event — see ConnectionEvent's doc comment
@@ -141,17 +156,20 @@ final class TelescopeSessionManager {
             // is ObservableDevice's own concern via its messageEvents subscription, not a reason
             // to tear down the whole session.
             guard event.target == "server" || event.target == "indiserver" else { continue }
-            handleConnectionLost(event.message ?? "The INDI-MCP server lost its connection to indiserver.")
+            await handleConnectionLost(event.message ?? "The INDI-MCP server lost its connection to indiserver.")
         }
     }
 
     /// Only tears down `.connected` state — a lost-connection signal arriving after an explicit
-    /// `disconnect()` (or a duplicate signal) is a no-op, not a re-entrant teardown.
-    private func handleConnectionLost(_ message: String) {
+    /// `disconnect()` (or a duplicate signal) is a no-op, not a re-entrant teardown. `async`,
+    /// awaiting each device's `stop()` in turn, matching `disconnect()`'s own teardown — both of
+    /// this method's call sites already `await` it, so there's no reason for a fire-and-forget
+    /// `Task { await device.stop() }` here instead.
+    private func handleConnectionLost(_ message: String) async {
         guard state == .connected else { return }
         errorMessage = message
         stopLiveness()
-        for device in devices.values { Task { await device.stop() } }
+        for device in devices.values { await device.stop() }
         devices.removeAll()
         client = nil
         currentRig = nil

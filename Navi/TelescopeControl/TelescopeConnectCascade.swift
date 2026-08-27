@@ -7,31 +7,33 @@
 
 import INDIMCPKit
 
-/// Races `operation` against a `seconds`-long timeout, throwing `TelescopeSessionError.timedOut`
-/// if it loses. `INDIMCPClient` has no built-in request timeout (I-5), so every cascade step
-/// wraps its call through this rather than risking the UI spinning forever on an unresponsive
-/// server.
-func withTimeout<T: Sendable>(
-    seconds: Double,
-    operation: @Sendable @escaping () async throws -> T
-) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(for: .seconds(seconds))
-            throw TelescopeSessionError.timedOut
-        }
-        guard let result = try await group.next() else {
-            throw TelescopeSessionError.timedOut
-        }
-        group.cancelAll()
-        return result
-    }
-}
-
 /// The §4.4 connect cascade, factored out of `TelescopeSessionManager` as pure logic against the
 /// `TelescopeClient` abstraction so it's testable without a live server.
 enum TelescopeConnectCascade {
+    /// Races `operation` against a `seconds`-long timeout, throwing
+    /// `TelescopeSessionError.timedOut` if it loses. `INDIMCPClient` has no built-in request
+    /// timeout (I-5), so every cascade step (and `TelescopeSessionManager`'s own heartbeat) wraps
+    /// its call through this rather than risking the UI spinning forever on an unresponsive
+    /// server. Nested here rather than a bare module-level function, so it doesn't sit in Navi's
+    /// global namespace under a name generic enough to collide with something unrelated later.
+    static func withTimeout<T: Sendable>(
+        seconds: Double,
+        operation: @Sendable @escaping () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw TelescopeSessionError.timedOut
+            }
+            guard let result = try await group.next() else {
+                throw TelescopeSessionError.timedOut
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
     /// Runs the cascade against `client`, returning the resolved `Rig` once every device-bound
     /// component has had `connectDevice` issued for it. Every step is idempotent (§4.4: never
     /// restart something already running) and timeout-wrapped (I-5).
@@ -49,30 +51,30 @@ enum TelescopeConnectCascade {
         rigID: String,
         timeoutSeconds: Double = 15
     ) async throws -> Rig {
-        try await withTimeout(seconds: timeoutSeconds) { try await client.establishSession() }
+        try await Self.withTimeout(seconds: timeoutSeconds) { try await client.establishSession() }
 
-        let serverStatus = try await withTimeout(seconds: timeoutSeconds) {
+        let serverStatus = try await Self.withTimeout(seconds: timeoutSeconds) {
             try await client.getINDIServerStatus()
         }
         if !serverStatus.running {
-            _ = try await withTimeout(seconds: timeoutSeconds) {
+            _ = try await Self.withTimeout(seconds: timeoutSeconds) {
                 try await client.startINDIServer(port: defaultINDIServerPort)
             }
         }
 
-        let messagingStatus = try await withTimeout(seconds: timeoutSeconds) {
+        let messagingStatus = try await Self.withTimeout(seconds: timeoutSeconds) {
             try await client.getINDIMessagingStatus()
         }
         if !messagingStatus.running {
-            _ = try await withTimeout(seconds: timeoutSeconds) {
+            _ = try await Self.withTimeout(seconds: timeoutSeconds) {
                 try await client.startINDIMessaging(host: "localhost", port: defaultINDIServerPort)
             }
         }
 
-        let rig = try await withTimeout(seconds: timeoutSeconds) { try await client.getRig(id: rigID) }
+        let rig = try await Self.withTimeout(seconds: timeoutSeconds) { try await client.getRig(id: rigID) }
 
         for component in rig.components where component.device != nil {
-            _ = try await withTimeout(seconds: timeoutSeconds) {
+            _ = try await Self.withTimeout(seconds: timeoutSeconds) {
                 try await client.connectDevice(rigId: rig.id, role: component.role.rawValue)
             }
         }
