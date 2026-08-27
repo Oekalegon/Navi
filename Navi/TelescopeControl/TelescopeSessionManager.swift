@@ -44,10 +44,29 @@ final class TelescopeSessionManager {
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
 
+    /// The user's *armed* Rig/Observatory choice (§4.1/§4.3.2) — set by confirming the toolbar's
+    /// selection modal, independent of whether a connection is currently live. Persisted across
+    /// launches via `UserDefaults`, matching `SettingsManager`'s own plain-`didSet` persistence
+    /// idiom. `armedRigID` is a `RigProfile.serverRigID`; `armedObservatoryID` is a server-side
+    /// `Observatory.id` (see `ObservatoryProfile`/`RigProfile.defaultObservatoryID`).
+    var armedRigID: String? {
+        didSet { UserDefaults.standard.set(armedRigID, forKey: Self.armedRigIDDefaultsKey) }
+    }
+    var armedObservatoryID: String? {
+        didSet { UserDefaults.standard.set(armedObservatoryID, forKey: Self.armedObservatoryIDDefaultsKey) }
+    }
+    private static let armedRigIDDefaultsKey = "telescopeArmedRigID"
+    private static let armedObservatoryIDDefaultsKey = "telescopeArmedObservatoryID"
+
     private var client: INDIMCPClient?
     private var devices: [Role: ObservableDevice] = [:]
     private var connectionEventsTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+
+    init() {
+        armedRigID = UserDefaults.standard.string(forKey: Self.armedRigIDDefaultsKey)
+        armedObservatoryID = UserDefaults.standard.string(forKey: Self.armedObservatoryIDDefaultsKey)
+    }
 
     /// Connects to `server` and brings up `rigID`'s devices via the §4.4 cascade. No-ops if
     /// already connecting/connected — press Disconnect first to switch rigs/servers (§4.1: rig/
@@ -111,6 +130,15 @@ final class TelescopeSessionManager {
         devices[role] = observable
         Task { await observable.start() }
         return observable
+    }
+
+    /// Live Observatory list from the currently-connected server, for refreshing the toolbar's
+    /// local `ObservatoryProfile` cache (§4.1) — throws `TelescopeSessionError.notConnected` when
+    /// there's no live session, since Observatory has no server of its own to ask before one
+    /// exists. Callers should treat that as "nothing to refresh right now," not a hard failure.
+    func listObservatories() async throws -> [ObservatorySummary] {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.listObservatories()
     }
 
     private func startLiveness(client: INDIMCPClient) {

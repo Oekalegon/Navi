@@ -143,6 +143,29 @@ struct EquipmentLibrarySchemaTests {
         #expect(fetched.standaloneComponents.first?.role == "dewHeater")
     }
 
+    @Test func observatoryProfileRoundTripsAndEnforcesUniqueServerID() throws {
+        let container = try makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        context.insert(ObservatoryProfile(serverObservatoryID: "obs-1", name: "Home Backyard"))
+        try context.save()
+
+        let fetched = try context.fetch(FetchDescriptor<ObservatoryProfile>())
+        #expect(fetched.count == 1)
+        #expect(fetched.first?.name == "Home Backyard")
+
+        // Simulate a cache refresh from a live listObservatories() call: update the existing
+        // record by serverObservatoryID rather than inserting a duplicate.
+        let existing = try #require(fetched.first)
+        existing.name = "Home Backyard (renamed)"
+        existing.cachedAt = .now
+        try context.save()
+
+        let refetched = try context.fetch(FetchDescriptor<ObservatoryProfile>())
+        #expect(refetched.count == 1)
+        #expect(refetched.first?.name == "Home Backyard (renamed)")
+    }
+
     @Test func opticalAssemblyReportsWhetherItHasAFocuser() {
         let withFocuser = OpticalAssemblyProfile(name: "Main OTA", focuserDeviceName: "ZWO EAF")
         #expect(withFocuser.hasFocuser == true)

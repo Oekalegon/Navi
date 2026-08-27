@@ -56,6 +56,10 @@ struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .automatic) {
+                    TelescopeToolbarButton()
+                }
+
+                ToolbarItem(placement: .automatic) {
                     Button(action: { showingSettings = true }) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 13))
