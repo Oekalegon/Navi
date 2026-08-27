@@ -102,6 +102,15 @@ UI surface (new, not in the current mockup — the mockup starts *after* a rig i
   built on `saveRig`. This is a materially bigger UI surface than "connect and control" — a form/editor over
   `Rig`/`Component`, not just a picker — so it should be scoped as its own chunk of work within Phase 1 rather
   than an afterthought bolted onto the rig picker.
+- **Observatory** setup — also in scope for Phase 1, and also a real editor, not just a picker. `Observatory` is a
+  distinct concept from `Rig` in INDIMCPKit (`Observatories/Observatory.swift`): a site definition — lat/lon,
+  elevation, and an optional horizon-obstruction profile used for visibility checks — with its own
+  `listObservatories`/`getObservatory`/`saveObservatory` calls, plus a `draftObservatory()` helper that pre-fills a
+  draft from a connected device's live `GEOGRAPHIC_COORD` (e.g. a GPS-capable mount) for the operator to review and
+  save, never auto-saved. Both the Rig editor and the Observatory editor/selector need a dedicated UI/UX design
+  pass of their own before implementation starts — Don has additional ideas for that pass beyond what's captured
+  here, so treat both as **placeholders in this doc, not final specs**, and expect this section to be revised once
+  that pass happens.
 
 ## 5. Phase 2 scope — camera functions
 
@@ -211,13 +220,14 @@ re-litigated per call site. A lost MCP connection specifically does **not** have
 surfaces as whatever the underlying `swift-sdk` transport throws, so catch sites need to treat "any `Error`" as a
 possible disconnect, not just the two named enums, when deciding what string to show.
 
-### I-5: No auto-reconnect, no request timeout — both are Navi's responsibility
+### I-5: No auto-reconnect, no request timeout — both are Navi's responsibility — **resolved: manual reconnect + timeout wrapper**
 `INDIMCPClient` has no built-in reconnect/backoff and is single-use after `disconnect()` ("create a new one").
 There's also no exposed HTTP request timeout, so a hung request can hang indefinitely. `TelescopeSessionManager`
-needs to own both: a reconnect policy (manual button vs. automatic with backoff — for a live device-control app,
-silent auto-reconnect while a slew is in progress seems risky; leaning toward user-visible "Reconnect" rather than
-automatic) and a timeout wrapper (race every `async throws` call against a `Task.sleep`) around commands so the UI
-never spins forever on an unresponsive server.
+owns both: a **manual, user-visible "Reconnect"** action rather than silent automatic reconnect-with-backoff — for
+a live device-control app, reconnecting automatically while a slew or capture might be in progress is the riskier
+default, and a manual action keeps the operator in the loop about connection state changing under them — plus a
+**timeout wrapper** (race every `async throws` call against a `Task.sleep`) around commands so the UI never spins
+forever on an unresponsive server. No open question left here; this is the accepted design.
 
 ### I-6: Is rig authoring in scope, or read-only rig selection only? — **Resolved: yes, in scope**
 `saveRig` exists and Navi's Phase 1 rig UI is not just a picker over rigs authored elsewhere (`INDIMCPKitTestApp`,
@@ -265,13 +275,15 @@ drift that produces confusing runtime failures otherwise.
 
 ## 7. Suggested sequencing
 
-1. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
-2. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
+1. **Dedicated design pass for the Rig and Observatory editor/selector UI** (§4) — before any of this is
+   implemented. Don has additional ideas for this beyond what §4 currently sketches; this doc's Rig/Observatory
+   bullets are placeholders, not a spec, until that pass happens.
+2. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
+3. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
    beyond a connect button and status text yet.
-3. Wire the Phase 1 UI (§4) against that manager; retire the mock connection state in `TelescopeControlView`.
-   Design and build the rig editor (I-6) as its own sub-step here — it has open UX questions (device-name
-   resolution UI in particular) that should get a quick design pass before coding starts.
-4. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
+4. Wire the rest of the Phase 1 UI (§4) against that manager, using the editor design from step 1; retire the
+   mock connection state in `TelescopeControlView`.
+5. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
    chunk of new work in this phase.
 6. Defer Mount beyond "does the connection work" (see §1) to a follow-up design pass, since its API is thin enough
    that a real mount panel needs product decisions (e.g. how to present park/tracking state without any Mount
