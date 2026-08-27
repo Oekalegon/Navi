@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var apiKeyInput: String = ""
     @State private var showingKey: Bool = false
     @State private var showingServerSettings = false
+    @State private var showingObservatorySettings = false
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -131,6 +132,19 @@ struct SettingsView: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
 
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Observatories").font(.headline)
+                Text("Observatory locations a rig can default to")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Button("Manage Observatories…") { showingObservatorySettings = true }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+
             Spacer()
 
             HStack {
@@ -144,10 +158,13 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 500, height: 560)
+        .frame(width: 500, height: 660)
         .onAppear { apiKeyInput = settings.apiKey }
         .sheet(isPresented: $showingServerSettings) {
             ServerSettingsSheet()
+        }
+        .sheet(isPresented: $showingObservatorySettings) {
+            ObservatorySettingsSheet()
         }
     }
 }

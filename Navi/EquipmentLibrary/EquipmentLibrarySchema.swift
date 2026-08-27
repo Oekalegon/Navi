@@ -42,10 +42,33 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
     }
 }
 
+/// Version 3 — adds `ObservatoryProfile.latitudeDeg`/`longitudeDeg`/`elevationMeters` (§4.2's
+/// Observatory Settings pane). Purely additive attributes with defaults, so lightweight again.
+enum EquipmentLibrarySchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            MountProfile.self,
+            OpticalAssemblyProfile.self,
+            ImagingTrainProfile.self,
+            GuideCameraProfile.self,
+            ServerProfile.self,
+            RigProfile.self,
+            ObservatoryProfile.self,
+        ]
+    }
+}
+
 enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self]
+    }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: EquipmentLibrarySchemaV1.self, toVersion: EquipmentLibrarySchemaV2.self)]
+        [
+            .lightweight(fromVersion: EquipmentLibrarySchemaV1.self, toVersion: EquipmentLibrarySchemaV2.self),
+            .lightweight(fromVersion: EquipmentLibrarySchemaV2.self, toVersion: EquipmentLibrarySchemaV3.self),
+        ]
     }
 }
 
@@ -53,5 +76,5 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
 /// tests build their `Schema`/`ModelConfiguration` from, without every call site needing to know
 /// which `VersionedSchema` is current.
 enum EquipmentLibrarySchema {
-    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV2.models }
+    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV3.models }
 }
