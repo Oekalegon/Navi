@@ -1,7 +1,7 @@
 # INDI-MCP Integration — Design Document
 
-Status: **Draft** — Phase 1 scoping. All open issues below are resolved except the Rig/Observatory editor UI design
-pass (§7, step 1), which is still pending and blocks implementation start.
+Status: **Draft, fully scoped** — Phase 1 scoping and the Rig/Observatory/equipment-library design pass are both
+complete; every open issue below is resolved. Ready to move into implementation per §7.
 Owner: Don Willems
 Related: `Navi/TelescopeControl/*` (static mockup, precedes this doc), INDIMCPKit (`/Users/donwillems/Personal/Development/INDIMCPKit`), INDIMCP-server (`/Users/donwillems/Personal/Development/INDIMCP-server`)
 
@@ -61,57 +61,211 @@ introduces one new `@Observable` singleton-ish service, tentatively `TelescopeSe
 
 - Owns the `INDIMCPClient` instance and its connection state (`.disconnected` / `.connecting` / `.connected(...)`
   / `.error(...)`).
-- Owns the connect sequence's state machine: MCP connect → `getINDIServerStatus`/`startINDIServer` →
-  `startINDIMessaging` → `listRigs`/`getRig`/`checkRig`. Exposes this as a small number of observable states the
-  UI can render as a progress list ("Connecting…", "Starting INDI server…", "Starting messaging…", "Ready"),
-  because failures at each step throw differently (see [I-4](#i-4)) and a flat "connected: Bool" would hide where
-  a startup actually failed.
-- Owns the active `Rig` selection and the `ObservableDevice` instances for whichever roles the current UI needs
-  (mount/camera/filter wheel), so two panes/windows showing telescope control share one live subscription per
-  device rather than each spinning up its own poll+stream (see [I-8](#i-8)).
-- Single choke point for hardware commands, so two panes can't independently fire conflicting commands (e.g. two
-  concurrent `slew` calls) — see [I-9](#i-9).
+- Owns the **connect cascade** (fully specified in §4.3), the active `Rig`/`Observatory`/server selection, and the
+  `ObservableDevice` instances for whichever roles the current UI needs, so two panes/windows share one live
+  subscription per device rather than each spinning up its own poll+stream (§4.5, I-8).
+- Single choke point for hardware commands, so two panes can't independently fire conflicting commands (I-9).
+- Owns liveness detection while connected: the `connectionEvents` push stream as the primary signal, plus a 30s
+  heartbeat timer (a cheap call like `getINDIServerStatus()`) as a backstop against a connection that hangs
+  without ever throwing — mirrors `ObservableDevice`'s own internal resync-timer safety net, just tuned shorter
+  since a silently-dead connection to a live device deserves faster surfacing than a stale property read does.
 
 ### 3.3 Pane integration
 
-Following [Panel Architecture] conventions: a new `PaneType.telescopeControl` case, `PaneManager.showTelescopeControl()`
-following the `showArchiveViewer`/`showFITSViewer` pattern, a toolbar toggle, and a `PaneCloseButton`. The pane
-hosts `TelescopeControlView` (already exists as the mockup's tab shell) which reads from `TelescopeSessionManager`
-via environment rather than owning its own mock state.
+Two new panes, following [Panel Architecture] conventions (`PaneType` case, `PaneManager.show...()`, toolbar
+toggle, `PaneCloseButton`), plus the existing mockup tab shell:
 
-Pane lifecycle matters here in a way it didn't for the archive/FITS panes: closing the pane should call
+- **`PaneType.telescopeControl`** — hosts `TelescopeControlView` (the existing mockup tab shell: Mount/Camera
+  tabs), reading from `TelescopeSessionManager` via environment instead of owning mock state. Opens like any other
+  pane — button-driven, not automatic.
+- **`PaneType.observatoryDashboard`** — the status dashboard from §4.6. Unlike every other pane in the app, this
+  one **opens automatically the moment Connect succeeds** — a deliberate, explicitly-decided exception to Navi's
+  otherwise button-driven pane philosophy, since this is core live-status information you'd always want visible
+  once connected. Placement follows the existing "reuse an empty pane, else split from the AI pane" rule already
+  used by `showArchiveViewer`/`showFITSViewer`, unless a fixed/pinned location is preferred later.
+- **`PaneType.telescopeMessages`** — the terminal/message pane from §4.7. Opens like a normal pane (button-driven),
+  no auto-open.
+
+Pane lifecycle matters here in a way it didn't for the archive/FITS panes: closing a pane should call
 `ObservableDevice.stop()` (or have `TelescopeSessionManager` reference-count and stop only when the last consumer
 goes away) — an `ObservableDevice` left running leaks a live MCP resource subscription and a periodic resync timer.
 
 ## 4. Phase 1 scope — observatory/rig setup, server & driver lifecycle
 
-UI surface (new, not in the current mockup — the mockup starts *after* a rig is already connected):
+This section is the output of a dedicated design pass (a structured "grilling" session) covering everything the
+original draft of this doc had deferred as a placeholder. It fully supersedes that placeholder — nothing below is
+provisional.
 
-- **Endpoint configuration** — extend `SettingsManager` with an INDI-MCP endpoint URL (plain `UserDefaults`, not
-  Keychain — it's a URL, not a secret, same tier as `archivePath`/`dataPath`).
-- **Connection control** — Connect/Disconnect, with the staged status list described in §3.2.
-- **Server control** — start/stop/restart `indiserver`, showing `IndiServerStatus.running`/`.port`.
-- **Driver list** — `listINDIDriverCatalog()` (all installed drivers) vs. `listRunningINDIDrivers()` (currently
-  running), with per-driver start/stop.
-- **Rig picker** — `listRigs()` → `RigSummary` list → select → `getRig(id:)` for the full `Rig` → `checkRig(id:)`
-  to show which declared components are actually present/connected, surfaced as a per-component badge (this maps
-  directly onto the mockup's `ConnectionBadge`/`DeviceStateBadge` components already in
-  `TelescopeControlComponents.swift`).
-- Rig **authoring** — creating/editing a rig's component list (add/remove components, assign roles, resolve each
-  component to an INDI device name, set role-specific metadata like camera pixel geometry or filter-wheel slot
-  names) — is **in scope for Phase 1** (resolved, [I-6](#i-6-is-rig-authoring-in-scope-or-read-only-rig-selection-only--resolved-yes)),
-  built on `saveRig`. This is a materially bigger UI surface than "connect and control" — a form/editor over
-  `Rig`/`Component`, not just a picker — so it should be scoped as its own chunk of work within Phase 1 rather
-  than an afterthought bolted onto the rig picker.
-- **Observatory** setup — also in scope for Phase 1, and also a real editor, not just a picker. `Observatory` is a
-  distinct concept from `Rig` in INDIMCPKit (`Observatories/Observatory.swift`): a site definition — lat/lon,
-  elevation, and an optional horizon-obstruction profile used for visibility checks — with its own
-  `listObservatories`/`getObservatory`/`saveObservatory` calls, plus a `draftObservatory()` helper that pre-fills a
-  draft from a connected device's live `GEOGRAPHIC_COORD` (e.g. a GPS-capable mount) for the operator to review and
-  save, never auto-saved. Both the Rig editor and the Observatory editor/selector need a dedicated UI/UX design
-  pass of their own before implementation starts — Don has additional ideas for that pass beyond what's captured
-  here, so treat both as **placeholders in this doc, not final specs**, and expect this section to be revised once
-  that pass happens.
+### 4.1 Toolbar
+
+One **selection button** (labeled with the current Observatory/Rig, e.g. "Home Backyard · My EQ6-R Rig") plus a
+**Connect/Disconnect button** — revised from an earlier two-separate-dropdowns sketch, since a single entry point
+into a modal picker scales better as the Observatory list grows (§4.2 notes it's expected to get large — many
+one-off/occasional sites — while the Rig list stays short) and keeps both selections visually paired as "your
+current setup" rather than two independent, easy-to-mismatch controls.
+
+- **Selection button** — opens a modal panel with two pickers side by side (or stacked): **Observatory** (lists
+  `listObservatories()`, plus a **"Current Location"** quick-create entry, visible/enabled only when
+  `CLLocation`/Location Services access is available — hidden or disabled otherwise, never an error on tap;
+  selecting it prompts for a single required field, the observatory's name, and saves immediately with everything
+  else — lat/lon, elevation, whatever precision `CLLocation` gives — filled in automatically, no full-editor
+  detour) and **Rig** (lists `listRigs()`, expected to stay short). Confirming in the modal updates the toolbar
+  button's label; it does not itself connect anything.
+- **Connect/Disconnect button** — a separate, explicit action from the selection modal. Picking a Rig/Observatory
+  only *arms* the selection; it never triggers a connection attempt by itself. No separate Server picker exists —
+  a Rig carries a default server reference (§4.2), so picking a Rig implicitly determines which server Connect
+  targets; overriding that mapping is a Settings-only action, not a toolbar one.
+
+### 4.2 Settings
+
+- **Observatory pane** — full CRUD editor: name, lat/lon, elevation, and a horizon-obstruction profile. The
+  profile is authored by **importing a `.hzn` file** (the plain-CSV `azimuth,altitude` format used by Stellarium
+  and N.I.N.A., one line per integer azimuth degree) — confirmed already referenced in INDIMCP-server's own docs
+  (`docs/ObservatorySchema.md`, `parse_hzn_profile`), but that parser is server-side Python only, not exposed as
+  an MCP tool. Navi needs its own small client-side `.hzn` parser (trivial: split lines, `azimuth,altitude` pairs)
+  feeding directly into `Observatory.horizonProfile` on save — no server/kit changes required.
+- **Rig pane** — full CRUD editor, built on the equipment library (§4.3). Every device-bearing field (Mount,
+  Camera, Guide Camera, Focuser, Filter Wheel — every role that binds to an INDI device, no exceptions) is
+  **selection-only from the live device list, never free text** — a component's non-device fields (aperture, make/
+  model, etc.) can be authored fully offline, but the actual `device` binding can only be set by picking from
+  currently-visible devices while connected with messaging running. If not connected, or a driver you need isn't
+  running, that field simply stays unresolved until you're in a position to pick correctly.
+
+  Components are individually **selectable/deselectable per role** — a rig with no focuser or no filter wheel just
+  omits those roles entirely, they're not forced fields. A role that's selected but has no `device` bound yet is a
+  valid, saveable **"blank"** state (`saveRig` happily persists a `Component` with `device: nil`) — distinct from
+  `checkRig`'s live **"missing"** state (a component *has* a device bound, but isn't currently connected). Both
+  get surfaced as warnings, but with different remedies: blank → pick a device (when connected) or deselect the
+  role; missing → go start that driver / check the connection. The UI should keep these visually distinct rather
+  than lumping them into one generic "incomplete" badge.
+
+  **Duplicate components per role are not allowed for now** (e.g. two independent `camera` components for a
+  multi-OTA-on-one-mount setup) — INDIMCPKit's data model tolerates this (`DeviceControlError
+  .ambiguousComponentForRole` exists specifically for it), but there's no way to group a duplicate's associated
+  components (filter wheel, rotator) as belonging to the *same* optical path as one telescope rather than another
+  — `Component` (`rig_store.py`) is a flat list with no parent/group field at all, confirmed by reading
+  `Component.swift` directly. Filed upstream (originally as [GitHub #112 on `Oekalegon/indi-mcp`](https://github.com/Oekalegon/indi-mcp/issues/112),
+  now closed in favor of tracking it as **INDIMCP-138** in the local todo tracker) — revisit once the server
+  supports train grouping.
+- **Server pane** — a list of named INDI-MCP servers (name + URL) in the local equipment library (§4.3), since
+  it's likely the same Raspberry Pi (and thus the same server) is used for a specific rig session after session. A
+  Rig references one as its default; changing that default is an explicit action here, never a side effect of a
+  transient toolbar override (§4.4).
+
+### 4.3 Equipment library (new local persistence — SwiftData)
+
+Navi has no existing structured local data store today (only `UserDefaults`/Keychain for settings, security-scoped
+bookmarks for files) — this is genuinely new. **SwiftData** is the chosen mechanism: a handful of small, related
+record types with basic CRUD and no complex querying, exactly its sweet spot, and it plays natively with the
+`@Observable` conventions already used throughout Navi.
+
+Four reusable library entities, composed together to form a Rig — none of these concepts exist in INDIMCPKit
+itself, which only ever sees the *flattened* `Component` list a Rig gets translated into on save:
+
+- **Mount** — reusable on its own, since the same mount may carry different optical assemblies over time (swap
+  telescopes on one mount).
+- **Optical Assembly** (OTA + Focuser, combined as one unit) — aperture, focal length, telescope type (all manual
+  input; an OTA has no INDI device of its own), plus its Focuser (device-linkable). Combined rather than modeled
+  as two separately-reusable things, since a focuser is normally semi-permanently mounted to one tube — an actual
+  focuser swap is rare enough to just edit the existing record when it happens.
+- **Imaging Train** (Camera + Filter Wheel + Rotator) — the equipment that sits behind an Optical Assembly.
+- **Guide Camera** — independent of Imaging Train (not nested inside it), because it needs to attach in two
+  different places depending on setup: paired with a Guide-Scope-typed Optical Assembly (traditional piggyback
+  guide scope — itself just another Optical Assembly record, typically without a focuser), or inserted directly
+  into the main Imaging Train for an off-axis guider (which taps light from within the main optical path, no
+  separate guide scope at all).
+
+Composition rules: an Imaging Train pairs freely with any Optical Assembly (no hard compatibility constraint
+modeled — image-circle/back-focus compatibility is a human judgment call at pick-time, not something worth
+validating in software for v1). A saved Rig **tracks which library entity ids composed it** (a Navi-local
+companion record, since the server has no such concept) — this is what lets "swap the whole Imaging Train" work
+as a unit later, rather than every Rig edit meaning re-picking every field from scratch.
+
+**Library edits vs. already-saved Rigs**: editing a library entity's fields (aperture, pixel geometry, the
+`device` binding, etc.) does **not** silently cascade into every Rig that referenced it — that would mean
+defeating `saveRig`'s `overwrite` safety guard silently in the background, needing an offline-queueing mechanism
+(since pushing the resync needs a live connection, while editing the library doesn't), and risking rewriting a
+Rig's config out from under an actively-connected session. Instead: **automatic detection, explicit confirmation**
+— the moment you edit a library entity, Navi immediately shows which Rigs now reference stale data, with a
+one-click **"Resync all"** action. You get the reuse workflow without a silent background push. (Editing a purely
+Navi-local label/nickname on a library entity — as opposed to a field that actually flows into a `Component` —
+needs no resync at all, since nothing about it is ever sent to the server.)
+
+**Four roles have no library entity** — `.powerHub`, `.observatoryControl` (roof/dome), `.flatScreen`,
+`.dewHeater` — none obviously fit "reusable optical equipment" (a dew heater controller has essentially no fields
+worth capturing beyond "which device"). These get **simple standalone per-Rig components** in the Rig editor: a
+device picker row, no library backing. `.observatoryControl` in particular is conceptually **site-fixed
+equipment, not portable rig equipment** — a roof/dome controller doesn't travel with a mobile rig the way a camera
+does, and arguably belongs on the *Observatory* record instead. But `Observatory` (`Observatories/Observatory.swift`)
+has no equipment/components concept at all today — confirmed by reading the struct directly (just id/name/lat/
+lon/elevation/horizonProfile) — so there's genuinely nowhere server-side to put it yet. Filed as **INDIMCP-139** in
+the local todo tracker (add an equipment concept to `Observatory`, mirroring `Rig`'s `Component` list); until
+that lands, `.observatoryControl` stays a standalone Rig component like the other three, and the Rig config also
+carries its own server reference (§4.2) — once Observatory-scoped equipment exists server-side, the Observatory
+record would need its own server reference too, since a fixed dome controller and a portable rig's camera could
+plausibly be driven by different Pis/servers even at the same physical site.
+
+### 4.4 Connect / Disconnect lifecycle
+
+**Connect** triggers a fully specified cascade, every step of it idempotent (never restart something already
+running, regardless of what started it):
+
+1. MCP connect (the handshake).
+2. Check `indiserver` status; start it only if not already running.
+3. Start INDI messaging (if not already running).
+4. For every component in the selected Rig that has a `device` bound (blank/unresolved components are skipped —
+   nothing to start): start that component's driver only if it isn't already running, then `connectDevice` it.
+
+**Disconnect** is the deliberate, symmetric "shut it down" action: it stops the rig's drivers and `indiserver`.
+This is a real reversal from an earlier draft of this doc (which had leaned toward Disconnect only ever closing
+Navi's own session) — the corrected model is:
+
+- **Disconnect** (explicit button press) = deliberate, stops everything Connect started.
+- **Navi quitting or crashing without an explicit Disconnect** = touches nothing on the Pi. An unattended overnight
+  capture sequence, or a mount left tracking, keeps running exactly as if Navi were still open.
+- **On launch**, Navi probes *every* saved server (§4.2's Server pane), concurrently (each under the timeout
+  wrapper from I-5, so one unreachable/out-of-range server — e.g. a star-party site you're not currently at —
+  can't block the others or slow down launch) — never just the last-used one, since you may rotate between
+  several recurring sites. This is **detect-and-prompt, not silent auto-attach**: a server found already running
+  surfaces as "already up, ready to connect" (e.g. a highlighted Connect affordance), but the actual MCP session
+  only attaches when you press Connect yourself — consistent with picking a Rig never auto-connecting either.
+  Whatever's found running is left exactly as-is (no restart, per the idempotent-start rule above).
+
+### 4.5 Command serialization and shared device sessions
+
+Unchanged from the original draft, restated here for completeness now that §4.1–§4.4 give it concrete grounding:
+`TelescopeSessionManager` owns one `ObservableDevice` per role, shared across every pane/window that needs it
+(I-8), and is the only place hardware-command methods live — views never hold a `Mount`/`Camera` handle directly
+(I-9).
+
+### 4.6 Dashboard pane
+
+Opens automatically on Connect (§3.3). Shows, all live:
+
+- Current time and current Local Sidereal Time.
+- **Observatory** — lon/lat/elevation, and sunrise/sunset (or civil/nautical/astronomical twilight).
+- **Rig** — every component, with connected/disconnected/error status for whichever ones are actually
+  connectable (a passive item like an OTA has no device/connection state to show).
+
+All of the astronomical math already exists in **AstroKit**, no new algorithm work needed: `SiderealTime(observatory:date:).local`
+for LST, and `Sun().riseTransitSet(on:at:altitude:)` for sunrise/set and twilight (pass `.civilTwilight`/
+`.nauticalTwilight`/`.astronomicalTwilight` as the altitude threshold). Two integration details worth flagging
+explicitly since they're easy to get wrong silently: AstroKit's `Observatory` type takes longitude/latitude in
+**radians**, while INDIMCPKit's `Observatory` uses **degrees** — Navi needs a small conversion layer between them
+— and **both packages have a type literally named `Observatory`** with different shapes, so code that touches both
+should qualify them clearly (e.g. `AstroKit.Observatory` vs. a locally-renamed INDI counterpart) rather than
+relying on context to disambiguate.
+
+Per-component status is driven by the same shared `ObservableDevice` instances from §4.5 — no new live-data
+mechanism needed, just a view over state that already exists.
+
+### 4.7 Terminal / message pane
+
+Shows raw INDI-MCP server messages, **scoped to the current rig's devices** (not the whole server — unrelated
+equipment's messages are just noise) via `messageEvents(device:)`. Unlike the live-only stance originally
+sketched for other event streams in this doc, this pane **also loads history from the server's durable event log**
+(`getEvents`) on open, rather than starting from a blank slate and only showing what arrives while you're
+watching it.
 
 ## 5. Phase 2 scope — camera functions
 
@@ -230,15 +384,12 @@ default, and a manual action keeps the operator in the loop about connection sta
 **timeout wrapper** (race every `async throws` call against a `Task.sleep`) around commands so the UI never spins
 forever on an unresponsive server. No open question left here; this is the accepted design.
 
-### I-6: Is rig authoring in scope, or read-only rig selection only? — **Resolved: yes, in scope**
+### I-6: Is rig authoring in scope, or read-only rig selection only? — **Resolved: yes, in scope, fully specified in §4**
 `saveRig` exists and Navi's Phase 1 rig UI is not just a picker over rigs authored elsewhere (`INDIMCPKitTestApp`,
-hand-edited YAML) — it needs a real editor: add/remove `Component`s, assign each a `Role`, resolve it to an INDI
-device name, and set role-specific metadata (telescope aperture/focal length, camera pixel geometry, focuser
-travel range, filter-wheel slot names). This is the single biggest unknown left in Phase 1's scope, since none of
-that editing surface exists in the mockup or in INDIMCPKit's device model beyond the raw `saveRig(_:overwrite:)`
-call — needs UI/UX design (form vs. wizard, how device-name resolution is presented — does Navi query `indiserver`
-for currently-visible device names to populate a picker, or is it a free-text field?) before implementation, and
-should be estimated/sequenced as its own piece of Phase 1 work rather than folded into "rig picker."
+hand-edited YAML) — it needs a real editor. This was originally left as a placeholder pending a dedicated design
+pass; that pass has since happened and its full output — the equipment library, device-resolution rules (picker-
+only, never free text), component selection/deselection, and the Rig↔Observatory↔Server relationships — lives in
+§4.2–§4.3. Nothing further to resolve here.
 
 ### I-7: `INDI messaging` sequencing is a foot-gun — **resolved, no decision needed: already handled by §3.2's ordering**
 Several calls (`ensureConnected`, `checkRig`, `getDeviceProperties`) fail with a generic `toolCallFailed` — not a
@@ -285,16 +436,17 @@ doesn't need sign-off beyond this — implement as described when this piece of 
 
 ## 7. Suggested sequencing
 
-1. **Dedicated design pass for the Rig and Observatory editor/selector UI** (§4) — before any of this is
-   implemented. Don has additional ideas for this beyond what §4 currently sketches; this doc's Rig/Observatory
-   bullets are placeholders, not a spec, until that pass happens.
-2. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
-3. Build `TelescopeSessionManager` with the connect state machine (§3.2) and Settings endpoint field — no UI
-   beyond a connect button and status text yet.
-4. Wire the rest of the Phase 1 UI (§4) against that manager, using the editor design from step 1; retire the
-   mock connection state in `TelescopeControlView`.
-5. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
+1. Add INDIMCPKit as a local package dependency (same pattern as `../AstroKit`).
+2. Define the SwiftData schema for the equipment library (§4.3): Mount, Optical Assembly, Imaging Train, Guide
+   Camera, Server, plus the Rig↔library-entity and Rig↔default-Observatory/Server link records.
+3. Build `TelescopeSessionManager`: connection state, the connect/disconnect cascade (§4.4), liveness detection
+   (§3.2's push-stream-plus-heartbeat), and the shared `ObservableDevice` ownership (§4.5) — no UI beyond a bare
+   connect button and status text yet.
+4. Build the toolbar (§4.1) and Settings panes (§4.2) against that manager; retire the mock connection state in
+   `TelescopeControlView`.
+5. Build the Dashboard pane (§4.6) and Terminal/message pane (§4.7).
+6. Wire Camera (§5), including the frame-download/archive-import mini-design from I-2 — likely the largest single
    chunk of new work in this phase.
-6. Defer Mount beyond "does the connection work" (see §1) to a follow-up design pass, since its API is thin enough
+7. Defer Mount beyond "does the connection work" (see §1) to a follow-up design pass, since its API is thin enough
    that a real mount panel needs product decisions (e.g. how to present park/tracking state without any Mount
    telemetry getters) not yet made here.
