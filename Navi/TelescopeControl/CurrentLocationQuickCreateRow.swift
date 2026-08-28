@@ -97,7 +97,7 @@ struct CurrentLocationQuickCreateRow: View {
         }
 
         let observatory = Observatory(
-            id: ObservatoryIDSlug.make(from: trimmedName),
+            id: IDSlug.make(from: trimmedName),
             name: trimmedName,
             latitudeDeg: location.coordinate.latitude,
             longitudeDeg: location.coordinate.longitude,

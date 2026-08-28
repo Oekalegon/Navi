@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var showingKey: Bool = false
     @State private var showingServerSettings = false
     @State private var showingObservatorySettings = false
+    @State private var showingRigSettings = false
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -145,6 +146,19 @@ struct SettingsView: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
 
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Rigs").font(.headline)
+                Text("Equipment-library-backed rigs (mount, optics, cameras)")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Button("Manage Rigs…") { showingRigSettings = true }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+
             Spacer()
 
             HStack {
@@ -158,13 +172,16 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 500, height: 660)
+        .frame(width: 500, height: 760)
         .onAppear { apiKeyInput = settings.apiKey }
         .sheet(isPresented: $showingServerSettings) {
             ServerSettingsSheet()
         }
         .sheet(isPresented: $showingObservatorySettings) {
             ObservatorySettingsSheet()
+        }
+        .sheet(isPresented: $showingRigSettings) {
+            RigSettingsSheet()
         }
     }
 }

@@ -1,23 +1,23 @@
 //
-//  ObservatoryIDSlugTests.swift
+//  IDSlugTests.swift
 //  NaviTests
 //
 
 import Testing
 @testable import Navi
 
-struct ObservatoryIDSlugTests {
+struct IDSlugTests {
 
     @Test func lowercasesAndHyphenatesSpaces() {
-        #expect(ObservatoryIDSlug.make(from: "Home Backyard") == "home-backyard")
+        #expect(IDSlug.make(from: "Home Backyard") == "home-backyard")
     }
 
     @Test func collapsesRunsOfNonAlphanumericsToOneHyphen() {
-        #expect(ObservatoryIDSlug.make(from: "  Star Party -- 2026!! ") == "star-party-2026")
+        #expect(IDSlug.make(from: "  Star Party -- 2026!! ") == "star-party-2026")
     }
 
     @Test func fallsBackToAUUIDWhenNothingAlphanumericRemains() {
-        let slug = ObservatoryIDSlug.make(from: "!!!")
+        let slug = IDSlug.make(from: "!!!")
         #expect(slug.count == 36) // UUID string length
         #expect(!slug.isEmpty)
     }

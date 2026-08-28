@@ -156,6 +156,31 @@ final class TelescopeSessionManager {
         return try await client.saveObservatory(observatory, overwrite: overwrite)
     }
 
+    /// Saves a rig definition (§4.2's Rig pane, built by `RigProfile.makeComponents()`).
+    /// `overwrite` matches `INDIMCPClient.saveRig` — required to replace an existing one, so a
+    /// reused id can't silently destroy a prior save.
+    @discardableResult
+    func saveRig(_ rig: Rig, overwrite: Bool = false) async throws -> Rig {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.saveRig(rig, overwrite: overwrite)
+    }
+
+    /// The best available approximation of "the live device list" for the Rig editor's
+    /// device-picker fields (§4.2: every device-bearing field is selection-only from this list,
+    /// never free text). INDIMCPKit/INDIMCP-server have no dedicated "list live INDI device
+    /// names" call today — only `listRunningINDIDrivers()`, which reports running *drivers* by
+    /// their catalog label (e.g. `"CCD Simulator"`), not the INDI device name(s) that driver
+    /// exposes. In practice a driver's default device name commonly matches its catalog label,
+    /// so labels of currently-running drivers are used as the candidate device names here — but
+    /// this is a known approximation, not a guarantee, since a driver is free to expose a
+    /// differently-named (or multiple) INDI device(s). TODO: replace with a real device-name
+    /// listing once INDIMCP-server exposes one; filed for follow-up alongside INDIMCP-138/139.
+    func liveDeviceNames() async throws -> [String] {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        let running = try await client.listRunningINDIDrivers()
+        return running.filter(\.running).map(\.label).sorted()
+    }
+
     private func startLiveness(client: INDIMCPClient) {
         connectionEventsTask = Task { [weak self] in
             guard let self else { return }
