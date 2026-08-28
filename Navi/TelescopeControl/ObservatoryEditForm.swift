@@ -50,22 +50,22 @@ struct ObservatoryEditForm: View {
                     .foregroundStyle(.orange)
             }
 
-            labeledField("Name") {
+            LabeledField("Name") {
                 TextField("Home Backyard", text: $name)
                     .textFieldStyle(.roundedBorder)
             }
 
             HStack(spacing: 12) {
-                labeledField("Latitude (°)") {
+                LabeledField("Latitude (°)") {
                     TextField("0.0", value: $latitudeDeg, format: .number)
                         .textFieldStyle(.roundedBorder)
                 }
-                labeledField("Longitude (°)") {
+                LabeledField("Longitude (°)") {
                     TextField("0.0", value: $longitudeDeg, format: .number)
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            labeledField("Elevation (m)") {
+            LabeledField("Elevation (m)") {
                 TextField("0.0", value: $elevationMeters, format: .number)
                     .textFieldStyle(.roundedBorder)
             }
@@ -101,16 +101,6 @@ struct ObservatoryEditForm: View {
         .task { await load() }
     }
 
-    @ViewBuilder
-    private func labeledField(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            content()
-        }
-    }
-
     private func load() async {
         guard let observatoryID, isConnected else { return }
         isLoading = true
@@ -132,7 +122,7 @@ struct ObservatoryEditForm: View {
         isSaving = true
         defer { isSaving = false }
 
-        let id = observatoryID ?? ObservatoryIDSlug.make(from: trimmedName)
+        let id = observatoryID ?? IDSlug.make(from: trimmedName)
         let observatory = Observatory(
             id: id,
             name: trimmedName,
