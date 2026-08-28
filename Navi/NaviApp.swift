@@ -62,12 +62,26 @@ struct NaviApp: App {
             return try ModelContainer(
                 for: schema,
                 migrationPlan: EquipmentLibraryMigrationPlan.self,
-                configurations: [ModelConfiguration(schema: schema)]
+                configurations: [ModelConfiguration(schema: schema, url: Self.equipmentLibraryStoreURL())]
             )
         } catch {
             fatalError("Failed to create equipment library ModelContainer: \(error)")
         }
     }()
+
+    /// An explicit, app-namespaced store URL. Navi isn't sandboxed, so `ModelConfiguration`'s
+    /// default (no `url:` given) resolves to the bare, unnamespaced `~/Library/Application
+    /// Support/default.store` — a path shared by *every* unsandboxed SwiftData app on the same
+    /// Mac that also omits an explicit URL. Confirmed by hitting exactly this collision locally:
+    /// another app's store already occupied that path, so Navi's migration plan saw a completely
+    /// unrelated schema and failed with "Cannot use staged migration with an unknown model
+    /// version." Scoping the store under the bundle identifier avoids that class of collision.
+    private static func equipmentLibraryStoreURL() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = base.appending(path: Bundle.main.bundleIdentifier ?? "org.oekalegon.Navi", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appending(path: "EquipmentLibrary.store")
+    }
 
     var body: some Scene {
         // Every window — the initial one, File > New Window, and panes detached
