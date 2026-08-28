@@ -1,5 +1,5 @@
 //
-//  RigSettingsSheet.swift
+//  RigSettingsPane.swift
 //  Navi
 //
 //  See docs/design/INDI-MCP-Integration.md §4.2.
@@ -9,11 +9,10 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Rig pane" (§4.2): lists the local `RigProfile` library and opens `RigEditForm`
-/// to add/edit. Unlike `ObservatorySettingsSheet`, `RigProfile` *is* a local SwiftData model (it
+/// to add/edit. Unlike `ObservatorySettingsPane`, `RigProfile` *is* a local SwiftData model (it
 /// tracks which library entities compose the rig, §4.3) — so this list itself needs no
 /// connection; only saving a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
-struct RigSettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
+struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
 
@@ -23,7 +22,11 @@ struct RigSettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            SettingsPaneHeader(
+                title: "Rigs",
+                addHelp: "Add Rig",
+                onAdd: { isPresentingNewRig = true }
+            )
             Divider()
             if rigs.isEmpty {
                 emptyState
@@ -35,7 +38,6 @@ struct RigSettingsSheet: View {
                 }
             }
         }
-        .frame(width: 460, height: 400)
         .sheet(item: $editingRig) { rig in
             RigEditForm(rig: rig)
         }
@@ -58,25 +60,6 @@ struct RigSettingsSheet: View {
         } message: {
             Text("This only removes the rig from Navi's local library — it stays saved on the server.")
         }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Rigs")
-                .font(.headline)
-            Spacer()
-            Button(action: { isPresentingNewRig = true }) {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(.plain)
-            .help("Add Rig")
-            Button("Done") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var emptyState: some View {
@@ -134,7 +117,7 @@ struct RigSettingsSheet: View {
     }
 
     private func delete(_ rig: RigProfile) {
-        // Local-library-only removal, matching `ObservatorySettingsSheet.remove(_:)` — there's no
+        // Local-library-only removal, matching `ObservatorySettingsPane.remove(_:)` — there's no
         // delete-rig call in INDIMCPKit, so the server-side `Rig` file is untouched.
         modelContext.delete(rig)
         try? modelContext.save()

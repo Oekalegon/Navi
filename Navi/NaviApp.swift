@@ -95,5 +95,11 @@ struct NaviApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands { NaviCommands() }
         .modelContainer(equipmentLibraryContainer)
+
+        Settings {
+            SettingsRootView()
+                .environment(SettingsManager.shared)
+        }
+        .modelContainer(equipmentLibraryContainer)
     }
 }

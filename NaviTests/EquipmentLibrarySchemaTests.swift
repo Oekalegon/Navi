@@ -158,7 +158,7 @@ struct EquipmentLibrarySchemaTests {
         try context.save()
         #expect(rig.defaultServer?.name == "Observatory Pi")
 
-        // ServerSettingsSheet's delete action relies on RigProfile.defaultServer's
+        // ServerSettingsPane's delete action relies on RigProfile.defaultServer's
         // @Relationship(deleteRule: .nullify) to clear this reference rather than leaving a
         // dangling pointer — verified manually (isolated single-test runs, both same-context and
         // fresh-context reads, both confirming defaultServer correctly becomes nil). Not asserted

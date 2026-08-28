@@ -1,37 +1,25 @@
 //
-//  SettingsView.swift
+//  GeneralSettingsPane.swift
 //  Navi
 //
-//  Created by Dieudonné Willems on 31/05/2026.
+//  The Settings "General" tab: Anthropic API key, Archive path, and FITS data directory. Split
+//  out of SettingsRootView.swift (NAVI-56) to match the one-file-per-pane convention the
+//  Server/Observatory/Rig panes already follow.
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 import AppKit
 
-struct SettingsView: View {
+struct GeneralSettingsPane: View {
     @Environment(SettingsManager.self) private var settings
     @State private var apiKeyInput: String = ""
     @State private var showingKey: Bool = false
-    @State private var showingServerSettings = false
-    @State private var showingObservatorySettings = false
-    @State private var showingRigSettings = false
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(spacing: 0) {
-            Text("Settings")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .padding(.top)
-
-            Divider()
-                .padding(.top, 12)
-
-            ScrollView {
-                VStack(spacing: 20) {
+        ScrollView {
+            VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Anthropic API Key")
                         .font(.headline)
@@ -59,6 +47,9 @@ struct SettingsView: View {
                             Text("API key saved").font(.caption).foregroundStyle(.secondary)
                         }
                     }
+
+                    Button("Clear") { settings.clearAPIKey(); apiKeyInput = "" }
+                        .disabled(settings.apiKey.isEmpty)
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
@@ -123,72 +114,20 @@ struct SettingsView: View {
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(8)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Telescope Servers").font(.headline)
-                    Text("Named INDI-MCP servers a rig can connect to")
-                        .font(.caption).foregroundStyle(.secondary)
-
-                    Button("Manage Servers…") { showingServerSettings = true }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Observatories").font(.headline)
-                    Text("Observatory locations a rig can default to")
-                        .font(.caption).foregroundStyle(.secondary)
-
-                    Button("Manage Observatories…") { showingObservatorySettings = true }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Rigs").font(.headline)
-                    Text("Equipment-library-backed rigs (mount, optics, cameras)")
-                        .font(.caption).foregroundStyle(.secondary)
-
-                    Button("Manage Rigs…") { showingRigSettings = true }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
-                }
-                .padding()
-            }
-
-            Divider()
-
-            HStack {
-                Button("Clear") { settings.clearAPIKey(); apiKeyInput = "" }
-                    .disabled(settings.apiKey.isEmpty)
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { settings.apiKey = apiKeyInput; dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(apiKeyInput.isEmpty)
             }
             .padding()
         }
-        .frame(width: 500, height: 640)
         .onAppear { apiKeyInput = settings.apiKey }
-        .sheet(isPresented: $showingServerSettings) {
-            ServerSettingsSheet()
-        }
-        .sheet(isPresented: $showingObservatorySettings) {
-            ObservatorySettingsSheet()
-        }
-        .sheet(isPresented: $showingRigSettings) {
-            RigSettingsSheet()
-        }
+        .onDisappear { commitAPIKeyIfChanged() }
+    }
+
+    /// Archive Path / FITS Data Directory bind straight to `settings` and persist every
+    /// keystroke; the API key stages in `apiKeyInput` instead so typing doesn't hit Keychain on
+    /// every character. Now that this pane is a persistent Settings tab rather than a modal sheet
+    /// with a mandatory Save/Cancel choice, the window (or tab) can simply be closed mid-edit — so
+    /// commit any staged, non-empty change here rather than silently discarding it.
+    private func commitAPIKeyIfChanged() {
+        guard !apiKeyInput.isEmpty, apiKeyInput != settings.apiKey else { return }
+        settings.apiKey = apiKeyInput
     }
 }

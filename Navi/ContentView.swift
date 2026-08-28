@@ -11,7 +11,6 @@ struct ContentView: View {
     let token: WindowToken
     @State private var paneManager: PaneManager
     @State private var settings = SettingsManager.shared
-    @State private var showingSettings = false
 
     init(token: WindowToken) {
         self.token = token
@@ -58,21 +57,9 @@ struct ContentView: View {
                 ToolbarItem(placement: .automatic) {
                     TelescopeToolbarButton()
                 }
-
-                ToolbarItem(placement: .automatic) {
-                    Button(action: { showingSettings = true }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 13))
-                    }
-                    .controlSize(.small)
-                }
             }
             .environment(paneManager)
             .environment(settings)
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
-                    .environment(settings)
-            }
             .onDisappear {
                 if WindowRegistry.shared.entries.first?.id == token.id {
                     paneManager.saveLayout()
