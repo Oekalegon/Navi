@@ -1,5 +1,5 @@
 //
-//  ObservatorySettingsSheet.swift
+//  ObservatorySettingsPane.swift
 //  Navi
 //
 //  See docs/design/INDI-MCP-Integration.md §4.2.
@@ -9,12 +9,11 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Observatory pane" (§4.2): lists the local `ObservatoryProfile` cache and opens
-/// `ObservatoryEditForm` to add/edit. Unlike `ServerSettingsSheet`, add/edit require a live
+/// `ObservatoryEditForm` to add/edit. Unlike `ServerSettingsPane`, add/edit require a live
 /// connection (`Observatory` isn't a local model — it's fetched/saved server-side); "Remove" here
 /// only clears this local cache entry, it does not delete the observatory from the server
 /// (INDIMCPKit has no delete-observatory call at all).
-struct ObservatorySettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
+struct ObservatorySettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     @Query(sort: \ObservatoryProfile.name) private var observatories: [ObservatoryProfile]
@@ -30,7 +29,18 @@ struct ObservatorySettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            SettingsPaneHeader(
+                title: "Observatories",
+                isAddDisabled: !isConnected,
+                addHelp: isConnected ? "Add Observatory" : "Connect to a telescope server first",
+                onAdd: { isPresentingNewObservatory = true }
+            ) {
+                if !isConnected {
+                    Text("Connect to add or edit")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Divider()
             if observatories.isEmpty {
                 emptyState
@@ -42,7 +52,6 @@ struct ObservatorySettingsSheet: View {
                 }
             }
         }
-        .frame(width: 460, height: 380)
         .sheet(isPresented: presentingEditForm) {
             if let editingObservatoryID {
                 ObservatoryEditForm(observatoryID: editingObservatoryID)
@@ -58,31 +67,6 @@ struct ObservatorySettingsSheet: View {
             get: { editingObservatoryID != nil },
             set: { if !$0 { editingObservatoryID = nil } }
         )
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Observatories")
-                .font(.headline)
-            Spacer()
-            if !isConnected {
-                Text("Connect to add or edit")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Button(action: { isPresentingNewObservatory = true }) {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(.plain)
-            .disabled(!isConnected)
-            .help(isConnected ? "Add Observatory" : "Connect to a telescope server first")
-            Button("Done") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var emptyState: some View {

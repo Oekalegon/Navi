@@ -1,5 +1,5 @@
 //
-//  ServerSettingsSheet.swift
+//  ServerSettingsPane.swift
 //  Navi
 //
 //  See docs/design/INDI-MCP-Integration.md §4.2.
@@ -13,12 +13,11 @@ import SwiftData
 /// targets whichever server the armed rig defaults to) — changing that default is a Rig-editor
 /// action (NAVI-55), not something this pane does.
 ///
-/// Edits are live (SwiftData), not batched behind a form-wide Save the way the rest of
-/// `SettingsView` works — matches `ArchiveFilterSheet`/`TelescopeSelectionSheet`'s pattern of a
-/// dedicated sheet for a list-editing concern, rather than folding a CRUD list into the single-
-/// VStack settings form.
-struct ServerSettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
+/// Edits are live (SwiftData), not batched behind a form-wide Save — matches
+/// `ArchiveFilterSheet`/`TelescopeSelectionSheet`'s pattern of a dedicated view for a
+/// list-editing concern, rather than folding a CRUD list into `GeneralSettingsPane`'s
+/// card-based form.
+struct ServerSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
 
@@ -28,7 +27,11 @@ struct ServerSettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            SettingsPaneHeader(
+                title: "Telescope Servers",
+                addHelp: "Add Server",
+                onAdd: { isPresentingNewServer = true }
+            )
             Divider()
             if servers.isEmpty {
                 emptyState
@@ -40,7 +43,6 @@ struct ServerSettingsSheet: View {
                 }
             }
         }
-        .frame(width: 420, height: 360)
         .sheet(item: $editingServer) { server in
             ServerEditForm(server: server)
         }
@@ -63,25 +65,6 @@ struct ServerSettingsSheet: View {
         } message: {
             Text("Any rig that defaults to this server will need a new default server chosen before it can connect.")
         }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Telescope Servers")
-                .font(.headline)
-            Spacer()
-            Button(action: { isPresentingNewServer = true }) {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(.plain)
-            .help("Add Server")
-            Button("Done") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var emptyState: some View {
