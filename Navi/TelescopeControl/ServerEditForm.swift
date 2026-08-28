@@ -14,6 +14,9 @@ struct ServerEditForm: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let server: ServerProfile?
+    /// Called with the saved (inserted-or-mutated) server, so a caller like `RigEditForm` can
+    /// adopt it as this rig's `defaultServer` right away.
+    var onSaved: (ServerProfile) -> Void = { _ in }
 
     @State private var name = ""
     @State private var urlString = ""
@@ -77,14 +80,19 @@ struct ServerEditForm: View {
             return
         }
 
+        let saved: ServerProfile
         if let server {
             server.name = trimmedName
             server.url = url
             server.modifiedAt = .now
+            saved = server
         } else {
-            modelContext.insert(ServerProfile(name: trimmedName, url: url))
+            let created = ServerProfile(name: trimmedName, url: url)
+            modelContext.insert(created)
+            saved = created
         }
         try? modelContext.save()
+        onSaved(saved)
         dismiss()
     }
 }
