@@ -63,6 +63,7 @@ struct RigEditForm: View {
         case guideOpticalAssembly(OpticalAssemblyProfile?)
         case imagingTrain(ImagingTrainProfile?)
         case guideCamera(GuideCameraProfile?)
+        case server(ServerProfile?)
 
         var id: String {
             switch self {
@@ -71,6 +72,7 @@ struct RigEditForm: View {
             case .guideOpticalAssembly(let o): return "goa-\(o?.persistentModelID.hashValue ?? 0)"
             case .imagingTrain(let t): return "train-\(t?.persistentModelID.hashValue ?? 0)"
             case .guideCamera(let g): return "guide-\(g?.persistentModelID.hashValue ?? 0)"
+            case .server(let s): return "server-\(s?.persistentModelID.hashValue ?? 0)"
             }
         }
     }
@@ -205,6 +207,14 @@ struct RigEditForm: View {
                             ForEach(servers) { Text($0.name).tag(ServerProfile?.some($0)) }
                         }
                         .labelsHidden()
+                        HStack {
+                            Button("New…") { activeSheet = .server(nil) }
+                            if defaultServer != nil {
+                                Button("Edit…") { activeSheet = .server(defaultServer) }
+                            }
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
                     }
 
                     if let errorMessage {
@@ -236,6 +246,8 @@ struct RigEditForm: View {
                 ImagingTrainEditForm(imagingTrain: t) { imagingTrain = $0 }
             case .guideCamera(let g):
                 GuideCameraEditForm(guideCamera: g) { guideCamera = $0 }
+            case .server(let s):
+                ServerEditForm(server: s) { defaultServer = $0 }
             }
         }
     }
