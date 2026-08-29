@@ -21,9 +21,6 @@ class SettingsManager {
     var archivePath: String {
         didSet { UserDefaults.standard.set(archivePath, forKey: "archivePath") }
     }
-    var dataPath: String {
-        didSet { UserDefaults.standard.set(dataPath, forKey: "dataPath") }
-    }
 
     private let keychainService = "com.navi.anthropic"
     private let keychainAccount = "api-key"
@@ -35,7 +32,6 @@ class SettingsManager {
         let configPath = try? String(contentsOfFile: configFilePath, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.archivePath = savedPath ?? envPath ?? configPath ?? ""
-        self.dataPath = UserDefaults.standard.string(forKey: "dataPath") ?? ""
 
         // Load API key last — didSet won't fire during init because the property
         // isn't fully initialised yet when the assignment happens in init bodies.
@@ -74,14 +70,6 @@ class SettingsManager {
     func clearAPIKey() { apiKey = "" }
 
     // MARK: - Security-Scoped Bookmarks
-
-    func saveDataBookmark(_ url: URL) {
-        guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
-        UserDefaults.standard.set(data, forKey: "dataBookmark")
-        logger.info("Saved data bookmark for: \(url.path)")
-    }
-
-    func loadDataBookmark() -> URL? { loadBookmark(key: "dataBookmark") }
 
     func saveArchiveBookmark(_ url: URL) {
         guard let data = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return }

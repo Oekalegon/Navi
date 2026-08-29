@@ -15,6 +15,9 @@ struct SettingsRootView: View {
             GeneralSettingsPane()
                 .tabItem { Label("General", systemImage: "gearshape") }
 
+            APIKeySettingsPane()
+                .tabItem { Label("API Key", systemImage: "key.fill") }
+
             ServerSettingsPane()
                 .tabItem { Label("Servers", systemImage: "server.rack") }
 
