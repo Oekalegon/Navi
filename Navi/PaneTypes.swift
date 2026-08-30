@@ -20,6 +20,7 @@ enum PaneType: String, Codable, Hashable {
     case fitsViewer
     case archiveViewer
     case infoPanel
+    case observatoryDashboard
     case empty
 
     var displayName: String {
@@ -28,6 +29,7 @@ enum PaneType: String, Codable, Hashable {
         case .fitsViewer: "FITS Viewer"
         case .archiveViewer: "Archive"
         case .infoPanel: "Info"
+        case .observatoryDashboard: "Dashboard"
         case .empty: "Empty Pane"
         }
     }

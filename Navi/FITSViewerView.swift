@@ -71,13 +71,7 @@ struct FITSViewerView: View {
     }
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            PaneCloseButton(paneType: .fitsViewer)
-            PaneMoveButton(pane: pane)
-
-            Divider()
-                .frame(height: 14)
-
+        PaneHeaderBar(paneType: .fitsViewer, pane: pane) {
             Image(systemName: frameTypeSymbolName(
                     type: frameType.isEmpty ? "light" : frameType,
                     level: frameLevel))
@@ -94,7 +88,7 @@ struct FITSViewerView: View {
                     .lineLimit(1)
                     .help("Observation date")
             }
-            Spacer()
+        } trailing: {
             if currentFrameID != nil {
                 RejectToggleButton(
                     isRejected: paneManager.fitsFrameRejected,
@@ -148,9 +142,6 @@ struct FITSViewerView: View {
             .buttonStyle(.plain)
             .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     @ViewBuilder

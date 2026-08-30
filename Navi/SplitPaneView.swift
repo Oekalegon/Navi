@@ -219,6 +219,8 @@ struct PaneContentView: View {
                 ArchiveViewerView(pane: pane)
             case .infoPanel:
                 InfoPanelView(pane: pane)
+            case .observatoryDashboard:
+                ObservatoryDashboardView(pane: pane)
             case .empty:
                 Color.clear
             }

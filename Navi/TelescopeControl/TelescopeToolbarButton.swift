@@ -13,6 +13,7 @@ import SwiftData
 /// Disconnect button. Picking a Rig/Observatory in `TelescopeSelectionSheet` only arms the
 /// choice — it never connects anything; Connect is always a distinct action here.
 struct TelescopeToolbarButton: View {
+    let paneManager: PaneManager
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     @State private var showingSelection = false
@@ -91,6 +92,11 @@ struct TelescopeToolbarButton: View {
             telescope.errorMessage = "The selected rig has no default server configured."
             return
         }
-        Task { await telescope.connect(server: server, rigID: rigID) }
+        Task {
+            await telescope.connect(server: server, rigID: rigID)
+            if telescope.state == .connected {
+                paneManager.showObservatoryDashboard()
+            }
+        }
     }
 }

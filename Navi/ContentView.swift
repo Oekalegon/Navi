@@ -55,7 +55,7 @@ struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .automatic) {
-                    TelescopeToolbarButton()
+                    TelescopeToolbarButton(paneManager: paneManager)
                 }
             }
             .environment(paneManager)
