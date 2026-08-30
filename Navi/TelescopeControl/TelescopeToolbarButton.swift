@@ -37,6 +37,7 @@ struct TelescopeToolbarButton: View {
             .help("Select Observatory & Rig")
 
             connectButton
+            TelescopeErrorIndicator()
         }
         .sheet(isPresented: $showingSelection) {
             TelescopeSelectionSheet()
