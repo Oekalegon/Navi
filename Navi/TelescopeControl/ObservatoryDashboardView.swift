@@ -29,6 +29,9 @@ struct ObservatoryDashboardView: View {
         .task(id: observatoryTaskID) {
             await loadObservatory()
         }
+        .task(id: telescope.connectionSessionID) {
+            await holdDeviceAcquisitions()
+        }
     }
 
     // Re-fetch whenever the armed observatory changes, or a fresh connection might have a
@@ -37,23 +40,29 @@ struct ObservatoryDashboardView: View {
         telescope.state == .connected ? telescope.armedObservatoryID : nil
     }
 
+    // Acquires every connectable component's device for the lifetime of one connected session,
+    // releasing them all when this task is cancelled — either by `connectionSessionID` changing
+    // (disconnect, connection loss, or a fresh reconnect even to the same rig) or by this view
+    // disappearing (pane closed). `connectionSessionID` rather than `currentRig?.id` as the task
+    // id specifically so a reconnect to the *same* rig still re-acquires: the id wouldn't change
+    // in that case, but the underlying ObservableDevice instances were already torn down by the
+    // intervening disconnect.
+    private func holdDeviceAcquisitions() async {
+        guard let rig = telescope.currentRig else { return }
+        let roles = rig.components.compactMap { $0.device != nil ? $0.role : nil }
+        guard !roles.isEmpty else { return }
+        for role in roles { telescope.acquireDevice(for: role) }
+        defer { for role in roles { telescope.releaseDevice(for: role) } }
+        try? await Task.sleep(for: .seconds(86400))
+    }
+
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            PaneCloseButton(paneType: .observatoryDashboard)
-            PaneMoveButton(pane: pane)
-
-            Divider().frame(height: 14)
-
+        PaneHeaderBar(paneType: .observatoryDashboard, pane: pane) {
             Image(systemName: "gauge.with.dots.needle.67percent")
                 .font(.system(size: 14))
             Text("Dashboard")
                 .font(.headline)
-
-            Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     @ViewBuilder
@@ -127,7 +136,13 @@ struct ObservatoryDashboardView: View {
                         Text("\(observatory.elevationMeters, specifier: "%.0f") m")
                     }
                 }
-                sunTimesRow(for: observatory)
+                // Recomputed every minute, not just once on load: a session left connected
+                // across a day boundary (this app targets an always-on observatory Pi, so
+                // multi-day connections are plausible) would otherwise keep showing a stale
+                // night's rise/set times indefinitely.
+                TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                    sunTimesRow(for: observatory, now: timeline.date)
+                }
             } else if let loadError {
                 Text(loadError).font(.caption).foregroundStyle(.secondary)
             } else {
@@ -136,10 +151,10 @@ struct ObservatoryDashboardView: View {
         }
     }
 
-    private func sunTimesRow(for observatory: INDIObservatory) -> some View {
+    private func sunTimesRow(for observatory: INDIObservatory, now: Date) -> some View {
         let astroObservatory = AstroObservatory(indi: observatory)
         let times = Sun().riseTransitSet(
-            on: Date(), at: astroObservatory, window: .night, altitude: .standardAltitudeSun
+            on: now, at: astroObservatory, window: .night, altitude: .standardAltitudeSun
         )
         return HStack(spacing: 24) {
             labeledValue("Sunset") {
@@ -285,7 +300,7 @@ struct ObservatoryDashboardView: View {
 // bare `AstroKit.Observatory`/`INDIMCPKit.Observatory` qualification once both are imported in
 // one file. Use the `AstroObservatory`/`INDIObservatory` typealiases (declared from single-
 // import contexts in AstroKitObservatoryAlias.swift / TelescopeSessionManager.swift) instead.
-// Not `private`: covered directly by ObservatoryDashboardTests.
+// Not `private`: covered directly by AstroKitObservatoryAliasTests.
 extension AstroObservatory {
     init(indi: INDIObservatory) {
         self.init(

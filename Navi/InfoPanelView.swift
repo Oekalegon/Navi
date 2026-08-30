@@ -66,24 +66,14 @@ struct InfoPanelView: View {
     }
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            PaneCloseButton(paneType: .infoPanel)
-            PaneMoveButton(pane: pane)
-
-            Divider()
-                .frame(height: 14)
-
+        PaneHeaderBar(paneType: .infoPanel, pane: pane) {
             Image(systemName: "info.circle")
                 .font(.system(size: 14))
             Text(frameTitle ?? "Info")
                 .font(.headline)
                 .lineLimit(1)
                 .help(paneManager.infoURL?.lastPathComponent ?? "")
-            Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     @ViewBuilder

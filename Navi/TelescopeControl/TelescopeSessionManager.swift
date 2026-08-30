@@ -51,6 +51,15 @@ final class TelescopeSessionManager {
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
 
+    /// Bumped on every successful `connect()` — even a reconnect to the identical rig/server —
+    /// and reset to `nil` on disconnect/connection-loss. Exists purely so a SwiftUI `.task(id:)`
+    /// call site (e.g. `ObservatoryDashboardView`'s device acquisition, §3.3) can detect "a fresh
+    /// connected session started" and re-`acquireDevice`, which `currentRig?.id` alone can't do
+    /// when reconnecting to the same rig (its id wouldn't change, so `.task(id:)` wouldn't
+    /// restart).
+    private(set) var connectionSessionID: Int?
+    private var nextSessionID = 0
+
     /// The user's *armed* Rig/Observatory choice (§4.1/§4.3.2) — set by confirming the toolbar's
     /// selection modal, independent of whether a connection is currently live. Persisted across
     /// launches via `UserDefaults`, matching `SettingsManager`'s own plain-`didSet` persistence
@@ -67,6 +76,7 @@ final class TelescopeSessionManager {
 
     private var client: INDIMCPClient?
     private var devices: [Role: ObservableDevice] = [:]
+    private var deviceRefCounts: [Role: Int] = [:]
     private var connectionEventsTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
 
@@ -89,6 +99,8 @@ final class TelescopeSessionManager {
             self.client = client
             self.currentRig = rig
             self.currentServer = server
+            nextSessionID += 1
+            connectionSessionID = nextSessionID
             state = .connected
             startLiveness(client: client)
         } catch {
@@ -110,6 +122,8 @@ final class TelescopeSessionManager {
 
         for device in devices.values { await device.stop() }
         devices.removeAll()
+        deviceRefCounts.removeAll()
+        connectionSessionID = nil
 
         if let client, let rig = currentRig {
             for component in rig.components where component.device != nil {
@@ -125,18 +139,49 @@ final class TelescopeSessionManager {
         state = .disconnected
     }
 
-    /// Returns the shared `ObservableDevice` for `role` in the currently-connected rig, creating
-    /// and starting it on first access. `nil` if not connected, or if the current rig has no
-    /// device bound for that role. I-8: one instance per role, shared across every pane/window
-    /// that asks for it, rather than each constructing its own.
+    /// Returns the shared `ObservableDevice` for `role`, if one is currently active — `nil` if
+    /// not connected, the current rig has no device bound for that role, or nothing has
+    /// `acquireDevice(for:)`'d it yet. Read-only: unlike the old single-method design, this does
+    /// *not* start tracking on its own — call `acquireDevice(for:)` once per consumer lifecycle
+    /// (e.g. a pane's `.task`) to start it, paired with `releaseDevice(for:)` when that consumer
+    /// goes away.
     func device(for role: Role) -> ObservableDevice? {
+        devices[role]
+    }
+
+    /// Starts (or joins) the shared `ObservableDevice` subscription for `role`, reference-counted
+    /// so it's stopped only once every consumer has released it (§3.3: "closing a pane should
+    /// call `ObservableDevice.stop()` (or have `TelescopeSessionManager` reference-count and stop
+    /// only when the last consumer goes away)"). `nil` if not connected or the current rig has no
+    /// device bound for that role — matches `device(for:)`'s existing guard. I-8: one instance per
+    /// role, shared across every pane/window that acquires it, rather than each constructing its
+    /// own.
+    @discardableResult
+    func acquireDevice(for role: Role) -> ObservableDevice? {
         guard let client, let rig = currentRig, state == .connected else { return nil }
         guard rig.components.contains(where: { $0.role == role && $0.device != nil }) else { return nil }
+        deviceRefCounts[role, default: 0] += 1
         if let existing = devices[role] { return existing }
         let observable = ObservableDevice(client: client, rigId: rig.id, role: role)
         devices[role] = observable
         Task { await observable.start() }
         return observable
+    }
+
+    /// Releases one consumer's interest in `role`'s device, stopping and removing it once the
+    /// last consumer has released. A no-op if `role` was never acquired (or a full disconnect/
+    /// connection-loss already cleared every device out from under it) — safe to call
+    /// unconditionally from a consumer's teardown path regardless of how it got there.
+    func releaseDevice(for role: Role) {
+        guard let count = deviceRefCounts[role] else { return }
+        if count <= 1 {
+            deviceRefCounts[role] = nil
+            if let device = devices.removeValue(forKey: role) {
+                Task { await device.stop() }
+            }
+        } else {
+            deviceRefCounts[role] = count - 1
+        }
     }
 
     /// Live Observatory list from the currently-connected server, for refreshing the toolbar's
@@ -246,6 +291,8 @@ final class TelescopeSessionManager {
         stopLiveness()
         for device in devices.values { await device.stop() }
         devices.removeAll()
+        deviceRefCounts.removeAll()
+        connectionSessionID = nil
         client = nil
         currentRig = nil
         currentServer = nil

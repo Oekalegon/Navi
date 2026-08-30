@@ -100,15 +100,16 @@ struct ArchiveViewerView: View {
     }
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            let isFilterActive = paneManager.archiveFilter.isActive
+        PaneHeaderBar(paneType: .archiveViewer, pane: pane) {
+            headerTitleContent
+        } trailing: {
+            headerTrailingContent
+        }
+    }
 
-            PaneCloseButton(paneType: .archiveViewer)
-            PaneMoveButton(pane: pane)
-
-            Divider()
-                .frame(height: 14)
-
+    private var headerTitleContent: some View {
+        let isFilterActive = paneManager.archiveFilter.isActive
+        return Group {
             Button { paneManager.archiveBack() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .medium))
@@ -142,9 +143,12 @@ struct ArchiveViewerView: View {
             if isFilterActive {
                 filterChips
             }
+        }
+    }
 
-            Spacer()
-
+    private var headerTrailingContent: some View {
+        let isFilterActive = paneManager.archiveFilter.isActive
+        return Group {
             if !showRaw {
                 Button {
                     showingFilter.toggle()
@@ -247,9 +251,6 @@ struct ArchiveViewerView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     @ViewBuilder
