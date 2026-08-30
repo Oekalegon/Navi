@@ -86,17 +86,8 @@ struct TelescopeToolbarButton: View {
     }
 
     private func connect() {
-        guard let rigID = telescope.armedRigID else { return }
-        let descriptor = FetchDescriptor<RigProfile>(predicate: #Predicate { $0.serverRigID == rigID })
-        guard let rig = try? modelContext.fetch(descriptor).first, let server = rig.defaultServer else {
-            telescope.errorMessage = "The selected rig has no default server configured."
-            return
-        }
         Task {
-            await telescope.connect(server: server, rigID: rigID)
-            if telescope.state == .connected {
-                paneManager.showObservatoryDashboard()
-            }
+            await ArmedRigConnector.connect(telescope: telescope, modelContext: modelContext, paneManager: paneManager)
         }
     }
 }

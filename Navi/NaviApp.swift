@@ -13,10 +13,21 @@ private struct ImportActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+// NAVI-64: exposes the focused window's PaneManager to menu-bar commands (TelescopeCommands),
+// which — unlike a pane view — have no window of their own to read it from directly.
+private struct PaneManagerKey: FocusedValueKey {
+    typealias Value = PaneManager
+}
+
 extension FocusedValues {
     var importAction: (() -> Void)? {
         get { self[ImportActionKey.self] }
         set { self[ImportActionKey.self] = newValue }
+    }
+
+    var paneManager: PaneManager? {
+        get { self[PaneManagerKey.self] }
+        set { self[PaneManagerKey.self] = newValue }
     }
 }
 
@@ -93,7 +104,10 @@ struct NaviApp: App {
             WindowToken(id: UUID(), rootType: .aiAssistant)
         }
         .windowToolbarStyle(.unified(showsTitle: false))
-        .commands { NaviCommands() }
+        .commands {
+            NaviCommands()
+            TelescopeCommands()
+        }
         .modelContainer(equipmentLibraryContainer)
 
         Settings {
