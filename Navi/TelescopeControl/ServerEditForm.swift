@@ -10,12 +10,18 @@ import SwiftData
 
 /// Add/edit form for one `ServerProfile`. `server == nil` means "creating a new one" — saving
 /// inserts it; otherwise saving mutates the passed-in record in place.
+///
+/// NAVI-63: saving never blocks on reachability — a server can be registered while offline.
+/// `onSaved` is where the caller (`ServerSettingsPane`) attempts to actually connect to it and
+/// surfaces a warning if that fails, since that's also where the live connect/disconnect state
+/// lives (`TelescopeSessionManager`); this form itself stays a plain, synchronous save.
 struct ServerEditForm: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let server: ServerProfile?
     /// Called with the saved (inserted-or-mutated) server, so a caller like `RigEditForm` can
-    /// adopt it as this rig's `defaultServer` right away.
+    /// adopt it as this rig's `defaultServer` right away, or `ServerSettingsPane` can attempt to
+    /// connect to it.
     var onSaved: (ServerProfile) -> Void = { _ in }
 
     @State private var name = ""
