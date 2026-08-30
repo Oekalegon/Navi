@@ -193,8 +193,11 @@ struct PaneLayoutTests {
         let f = makeFixture()
         f.manager.movePane(f.x2, toTarget: f.x1.id, direction: .horizontal, before: true)
         // S is reused in place (same object, same id) — now a horizontal split with X2 first.
+        // insertPane always builds a fresh SplitPane for the moved content (matching
+        // movePaneToLeafSplitsTheLeaf's existing paneType-based assertions below) — X2 itself
+        // becomes orphaned, so this checks paneType, not object identity.
         #expect(f.s.direction == .horizontal)
-        #expect(f.s.children?[0] === f.x2)
+        #expect(f.s.children?[0].paneType == .archiveViewer)
         #expect(f.s.children?[1].paneType == .fitsViewer)
         // Root's own shape (Y beside S) is untouched.
         #expect(f.manager.rootPane.direction == .horizontal)
