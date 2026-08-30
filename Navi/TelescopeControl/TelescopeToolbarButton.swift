@@ -17,6 +17,7 @@ struct TelescopeToolbarButton: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     @State private var showingSelection = false
+    @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
 
     // Resolved once per armed-id change, not re-fetched on every body re-render (e.g. every
     // telescope.state change) the way a plain computed property reading modelContext would.
@@ -71,10 +72,27 @@ struct TelescopeToolbarButton: View {
     private var connectButton: some View {
         switch telescope.state {
         case .disconnected:
-            Button("Connect") { connect() }
+            if telescope.armedRigID != nil {
+                Button("Connect") { connect() }
+                    .controlSize(.small)
+            } else if !servers.isEmpty {
+                // NAVI-67: no Rig armed yet — connect straight to a bare Server instead of
+                // forcing a detour through Settings first. Once connected, RigAutoMatcher (via
+                // BareServerConnector) arms whichever local Rig matches the live devices, so a
+                // subsequent Connect goes through the normal rig-bound path above.
+                Menu("Connect to Server…") {
+                    ForEach(servers) { server in
+                        Button(server.name) { connectToServer(server) }
+                    }
+                }
                 .controlSize(.small)
-                .disabled(telescope.armedRigID == nil)
-                .help(telescope.armedRigID == nil ? "Select a rig first" : "Connect")
+                .help("No rig selected yet — connect to a server directly, then create or match a rig")
+            } else {
+                Button("Connect") {}
+                    .controlSize(.small)
+                    .disabled(true)
+                    .help("Select a rig first, or add a server in Settings")
+            }
         case .connecting:
             ProgressView()
                 .controlSize(.small)
@@ -88,6 +106,12 @@ struct TelescopeToolbarButton: View {
     private func connect() {
         Task {
             await ArmedRigConnector.connect(telescope: telescope, modelContext: modelContext, paneManager: paneManager)
+        }
+    }
+
+    private func connectToServer(_ server: ServerProfile) {
+        Task {
+            await BareServerConnector.connect(server: server, telescope: telescope, modelContext: modelContext, paneManager: paneManager)
         }
     }
 }
