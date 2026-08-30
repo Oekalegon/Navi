@@ -75,7 +75,8 @@ struct PaneMoveButton: View {
 
     private func moveToNewWindow() {
         guard let manager = paneManager.detachPaneManager(for: pane) else { return }
-        openWindow(value: WindowRegistry.shared.stage(manager))
+        let token = WindowRegistry.shared.stage(manager)
+        openWindow(value: WindowTabGroup.single(tabID: token.id))
     }
 
     private func optionButton(_ option: PaneMoveOption, in options: PaneMoveOptions) -> some View {

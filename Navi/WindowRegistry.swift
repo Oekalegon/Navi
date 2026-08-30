@@ -58,15 +58,17 @@ final class WindowRegistry {
     /// routing destination with no window behind it.
     func adopt(_ token: WindowToken) -> PaneManager {
         if let entry = entries.first(where: { $0.id == token.id }) { return entry.paneManager }
-        guard !released.contains(token.id) else { return PaneManager(rootType: token.rootType) }
+        guard !released.contains(token.id) else { return PaneManager(tabID: token.id, rootType: token.rootType) }
         let manager: PaneManager
         if let s = staged.removeValue(forKey: token.id) {
             manager = s
-        } else if entries.isEmpty, token.rootType == .aiAssistant,
-                  let restored = PaneManager.fromSavedLayout() {
+        } else if let restored = PaneManager.fromSavedLayout(tabID: token.id) {
+            // NAVI-70: tab ids are now stable across relaunch (persisted in WindowTabGroup), so
+            // any tab's saved layout can be restored this way — not just a single hardcoded
+            // "first aiAssistant window" special case as before.
             manager = restored
         } else {
-            manager = PaneManager(rootType: token.rootType)
+            manager = PaneManager(tabID: token.id, rootType: token.rootType)
         }
         entries.append(Entry(id: token.id, paneManager: manager, number: nextNumber))
         nextNumber += 1
@@ -76,8 +78,11 @@ final class WindowRegistry {
     /// Stages a manager for a window about to open and returns the value to
     /// pass to openWindow.
     func stage(_ manager: PaneManager) -> WindowToken {
+        // The token's id must match manager.tabID — not a fresh UUID — so saveLayout()'s
+        // persistence key and this token's registry/restoration identity stay the same value
+        // (NAVI-70; previously harmless since layout persistence wasn't per-tab).
         let token = WindowToken(
-            id: UUID(),
+            id: manager.tabID,
             rootType: manager.rootPane.isLeaf ? manager.rootPane.paneType : .aiAssistant)
         staged[token.id] = manager
         return token

@@ -95,13 +95,17 @@ struct NaviApp: App {
     }
 
     var body: some Scene {
-        // Every window — the initial one, File > New Window, and panes detached
-        // via the move-pane menu's New Window item (NAVI-10) — is keyed by a
-        // WindowToken that resolves to its PaneManager in the WindowRegistry.
-        WindowGroup(for: WindowToken.self) { $token in
-            ContentView(token: token)
+        // Every window — the initial one, File > New Window, and panes detached via the
+        // move-pane menu's New Window item (NAVI-10) — opens with a WindowTabGroup: an ordered,
+        // named set of tabs, each of which resolves to its own PaneManager in the WindowRegistry
+        // exactly as a single window did before NAVI-70 added tabs.
+        WindowGroup(for: WindowTabGroup.self) { $group in
+            ContentView(group: group)
         } defaultValue: {
-            WindowToken(id: UUID(), rootType: .aiAssistant)
+            // Only the very first window (nothing registered yet) restores/seeds the main
+            // window's persisted tabs; a later explicit File > New Window starts blank, matching
+            // pre-NAVI-70 "New Window" behavior rather than duplicating the main window's tabs.
+            WindowRegistry.shared.entries.isEmpty ? WindowTabGroup.loadOrSeedMainWindow() : WindowTabGroup.blank()
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
