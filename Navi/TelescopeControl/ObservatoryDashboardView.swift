@@ -1,0 +1,293 @@
+//
+//  ObservatoryDashboardView.swift
+//  Navi
+//
+//  See docs/design/INDI-MCP-Integration.md §3.3, §4.6. The one pane in the app that opens
+//  automatically — the moment Connect succeeds (TelescopeToolbarButton.connect()) — rather than
+//  via a toolbar toggle.
+//
+
+import SwiftUI
+import AstroKit
+import AstroKitUI
+import INDIMCPKit
+
+struct ObservatoryDashboardView: View {
+    var pane: SplitPane
+    @State private var telescope = TelescopeSessionManager.shared
+    @State private var observatory: INDIObservatory?
+    @State private var loadError: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            headerBar
+            Divider()
+            content
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: observatoryTaskID) {
+            await loadObservatory()
+        }
+    }
+
+    // Re-fetch whenever the armed observatory changes, or a fresh connection might have a
+    // different one armed than the last time this pane loaded.
+    private var observatoryTaskID: String? {
+        telescope.state == .connected ? telescope.armedObservatoryID : nil
+    }
+
+    private var headerBar: some View {
+        HStack(spacing: 8) {
+            PaneCloseButton(paneType: .observatoryDashboard)
+            PaneMoveButton(pane: pane)
+
+            Divider().frame(height: 14)
+
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .font(.system(size: 14))
+            Text("Dashboard")
+                .font(.headline)
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if telescope.state != .connected {
+            disconnectedState
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    timeSection
+                    observatorySection
+                    rigSection
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var disconnectedState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("Not connected")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Time / Local Sidereal Time
+
+    private var timeSection: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            HStack(spacing: 24) {
+                labeledValue("Time") {
+                    Text(timeline.date, style: .time)
+                }
+                if let lst = localSiderealTime(at: timeline.date) {
+                    labeledValue("Local Sidereal Time") {
+                        Text(AngleFormatter(format: .hms, precision: 3).attributedString(from: lst))
+                    }
+                }
+            }
+        }
+    }
+
+    private func localSiderealTime(at date: Date) -> Double? {
+        guard let observatory else { return nil }
+        return SiderealTime(observatory: AstroObservatory(indi: observatory), date: date).local
+    }
+
+    // MARK: - Observatory
+
+    @ViewBuilder
+    private var observatorySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Observatory").font(.headline)
+            if let observatory {
+                HStack(spacing: 24) {
+                    labeledValue("Latitude") {
+                        Text(AngleFormatter(format: .sdms, precision: 2)
+                            .attributedString(from: observatory.latitudeDeg * .pi / 180))
+                    }
+                    labeledValue("Longitude") {
+                        Text(AngleFormatter(format: .dms, precision: 2)
+                            .attributedString(from: observatory.longitudeDeg * .pi / 180))
+                    }
+                    labeledValue("Elevation") {
+                        Text("\(observatory.elevationMeters, specifier: "%.0f") m")
+                    }
+                }
+                sunTimesRow(for: observatory)
+            } else if let loadError {
+                Text(loadError).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("No observatory selected").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func sunTimesRow(for observatory: INDIObservatory) -> some View {
+        let astroObservatory = AstroObservatory(indi: observatory)
+        let times = Sun().riseTransitSet(
+            on: Date(), at: astroObservatory, window: .night, altitude: .standardAltitudeSun
+        )
+        return HStack(spacing: 24) {
+            labeledValue("Sunset") {
+                Text(times.set.map(Self.timeOfDay) ?? "—")
+            }
+            labeledValue("Sunrise") {
+                Text(times.rise.map(Self.timeOfDay) ?? "—")
+            }
+        }
+    }
+
+    private static func timeOfDay(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func loadObservatory() async {
+        observatory = nil
+        loadError = nil
+        guard let id = telescope.armedObservatoryID, telescope.state == .connected else { return }
+        do {
+            observatory = try await telescope.getObservatory(id: id)
+        } catch {
+            loadError = TelescopeSessionManager.describe(error)
+        }
+    }
+
+    // MARK: - Rig components
+
+    @ViewBuilder
+    private var rigSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Rig").font(.headline)
+            if let rig = telescope.currentRig {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rig.components, id: \.id) { component in
+                        componentRow(component)
+                    }
+                }
+            } else {
+                Text("No rig connected").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func componentRow(_ component: Component) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: Self.roleIcons[component.role.rawValue] ?? "cpu")
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            Text(component.model ?? component.make ?? Self.displayName(for: component.role))
+            Spacer()
+            statusBadge(for: component)
+        }
+    }
+
+    // A passive item (e.g. an OTA) has `device == nil` — no connection state to show at all,
+    // matching TelescopeSessionManager.disconnect()'s own `component.device != nil` idiom.
+    @ViewBuilder
+    private func statusBadge(for component: Component) -> some View {
+        if component.device == nil {
+            EmptyView()
+        } else if let device = telescope.device(for: component.role) {
+            switch Self.status(for: device) {
+            case .connected:
+                Image(systemName: "circle.fill")
+                    .foregroundStyle(.green)
+                    .help("Connected")
+            case .error:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .help(device.lastError ?? "Error")
+            case .disconnected:
+                Image(systemName: "circle")
+                    .foregroundStyle(.secondary)
+                    .help("Disconnected")
+            }
+        } else {
+            Text("—").foregroundStyle(.secondary)
+        }
+    }
+
+    private enum ComponentStatus { case connected, disconnected, error }
+
+    // ObservableDevice has no ready-made tri-state status enum: `isConnected: Bool?` is itself
+    // tri-state (nil = not yet observed), and `lastError` is never cleared by a later success —
+    // so `lastError != nil` alone isn't "currently erroring," only "something has failed at some
+    // point." Treated here as: live-connected wins outright, otherwise a recorded failure reads
+    // as an error state, otherwise disconnected (including "never observed yet").
+    private static func status(for device: ObservableDevice) -> ComponentStatus {
+        if device.isConnected == true { return .connected }
+        if device.lastError != nil { return .error }
+        return .disconnected
+    }
+
+    private static let roleIcons: [String: String] = [
+        Role.mount.rawValue: "gyroscope",
+        Role.telescope.rawValue: "circle.dotted",
+        Role.guideTelescope.rawValue: "circle.dotted",
+        Role.camera.rawValue: "camera",
+        Role.guideCamera.rawValue: "camera.viewfinder",
+        Role.focuser.rawValue: "camera.macro",
+        Role.filterWheel.rawValue: "circle.grid.3x3",
+        Role.rotator.rawValue: "rotate.right",
+        Role.powerHub.rawValue: "bolt",
+        Role.observatoryControl.rawValue: "building.columns",
+        Role.flatScreen.rawValue: "rectangle.on.rectangle",
+        Role.dewHeater.rawValue: "flame"
+    ]
+
+    private static let roleNames: [String: String] = [
+        Role.mount.rawValue: "Mount",
+        Role.telescope.rawValue: "Optical Assembly",
+        Role.guideTelescope.rawValue: "Guide Optical Assembly",
+        Role.camera.rawValue: "Camera",
+        Role.guideCamera.rawValue: "Guide Camera",
+        Role.focuser.rawValue: "Focuser",
+        Role.filterWheel.rawValue: "Filter Wheel",
+        Role.rotator.rawValue: "Rotator",
+        Role.powerHub.rawValue: "Power Hub",
+        Role.observatoryControl.rawValue: "Observatory Control",
+        Role.flatScreen.rawValue: "Flat Screen",
+        Role.dewHeater.rawValue: "Dew Heater"
+    ]
+
+    private static func displayName(for role: Role) -> String {
+        roleNames[role.rawValue] ?? role.rawValue.capitalized
+    }
+
+    @ViewBuilder
+    private func labeledValue<Content: View>(
+        _ label: String, @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            content()
+        }
+    }
+}
+
+// AstroKit's `Observatory` takes lon/lat in radians; INDIMCPKit's uses degrees. Both packages
+// have a type literally named `Observatory` — always qualify (docs/design/INDI-MCP-
+// Integration.md §4.6).
+private extension AstroObservatory {
+    init(indi: INDIObservatory) {
+        self.init(
+            longitude: indi.longitudeDeg * .pi / 180,
+            latitude: indi.latitudeDeg * .pi / 180,
+            height: indi.elevationMeters
+        )
+    }
+}

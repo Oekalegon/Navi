@@ -8,6 +8,13 @@
 import Foundation
 import INDIMCPKit
 
+/// Disambiguating alias for call sites (e.g. `ObservatoryDashboardView`) that need both this
+/// package's `Observatory` and AstroKit's — each package also shadows its own module name with
+/// an empty enum of the same name, which defeats a bare `INDIMCPKit.Observatory`/
+/// `AstroKit.Observatory` qualification once both modules are imported in one file. Declared
+/// here, in a file that only imports `INDIMCPKit`, where plain `Observatory` is unambiguous.
+typealias INDIObservatory = Observatory
+
 /// Owns Navi's single live INDI-MCP session — the connect/disconnect cascade (§4.4), liveness
 /// detection (§3.2), and one shared `ObservableDevice` per role (§4.5/I-8) so every pane/window
 /// observes the same live state instead of each spinning up its own subscription. Also the single

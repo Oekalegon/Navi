@@ -295,7 +295,7 @@ class PaneManager {
         case .archiveViewer:
             manager.archiveContent = archiveContent
             manager.archiveFilter = archiveFilter
-        case .aiAssistant, .empty:
+        case .aiAssistant, .observatoryDashboard, .empty:
             break
         }
         removeLeaf(leaf)
@@ -396,6 +396,38 @@ class PaneManager {
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             ai.preferredWidth = 300
             splitPane(ai, direction: .horizontal, newPaneType: .fitsViewer)
+        }
+    }
+
+    var isObservatoryDashboardVisible: Bool {
+        findPane(ofType: .observatoryDashboard, in: rootPane) != nil
+    }
+
+    func toggleObservatoryDashboard() {
+        if isObservatoryDashboardVisible {
+            closePane(ofType: .observatoryDashboard)
+        } else {
+            openObservatoryDashboardPane()
+        }
+    }
+
+    // The one pane in the app that opens automatically — the moment Connect succeeds
+    // (docs/design/INDI-MCP-Integration.md §3.3) — rather than via a toolbar toggle. Idempotent:
+    // a no-op if the pane is already showing, so the toolbar's connect call site can call this
+    // unconditionally on every successful connect.
+    func showObservatoryDashboard() {
+        if isObservatoryDashboardVisible { return }
+        openObservatoryDashboardPane()
+    }
+
+    // Reuse an empty pane if available, else split from the AI pane (§3.3) — the pane has no
+    // strong width/orientation preference of its own, unlike Archive's "widest leaf" placement.
+    private func openObservatoryDashboardPane() {
+        if let empty = findPane(ofType: .empty, in: rootPane) {
+            empty.paneType = .observatoryDashboard
+            saveLayout()
+        } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
+            splitPane(ai, direction: .horizontal, newPaneType: .observatoryDashboard)
         }
     }
 
