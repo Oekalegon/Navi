@@ -182,6 +182,29 @@ struct PaneLayoutTests {
         #expect(root.children?[1].paneType == .aiAssistant)
     }
 
+    // NAVI-65: X1 and X2 are already siblings under S (vertical); moving X2 to be "Left of" X1
+    // targets X1, which IS x2's sibling in a 2-child binary parent — the same
+    // absorbed-sibling-retargets-the-parent redirect as the test above, but here the redirected
+    // target (S) flips direction on the SAME SplitPane object rather than being freshly wrapped,
+    // which is exactly the case that exposed the ManagedSplitContainer rendering bug (see
+    // ManagedSplitContainerTests). This asserts the *model* was already correct even before that
+    // fix — the bug was purely in the NSSplitView sync, never in this layout math.
+    @Test func movePaneBesideItsOwnSiblingFlipsTheSharedGroupDirection() {
+        let f = makeFixture()
+        f.manager.movePane(f.x2, toTarget: f.x1.id, direction: .horizontal, before: true)
+        // S is reused in place (same object, same id) — now a horizontal split with X2 first.
+        // insertPane always builds a fresh SplitPane for the moved content (matching
+        // movePaneToLeafSplitsTheLeaf's existing paneType-based assertions below) — X2 itself
+        // becomes orphaned, so this checks paneType, not object identity.
+        #expect(f.s.direction == .horizontal)
+        #expect(f.s.children?[0].paneType == .archiveViewer)
+        #expect(f.s.children?[1].paneType == .fitsViewer)
+        // Root's own shape (Y beside S) is untouched.
+        #expect(f.manager.rootPane.direction == .horizontal)
+        #expect(f.manager.rootPane.children?[0] === f.y)
+        #expect(f.manager.rootPane.children?[1] === f.s)
+    }
+
     @Test func closePaneStillCollapsesToSibling() {
         let manager = PaneManager()
         manager.closePane(ofType: .aiAssistant)
