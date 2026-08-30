@@ -174,13 +174,9 @@ struct AIAssistantView: View {
         .onAppear {
             viewModel.updateAPIKey(settings.apiKey)
             viewModel.paneManager = paneManager
-            Task { await ArchiveManager.shared.connect(archivePath: settings.archivePath) }
         }
         .onChange(of: settings.apiKey) {
             viewModel.updateAPIKey(settings.apiKey)
-        }
-        .onChange(of: settings.archivePath) {
-            Task { await ArchiveManager.shared.connect(archivePath: settings.archivePath) }
         }
     }
 }
