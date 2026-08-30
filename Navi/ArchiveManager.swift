@@ -25,7 +25,31 @@ final class ArchiveManager {
     private var archive: Archive?
     private var archiveBookmarkURL: URL?
     private let logger = Logger(subsystem: "com.navi.app", category: "Archive")
-    private init() {}
+
+    private init() {
+        // Self-observes SettingsManager.shared.archivePath (via withObservationTracking, not a
+        // SwiftUI view) rather than relying on any pane's .onAppear/.onChange, so a path change
+        // in Settings reconnects the archive regardless of which panes happen to be open —
+        // previously this lived only in AIAssistantView's lifecycle hooks, so it silently did
+        // nothing if that pane wasn't mounted.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.connect(archivePath: SettingsManager.shared.archivePath)
+        }
+        observeArchivePathChanges()
+    }
+
+    private func observeArchivePathChanges() {
+        withObservationTracking {
+            _ = SettingsManager.shared.archivePath
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.connect(archivePath: SettingsManager.shared.archivePath)
+                self.observeArchivePathChanges()
+            }
+        }
+    }
 
     // MARK: - Connection
 
