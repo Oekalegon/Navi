@@ -60,6 +60,7 @@ struct ContentView: View {
             }
             .environment(paneManager)
             .environment(settings)
+            .focusedSceneValue(\.paneManager, paneManager)
             .onDisappear {
                 if WindowRegistry.shared.entries.first?.id == token.id {
                     paneManager.saveLayout()
