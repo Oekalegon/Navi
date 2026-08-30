@@ -51,6 +51,14 @@ final class TelescopeSessionManager {
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
 
+    /// The server a `connect(...)` call currently has in flight, non-nil only while `state ==
+    /// .connecting`. Exists so multi-window UI (NAVI-63: `ServerSettingsPane`'s per-row Connect
+    /// button) can show *which* row is connecting from every window, not just the one that
+    /// initiated it — tracking that as view-local `@State` would leave every other window's copy
+    /// of the same list unable to distinguish "connecting" from "unavailable, something else is
+    /// live" until the connect resolves.
+    private(set) var connectingServer: ServerProfile?
+
     /// Bumped on every successful `connect()` — even a reconnect to the identical rig/server —
     /// and reset to `nil` on disconnect/connection-loss. Exists purely so a SwiftUI `.task(id:)`
     /// call site (e.g. `ObservatoryDashboardView`'s device acquisition, §3.3) can detect "a fresh
@@ -92,6 +100,7 @@ final class TelescopeSessionManager {
         guard state == .disconnected else { return }
         state = .connecting
         errorMessage = nil
+        connectingServer = server
 
         let client = INDIMCPClient(endpoint: server.url)
         do {
@@ -99,6 +108,7 @@ final class TelescopeSessionManager {
             self.client = client
             self.currentRig = rig
             self.currentServer = server
+            connectingServer = nil
             nextSessionID += 1
             connectionSessionID = nextSessionID
             state = .connected
@@ -108,14 +118,50 @@ final class TelescopeSessionManager {
             // failed — disconnect the locally-constructed client so that session doesn't dangle;
             // nothing else holds a reference to it since `self.client` is only set on success.
             await client.disconnect()
+            connectingServer = nil
+            errorMessage = Self.describe(error)
+            state = .disconnected
+        }
+    }
+
+    /// Connects to `server` alone, with no Rig armed (NAVI-63) — just the MCP handshake, e.g. for
+    /// testing/managing a server from Settings before any Rig references it. No-ops if already
+    /// connecting/connected, matching `connect(server:rigID:)`'s contract — press Disconnect
+    /// first. Unlike the rig-bound connect, there's no device cascade to run and no `currentRig`
+    /// to set, so callers relying on `device(for:)`/`acquireDevice(for:)` will simply find no
+    /// components bound (their guards already require `currentRig`).
+    func connect(server: ServerProfile) async {
+        guard state == .disconnected else { return }
+        state = .connecting
+        errorMessage = nil
+        connectingServer = server
+
+        let client = INDIMCPClient(endpoint: server.url)
+        do {
+            // 15s to match TelescopeConnectCascade.run's default timeoutSeconds, which wraps
+            // this same handshake (via establishSession()) for the rig-bound path — an
+            // unreachable host shouldn't hang on whatever default timeout the underlying
+            // transport happens to use.
+            _ = try await TelescopeConnectCascade.withTimeout(seconds: 15) { try await client.connect() }
+            self.client = client
+            self.currentServer = server
+            connectingServer = nil
+            nextSessionID += 1
+            connectionSessionID = nextSessionID
+            state = .connected
+            startLiveness(client: client)
+        } catch {
+            await client.disconnect()
+            connectingServer = nil
             errorMessage = Self.describe(error)
             state = .disconnected
         }
     }
 
     /// The deliberate, symmetric "shut it down" action (§4.4): stops every device this session
-    /// started, then `indiserver` itself, then closes the MCP session. Distinct from Navi simply
-    /// quitting or crashing, which touches nothing on the Pi.
+    /// started, then (if a Rig is armed) `indiserver` itself, then always closes the MCP session
+    /// regardless. Distinct from Navi simply quitting or crashing, which touches nothing on the
+    /// Pi.
     func disconnect() async {
         guard state != .disconnected else { return }
         stopLiveness()
@@ -125,11 +171,15 @@ final class TelescopeSessionManager {
         deviceRefCounts.removeAll()
         connectionSessionID = nil
 
-        if let client, let rig = currentRig {
-            for component in rig.components where component.device != nil {
-                _ = try? await client.disconnectDevice(rigId: rig.id, role: component.role.rawValue)
+        if let client {
+            if let rig = currentRig {
+                for component in rig.components where component.device != nil {
+                    _ = try? await client.disconnectDevice(rigId: rig.id, role: component.role.rawValue)
+                }
+                _ = try? await client.stopINDIServer()
             }
-            _ = try? await client.stopINDIServer()
+            // Always close the MCP session itself, even for a bare-server connect (no rig) that
+            // has nothing device-level to tear down first.
             await client.disconnect()
         }
 
