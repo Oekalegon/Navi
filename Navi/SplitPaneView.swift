@@ -38,7 +38,11 @@ struct ManagedSplitView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ManagedSplitContainer, context: Context) {
-        // Children sync is driven by withObservationTracking inside the container.
+        // Children sync is driven by withObservationTracking inside the container; orientation
+        // isn't observable the same way (it's a plain `Bool` derived from `pane.direction` at the
+        // call site in `SplitPaneView.body`, not read inside the container itself), so it has to
+        // be re-applied here on every update pass — see `updateOrientation(isHorizontal:)`.
+        nsView.updateOrientation(isHorizontal: isHorizontal)
     }
 }
 
@@ -46,7 +50,7 @@ final class ManagedSplitContainer: NSView, NSSplitViewDelegate {
     let splitView = NSSplitView()
     private let pane: SplitPane
     private let paneManager: PaneManager
-    private let isHorizontal: Bool
+    private var isHorizontal: Bool
     // Maps each child pane's UUID to its host view inside the split.
     private var paneViews: [UUID: StablePaneHostView] = [:]
 
@@ -72,6 +76,23 @@ final class ManagedSplitContainer: NSView, NSSplitViewDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    // A pane's `direction` can flip on an *existing* split node (e.g. moving one pane to be
+    // beside another that's already its sibling under the same group — the move mutates that
+    // group's `direction`/`children` in place rather than swapping in a new `SplitPane`). Since
+    // `pane.id` doesn't change, SwiftUI reuses this same `ManagedSplitContainer` instance and only
+    // calls `updateNSView`/this method — never `makeNSView` again — so `isVertical` must be
+    // re-applied here or the underlying `NSSplitView` silently keeps its old axis forever, even
+    // though the model (`SplitPane.direction`) is already correct.
+    func updateOrientation(isHorizontal: Bool) {
+        guard self.isHorizontal != isHorizontal else { return }
+        self.isHorizontal = isHorizontal
+        splitView.isVertical = isHorizontal
+        // Existing subview frames were laid out for the previous axis and make no sense along
+        // the new one — run them back through the same proportional-redistribution logic a
+        // newly-opened pane already gets, rather than NSSplitView's own `adjustSubviews()`.
+        splitView(splitView, resizeSubviewsWithOldSize: splitView.bounds.size)
+    }
 
     // MARK: - Child synchronisation
 
