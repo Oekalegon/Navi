@@ -192,6 +192,12 @@ struct ServerSettingsPane: View {
         await telescope.connect(server: server)
         if let error = telescope.errorMessage {
             unreachableWarning = "\(server.name): \(error)"
+        } else {
+            // NAVI-67: a bare-server connect has no Rig armed — see if the now-live devices
+            // match an existing local Rig and, if so, upgrade to a full rig-bound connection
+            // automatically rather than leaving the toolbar showing "Select Rig…" despite
+            // already being connected.
+            await RigAutoMatcher.matchAndUpgrade(telescope: telescope, modelContext: modelContext, server: server)
         }
     }
 
