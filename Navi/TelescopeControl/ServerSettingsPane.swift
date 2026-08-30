@@ -33,7 +33,6 @@ struct ServerSettingsPane: View {
     @State private var editingServer: ServerProfile?
     @State private var isPresentingNewServer = false
     @State private var serverPendingDeletion: ServerProfile?
-    @State private var connectingServerID: PersistentIdentifier?
     @State private var unreachableWarning: String?
 
     var body: some View {
@@ -143,7 +142,9 @@ struct ServerSettingsPane: View {
     }
 
     private func rowConnectionState(for server: ServerProfile) -> RowConnectionState {
-        if connectingServerID == server.persistentModelID { return .connecting }
+        if telescope.state == .connecting, telescope.connectingServer?.persistentModelID == server.persistentModelID {
+            return .connecting
+        }
         if telescope.state == .connected, telescope.currentServer?.persistentModelID == server.persistentModelID {
             return .connected
         }
@@ -186,14 +187,9 @@ struct ServerSettingsPane: View {
         Task { await connectAndReportFailure(server) }
     }
 
-    // Shared by the row button and connectAfterSave. Guards against a rare rapid-double-click
-    // race across two different rows: if another connect attempt has already claimed
-    // connectingServerID by the time this one finishes, don't clear it out from under that one.
+    // Shared by the row button and connectAfterSave.
     private func connectAndReportFailure(_ server: ServerProfile) async {
-        let id = server.persistentModelID
-        connectingServerID = id
         await telescope.connect(server: server)
-        if connectingServerID == id { connectingServerID = nil }
         if let error = telescope.errorMessage {
             unreachableWarning = "\(server.name): \(error)"
         }

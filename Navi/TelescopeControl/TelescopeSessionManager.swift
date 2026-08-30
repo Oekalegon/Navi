@@ -51,6 +51,14 @@ final class TelescopeSessionManager {
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
 
+    /// The server a `connect(...)` call currently has in flight, non-nil only while `state ==
+    /// .connecting`. Exists so multi-window UI (NAVI-63: `ServerSettingsPane`'s per-row Connect
+    /// button) can show *which* row is connecting from every window, not just the one that
+    /// initiated it — tracking that as view-local `@State` would leave every other window's copy
+    /// of the same list unable to distinguish "connecting" from "unavailable, something else is
+    /// live" until the connect resolves.
+    private(set) var connectingServer: ServerProfile?
+
     /// Bumped on every successful `connect()` — even a reconnect to the identical rig/server —
     /// and reset to `nil` on disconnect/connection-loss. Exists purely so a SwiftUI `.task(id:)`
     /// call site (e.g. `ObservatoryDashboardView`'s device acquisition, §3.3) can detect "a fresh
@@ -92,6 +100,7 @@ final class TelescopeSessionManager {
         guard state == .disconnected else { return }
         state = .connecting
         errorMessage = nil
+        connectingServer = server
 
         let client = INDIMCPClient(endpoint: server.url)
         do {
@@ -99,6 +108,7 @@ final class TelescopeSessionManager {
             self.client = client
             self.currentRig = rig
             self.currentServer = server
+            connectingServer = nil
             nextSessionID += 1
             connectionSessionID = nextSessionID
             state = .connected
@@ -108,6 +118,7 @@ final class TelescopeSessionManager {
             // failed — disconnect the locally-constructed client so that session doesn't dangle;
             // nothing else holds a reference to it since `self.client` is only set on success.
             await client.disconnect()
+            connectingServer = nil
             errorMessage = Self.describe(error)
             state = .disconnected
         }
@@ -123,6 +134,7 @@ final class TelescopeSessionManager {
         guard state == .disconnected else { return }
         state = .connecting
         errorMessage = nil
+        connectingServer = server
 
         let client = INDIMCPClient(endpoint: server.url)
         do {
@@ -133,12 +145,14 @@ final class TelescopeSessionManager {
             _ = try await TelescopeConnectCascade.withTimeout(seconds: 15) { try await client.connect() }
             self.client = client
             self.currentServer = server
+            connectingServer = nil
             nextSessionID += 1
             connectionSessionID = nextSessionID
             state = .connected
             startLiveness(client: client)
         } catch {
             await client.disconnect()
+            connectingServer = nil
             errorMessage = Self.describe(error)
             state = .disconnected
         }
