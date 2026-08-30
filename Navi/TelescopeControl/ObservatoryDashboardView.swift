@@ -280,9 +280,13 @@ struct ObservatoryDashboardView: View {
 }
 
 // AstroKit's `Observatory` takes lon/lat in radians; INDIMCPKit's uses degrees. Both packages
-// have a type literally named `Observatory` — always qualify (docs/design/INDI-MCP-
-// Integration.md §4.6).
-private extension AstroObservatory {
+// have a type literally named `Observatory` (docs/design/INDI-MCP-Integration.md §4.6) — and
+// each also shadows its own module name with an empty enum of the same name, which defeats a
+// bare `AstroKit.Observatory`/`INDIMCPKit.Observatory` qualification once both are imported in
+// one file. Use the `AstroObservatory`/`INDIObservatory` typealiases (declared from single-
+// import contexts in AstroKitObservatoryAlias.swift / TelescopeSessionManager.swift) instead.
+// Not `private`: covered directly by ObservatoryDashboardTests.
+extension AstroObservatory {
     init(indi: INDIObservatory) {
         self.init(
             longitude: indi.longitudeDeg * .pi / 180,
