@@ -318,7 +318,7 @@ class PaneManager {
         case .archiveViewer:
             manager.archiveContent = archiveContent
             manager.archiveFilter = archiveFilter
-        case .aiAssistant, .observatoryDashboard, .empty:
+        case .aiAssistant, .observatoryDashboard, .telescopeMessages, .empty:
             break
         }
         removeLeaf(leaf)
@@ -459,6 +459,31 @@ class PaneManager {
             saveLayout()
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             splitPane(ai, direction: .horizontal, newPaneType: .observatoryDashboard)
+        }
+    }
+
+    var isTelescopeMessagesVisible: Bool {
+        findPane(ofType: .telescopeMessages, in: rootPane) != nil
+    }
+
+    // Button-driven like every other pane (§3.3/§4.7) — unlike the Dashboard, this one has no
+    // auto-open exception.
+    func toggleTelescopeMessages() {
+        if isTelescopeMessagesVisible {
+            closePane(ofType: .telescopeMessages)
+        } else {
+            openTelescopeMessagesPane()
+        }
+    }
+
+    // Same placement heuristic as the Dashboard (§4.7 gives this pane no width/orientation
+    // preference of its own either): reuse an empty pane if available, else split from the AI pane.
+    private func openTelescopeMessagesPane() {
+        if let empty = findPane(ofType: .empty, in: rootPane) {
+            empty.paneType = .telescopeMessages
+            saveLayout()
+        } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
+            splitPane(ai, direction: .horizontal, newPaneType: .telescopeMessages)
         }
     }
 

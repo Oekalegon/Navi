@@ -93,6 +93,12 @@ struct ContentView: View {
                     title: "FITS Viewer",
                     isVisible: paneManager.isFITSViewerVisible
                 ) { paneManager.toggleFITSViewer() }
+
+                PaneToggleButton(
+                    icon: "terminal",
+                    title: "Telescope Messages",
+                    isVisible: paneManager.isTelescopeMessagesVisible
+                ) { paneManager.toggleTelescopeMessages() }
             }
         }
 
