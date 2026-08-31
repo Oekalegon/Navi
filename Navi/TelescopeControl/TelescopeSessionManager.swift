@@ -85,6 +85,8 @@ final class TelescopeSessionManager {
     private var client: INDIMCPClient?
     private var devices: [Role: ObservableDevice] = [:]
     private var deviceRefCounts: [Role: Int] = [:]
+    private var messageStream: ObservableMessageStream?
+    private var messageStreamRefCount = 0
     private var connectionEventsTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
 
@@ -169,6 +171,9 @@ final class TelescopeSessionManager {
         for device in devices.values { await device.stop() }
         devices.removeAll()
         deviceRefCounts.removeAll()
+        if let messageStream { await messageStream.stop() }
+        messageStream = nil
+        messageStreamRefCount = 0
         connectionSessionID = nil
 
         if let client {
@@ -232,6 +237,47 @@ final class TelescopeSessionManager {
         } else {
             deviceRefCounts[role] = count - 1
         }
+    }
+
+    /// Starts (or joins) the shared, unscoped `ObservableMessageStream`, reference-counted the same
+    /// way `acquireDevice(for:)` is (§3.3/§4.7). Unscoped (not `messageEvents(device:)`'s single-
+    /// device filter) because the pane needs messages from every device in the current rig, and
+    /// the underlying stream can only ever scope to one device at a time — callers filter
+    /// `events`/history down to the rig's device names themselves (`TelescopeMessageFilter`).
+    /// Doesn't key by role like `devices`/`deviceRefCounts` — a message stream isn't per-role, so
+    /// this is a single optional field with its own ref count instead.
+    @discardableResult
+    func acquireMessageStream() -> ObservableMessageStream? {
+        guard let client, state == .connected else { return nil }
+        messageStreamRefCount += 1
+        if let existing = messageStream { return existing }
+        let observable = ObservableMessageStream(client: client)
+        messageStream = observable
+        Task { await observable.start() }
+        return observable
+    }
+
+    /// Releases one consumer's interest in the shared message stream, stopping and removing it
+    /// once the last consumer has released — mirrors `releaseDevice(for:)`.
+    func releaseMessageStream() {
+        guard messageStreamRefCount > 0 else { return }
+        if messageStreamRefCount <= 1 {
+            messageStreamRefCount = 0
+            if let stream = messageStream {
+                messageStream = nil
+                Task { await stream.stop() }
+            }
+        } else {
+            messageStreamRefCount -= 1
+        }
+    }
+
+    /// The durable message-event log (§4.7's "also loads history... on open, rather than starting
+    /// from a blank slate"), unscoped for the same reason `acquireMessageStream()` is — callers
+    /// filter to the rig's device names themselves.
+    func getMessageHistory(since: String? = nil) async throws -> [EventRecord] {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.getEvents(stream: .messages, since: since)
     }
 
     /// Live Observatory list from the currently-connected server, for refreshing the toolbar's
@@ -342,6 +388,9 @@ final class TelescopeSessionManager {
         for device in devices.values { await device.stop() }
         devices.removeAll()
         deviceRefCounts.removeAll()
+        if let messageStream { await messageStream.stop() }
+        messageStream = nil
+        messageStreamRefCount = 0
         connectionSessionID = nil
         client = nil
         currentRig = nil

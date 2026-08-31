@@ -242,6 +242,8 @@ struct PaneContentView: View {
                 InfoPanelView(pane: pane)
             case .observatoryDashboard:
                 ObservatoryDashboardView(pane: pane)
+            case .telescopeMessages:
+                TelescopeMessagesView(pane: pane)
             case .empty:
                 Color.clear
             }
