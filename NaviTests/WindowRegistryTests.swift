@@ -12,7 +12,12 @@ import Foundation
 // NAVI-10: detaching panes into new windows and routing archive selections
 // across windows (windows without an archive pane follow the primary archive;
 // ambiguous FITS destinations are returned for the user to pick).
+//
+// Serialized (NAVI-70): adoptWindow/releaseWindow persist to the real, globally-keyed
+// UserDefaults store WindowTabGroup uses (there's no injectable/scoped store) — running these
+// tests in parallel would let them race on that shared key.
 @MainActor
+@Suite(.serialized)
 struct WindowRegistryTests {
 
     // A manager whose root splits horizontally into one leaf per type.
@@ -329,5 +334,25 @@ struct WindowRegistryTests {
 
         #expect(registry.beginLaunchWindowRestorationIfNeeded())
         #expect(!registry.beginLaunchWindowRestorationIfNeeded())
+    }
+
+    // Regression test for a real data-loss bug: closing windows one at a time down to zero (a
+    // window closing normally, or every window tearing down in sequence during a full app quit)
+    // must not overwrite a previously-good persisted list with an empty one — that would make
+    // NaviApp's defaultValue reseed the fresh two-tab default on next launch, discarding whatever
+    // the user actually had open. Touches the real UserDefaults key WindowTabGroup persists to
+    // (there's no injectable store), so the previous value is saved and restored around the test.
+    @Test func releasingTheLastWindowDoesNotWipeThePersistedList() {
+        let key = "navi.allWindowTabGroups"
+        let previous = UserDefaults.standard.data(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+
+        let registry = WindowRegistry()
+        let group = WindowTabGroup.blank(name: "Only")
+        _ = registry.adoptWindow(group)
+
+        registry.releaseWindow(group.id)
+
+        #expect(WindowTabGroup.loadAllPersisted().map(\.id) == [group.id])
     }
 }

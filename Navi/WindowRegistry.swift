@@ -116,6 +116,13 @@ final class WindowRegistry {
     func releaseWindow(_ id: UUID) {
         windowBoxes[id] = nil
         windowOrder.removeAll { $0 == id }
+        // Never persist a "zero windows" list: closing windows one at a time (including the
+        // sequence of onDisappear calls a full app quit can fire, one per open window) would
+        // otherwise shrink the persisted list a step at a time and, on whichever window happens
+        // to close last, overwrite it with an empty list — wiping the user's actual arrangement
+        // and making NaviApp's defaultValue reseed the fresh two-tab default on next launch. A
+        // window closing on its own while others remain open still correctly shrinks the list.
+        guard !windowOrder.isEmpty else { return }
         persistAllWindows()
     }
 
