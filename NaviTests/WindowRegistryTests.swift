@@ -243,4 +243,91 @@ struct WindowRegistryTests {
         #expect(candidates.isEmpty)
         #expect(main.fitsURL == frameURL)
     }
+
+    // MARK: Window-level tab tracking (NAVI-70)
+
+    @Test func adoptWindowIsIdempotent() {
+        let registry = WindowRegistry()
+        let group = WindowTabGroup.blank(name: "A")
+
+        let first = registry.adoptWindow(group)
+        let second = registry.adoptWindow(group)
+
+        #expect(first === second)
+    }
+
+    @Test func otherWindowsExcludesSelfAndLabelsTheOldestMain() {
+        let registry = WindowRegistry()
+        let main = WindowTabGroup.blank(name: "Telescope Control")
+        let secondary = WindowTabGroup.blank(name: "Post-Processing")
+        _ = registry.adoptWindow(main)
+        _ = registry.adoptWindow(secondary)
+
+        let fromMain = registry.otherWindows(excluding: main.id)
+        let fromSecondary = registry.otherWindows(excluding: secondary.id)
+
+        #expect(fromMain.map(\.title) == ["Post-Processing"])
+        #expect(fromSecondary.map(\.title) == ["Main Window"])
+    }
+
+    @Test func moveTabRelocatesBetweenWindowsAndSelectsItThere() {
+        let registry = WindowRegistry()
+        var sourceGroup = WindowTabGroup.blank(name: "A")
+        let movingTabID = sourceGroup.addingTab(name: "B")
+        let destGroup = WindowTabGroup.blank(name: "C")
+        let source = registry.adoptWindow(sourceGroup)
+        let destination = registry.adoptWindow(destGroup)
+
+        let moved = registry.moveTab(TabDescriptor(id: movingTabID, name: "B"), toWindow: destGroup.id)
+
+        #expect(moved)
+        #expect(source.group.tabs.map(\.id) == [sourceGroup.tabs[0].id])
+        #expect(destination.group.tabs.map(\.id) == [destGroup.tabs[0].id, movingTabID])
+        #expect(destination.group.selectedTabID == movingTabID)
+    }
+
+    @Test func moveTabRefusesToEmptyAWindowsLastTab() {
+        let registry = WindowRegistry()
+        let sourceGroup = WindowTabGroup.blank(name: "Only")
+        let destGroup = WindowTabGroup.blank(name: "Other")
+        let source = registry.adoptWindow(sourceGroup)
+        let destination = registry.adoptWindow(destGroup)
+
+        let moved = registry.moveTab(sourceGroup.tabs[0], toWindow: destGroup.id)
+
+        #expect(!moved)
+        #expect(source.group.tabs.count == 1)
+        #expect(destination.group.tabs.map(\.id) == [destGroup.tabs[0].id])
+    }
+
+    @Test func moveTabRefusesAnUnknownDestination() {
+        let registry = WindowRegistry()
+        var sourceGroup = WindowTabGroup.blank(name: "A")
+        let movingTabID = sourceGroup.addingTab(name: "B")
+        let source = registry.adoptWindow(sourceGroup)
+
+        let moved = registry.moveTab(TabDescriptor(id: movingTabID, name: "B"), toWindow: UUID())
+
+        #expect(!moved)
+        #expect(source.group.tabs.count == 2)
+    }
+
+    @Test func releaseWindowRemovesItFromOtherWindows() {
+        let registry = WindowRegistry()
+        let main = WindowTabGroup.blank(name: "A")
+        let secondary = WindowTabGroup.blank(name: "B")
+        _ = registry.adoptWindow(main)
+        _ = registry.adoptWindow(secondary)
+
+        registry.releaseWindow(secondary.id)
+
+        #expect(registry.otherWindows(excluding: main.id).isEmpty)
+    }
+
+    @Test func launchWindowRestorationGateFiresOnlyOnce() {
+        let registry = WindowRegistry()
+
+        #expect(registry.beginLaunchWindowRestorationIfNeeded())
+        #expect(!registry.beginLaunchWindowRestorationIfNeeded())
+    }
 }

@@ -102,10 +102,14 @@ struct NaviApp: App {
         WindowGroup(for: WindowTabGroup.self) { $group in
             ContentView(group: group)
         } defaultValue: {
-            // Only the very first window (nothing registered yet) restores/seeds the main
-            // window's persisted tabs; a later explicit File > New Window starts blank, matching
-            // pre-NAVI-70 "New Window" behavior rather than duplicating the main window's tabs.
-            WindowRegistry.shared.entries.isEmpty ? WindowTabGroup.loadOrSeedMainWindow() : WindowTabGroup.blank()
+            // Only the very first window (nothing registered yet) restores the persisted main
+            // window (or seeds the two-tab default on a fresh install); a later explicit File >
+            // New Window starts blank, matching pre-NAVI-70 "New Window" behavior. Every other
+            // previously-open window (if any) is reopened by ContentView's one-shot launch step
+            // once this first window has appeared — see openRemainingWindowsAtLaunchIfNeeded().
+            WindowRegistry.shared.entries.isEmpty
+                ? (WindowTabGroup.loadAllPersisted().first ?? WindowTabGroup.seedDefaultMainWindow())
+                : WindowTabGroup.blank()
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {

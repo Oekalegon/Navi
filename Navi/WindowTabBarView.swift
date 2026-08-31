@@ -10,12 +10,15 @@
 import SwiftUI
 
 struct WindowTabBarView: View {
+    let windowID: UUID
     @Binding var tabs: [TabDescriptor]
     @Binding var selectedTabID: UUID
     let onAdd: () -> Void
     let onClose: (UUID) -> Void
     let onMoveLeft: (UUID) -> Void
     let onMoveRight: (UUID) -> Void
+    let onMoveToNewWindow: (UUID) -> Void
+    let onMoveToWindow: (UUID, UUID) -> Void
 
     @State private var hoveredTabID: UUID?
     @State private var renamingTabID: UUID?
@@ -88,6 +91,18 @@ struct WindowTabBarView: View {
                 .disabled(tabs.first?.id == tab.id)
             Button("Move Right") { onMoveRight(tab.id) }
                 .disabled(tabs.last?.id == tab.id)
+            if tabs.count > 1 {
+                Divider()
+                Button("Move to New Window") { onMoveToNewWindow(tab.id) }
+                let otherWindows = WindowRegistry.shared.otherWindows(excluding: windowID)
+                if !otherWindows.isEmpty {
+                    Menu("Move to Window") {
+                        ForEach(otherWindows, id: \.id) { window in
+                            Button(window.title) { onMoveToWindow(tab.id, window.id) }
+                        }
+                    }
+                }
+            }
         }
     }
 
