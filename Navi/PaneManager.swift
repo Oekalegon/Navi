@@ -10,6 +10,11 @@ import Observation
 
 @Observable
 class PaneManager {
+    // Identifies which tab (WindowToken.id) this manager's layout persists under (NAVI-70) —
+    // defaults to a fresh UUID so existing call sites/test fixtures that don't care about
+    // persistence (PaneManager(), PaneManager(rootType:)) keep working unchanged; only
+    // WindowRegistry, which actually knows the owning tab's id, passes one explicitly.
+    let tabID: UUID
     var rootPane: SplitPane
     var archiveContent: ArchiveViewerContent?
     var archiveFilter: ArchiveFilter = ArchiveFilter()
@@ -45,23 +50,41 @@ class PaneManager {
         return frames
     }
 
-    private static let layoutKey = "navi.mainWindowLayout"
+    private static func layoutKey(for tabID: UUID) -> String { "navi.tabLayout.\(tabID.uuidString)" }
 
-    init(rootType: PaneType = .aiAssistant) {
+    init(tabID: UUID = UUID(), rootType: PaneType = .aiAssistant) {
+        self.tabID = tabID
         self.rootPane = SplitPane(type: rootType)
     }
 
     func saveLayout() {
         guard let data = try? JSONEncoder().encode(rootPane.snapshot()) else { return }
-        UserDefaults.standard.set(data, forKey: Self.layoutKey)
+        UserDefaults.standard.set(data, forKey: Self.layoutKey(for: tabID))
     }
 
-    static func fromSavedLayout() -> PaneManager? {
-        guard let data = UserDefaults.standard.data(forKey: layoutKey),
+    static func fromSavedLayout(tabID: UUID) -> PaneManager? {
+        guard let data = UserDefaults.standard.data(forKey: layoutKey(for: tabID)),
               let snapshot = try? JSONDecoder().decode(PaneTreeSnapshot.self, from: data)
         else { return nil }
-        let manager = PaneManager()
+        let manager = PaneManager(tabID: tabID)
         manager.rootPane = SplitPane(snapshot: snapshot)
+        return manager
+    }
+
+    // NAVI-70 first-launch defaults — a sensible, fully user-editable starting point, not a fixed
+    // "preset type". Both reuse the same placement heuristics a user gets from the toolbar/menu
+    // (showArchivePane's widest-leaf placement, ensureFITSViewerPane's archive-relative split)
+    // rather than hand-rolling bespoke geometry.
+    static func telescopeControlDefault(tabID: UUID) -> PaneManager {
+        let manager = PaneManager(tabID: tabID, rootType: .observatoryDashboard)
+        manager.showArchivePane()
+        manager.ensureFITSViewerPane()
+        return manager
+    }
+
+    static func postProcessingDefault(tabID: UUID) -> PaneManager {
+        let manager = PaneManager(tabID: tabID, rootType: .archiveViewer)
+        manager.ensureFITSViewerPane()
         return manager
     }
 
@@ -385,6 +408,14 @@ class PaneManager {
         } else {
             openFITSViewerPane()
         }
+    }
+
+    // Ensures a FITS Viewer pane exists without touching fitsURL — unlike showFITSViewer(url:),
+    // there's no frame to open yet (e.g. seeding a tab's default layout, NAVI-70); the pane just
+    // starts in its own empty state ("Open a FITS file to view it here").
+    func ensureFITSViewerPane() {
+        if findPane(ofType: .fitsViewer, in: rootPane) != nil { return }
+        openFITSViewerPane()
     }
 
     private func openFITSViewerPane() {

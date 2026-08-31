@@ -48,6 +48,14 @@ final class WindowRegistry {
     private var released: Set<UUID> = []
     private var nextNumber = 1
 
+    // NAVI-70 window-level tracking (separate from the per-tab Entry bookkeeping above): every
+    // currently open window's tab group, keyed by the window's own WindowTabGroup.id, plus the
+    // order windows were opened in (oldest first — the same "oldest surviving = main" convention
+    // `destination(for:)` already uses for panes, generalized to windows).
+    private var windowBoxes: [UUID: TabGroupBox] = [:]
+    private var windowOrder: [UUID] = []
+    private var hasStartedLaunchWindowRestoration = false
+
     /// The PaneManager backing a window scene: a previously staged manager, the
     /// already-registered one, or a fresh manager showing the token's root pane
     /// type (the restoration path — the staged manager did not survive the
@@ -58,15 +66,17 @@ final class WindowRegistry {
     /// routing destination with no window behind it.
     func adopt(_ token: WindowToken) -> PaneManager {
         if let entry = entries.first(where: { $0.id == token.id }) { return entry.paneManager }
-        guard !released.contains(token.id) else { return PaneManager(rootType: token.rootType) }
+        guard !released.contains(token.id) else { return PaneManager(tabID: token.id, rootType: token.rootType) }
         let manager: PaneManager
         if let s = staged.removeValue(forKey: token.id) {
             manager = s
-        } else if entries.isEmpty, token.rootType == .aiAssistant,
-                  let restored = PaneManager.fromSavedLayout() {
+        } else if let restored = PaneManager.fromSavedLayout(tabID: token.id) {
+            // NAVI-70: tab ids are now stable across relaunch (persisted in WindowTabGroup), so
+            // any tab's saved layout can be restored this way — not just a single hardcoded
+            // "first aiAssistant window" special case as before.
             manager = restored
         } else {
-            manager = PaneManager(rootType: token.rootType)
+            manager = PaneManager(tabID: token.id, rootType: token.rootType)
         }
         entries.append(Entry(id: token.id, paneManager: manager, number: nextNumber))
         nextNumber += 1
@@ -76,8 +86,11 @@ final class WindowRegistry {
     /// Stages a manager for a window about to open and returns the value to
     /// pass to openWindow.
     func stage(_ manager: PaneManager) -> WindowToken {
+        // The token's id must match manager.tabID — not a fresh UUID — so saveLayout()'s
+        // persistence key and this token's registry/restoration identity stay the same value
+        // (NAVI-70; previously harmless since layout persistence wasn't per-tab).
         let token = WindowToken(
-            id: UUID(),
+            id: manager.tabID,
             rootType: manager.rootPane.isLeaf ? manager.rootPane.paneType : .aiAssistant)
         staged[token.id] = manager
         return token
@@ -86,6 +99,78 @@ final class WindowRegistry {
     func release(_ id: UUID) {
         released.insert(id)
         entries.removeAll { $0.id == id }
+    }
+
+    /// The TabGroupBox backing a window scene: the already-registered one, or a freshly boxed
+    /// `group` for a window opening for the first time. Idempotent for the same reason `adopt(_:)`
+    /// is — SwiftUI can re-create a window's root view.
+    func adoptWindow(_ group: WindowTabGroup) -> TabGroupBox {
+        if let box = windowBoxes[group.id] { return box }
+        let box = TabGroupBox(group)
+        windowBoxes[group.id] = box
+        windowOrder.append(group.id)
+        persistAllWindows()
+        return box
+    }
+
+    func releaseWindow(_ id: UUID) {
+        windowBoxes[id] = nil
+        windowOrder.removeAll { $0 == id }
+        // Never persist a "zero windows" list: closing windows one at a time (including the
+        // sequence of onDisappear calls a full app quit can fire, one per open window) would
+        // otherwise shrink the persisted list a step at a time and, on whichever window happens
+        // to close last, overwrite it with an empty list — wiping the user's actual arrangement
+        // and making NaviApp's defaultValue reseed the fresh two-tab default on next launch. A
+        // window closing on its own while others remain open still correctly shrinks the list.
+        guard !windowOrder.isEmpty else { return }
+        persistAllWindows()
+    }
+
+    func persistAllWindows() {
+        WindowTabGroup.persistAll(windowOrder.compactMap { windowBoxes[$0]?.group })
+    }
+
+    /// One-shot gate for NaviApp's launch-time window restoration: true (and flips permanently)
+    /// exactly once per app run, so only the very first ContentView instance to ask opens the
+    /// rest of the persisted windows — every window opened afterwards (including those it opens)
+    /// gets `false` and skips the step.
+    func beginLaunchWindowRestorationIfNeeded() -> Bool {
+        guard !hasStartedLaunchWindowRestoration else { return false }
+        hasStartedLaunchWindowRestoration = true
+        return true
+    }
+
+    /// Windows other than `excluding`, labeled for a "Move to Window" menu by whichever tab they
+    /// currently have selected — more useful to the user than an arbitrary window number, and
+    /// avoids introducing a second, possibly-inconsistent numbering scheme alongside
+    /// `destination(for:)`'s pane-oriented one.
+    func otherWindows(excluding: UUID) -> [(id: UUID, title: String)] {
+        windowOrder.filter { $0 != excluding }.compactMap { id in
+            guard let box = windowBoxes[id] else { return nil }
+            let selectedName = box.group.tabs.first { $0.id == box.group.selectedTabID }?.name ?? "Untitled"
+            let isMain = windowOrder.first == id
+            return (id: id, title: isMain ? "Main Window" : selectedName)
+        }
+    }
+
+    /// Moves `tab` out of whichever open window currently holds it (if any) and into
+    /// `destinationID`'s group, selecting it there. Refuses the move — leaving every window
+    /// untouched — if the destination doesn't exist, already has it, or it's the only tab in its
+    /// current window (a window always keeps at least one tab; "New Window" is the way to pop out
+    /// a window's last remaining tab).
+    @discardableResult
+    func moveTab(_ tab: TabDescriptor, toWindow destinationID: UUID) -> Bool {
+        guard let destination = windowBoxes[destinationID],
+              !destination.group.tabs.contains(where: { $0.id == tab.id })
+        else { return false }
+        guard let source = windowBoxes.values.first(where: { $0.group.tabs.contains { $0.id == tab.id } })
+        else { return false }
+        guard source.group.tabs.count > 1 else { return false }
+        source.group.closingTab(tab.id)
+        destination.group.tabs.append(tab)
+        destination.group.selectedTabID = tab.id
+        persistAllWindows()
+        return true
     }
 
     /// The archive pane that windows without one of their own follow: the main

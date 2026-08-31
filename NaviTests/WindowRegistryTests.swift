@@ -12,7 +12,12 @@ import Foundation
 // NAVI-10: detaching panes into new windows and routing archive selections
 // across windows (windows without an archive pane follow the primary archive;
 // ambiguous FITS destinations are returned for the user to pick).
+//
+// Serialized (NAVI-70): adoptWindow/releaseWindow persist to the real, globally-keyed
+// UserDefaults store WindowTabGroup uses (there's no injectable/scoped store) — running these
+// tests in parallel would let them race on that shared key.
 @MainActor
+@Suite(.serialized)
 struct WindowRegistryTests {
 
     // A manager whose root splits horizontally into one leaf per type.
@@ -242,5 +247,112 @@ struct WindowRegistryTests {
         let candidates = registry.showFrame(url: frameURL, from: detached)
         #expect(candidates.isEmpty)
         #expect(main.fitsURL == frameURL)
+    }
+
+    // MARK: Window-level tab tracking (NAVI-70)
+
+    @Test func adoptWindowIsIdempotent() {
+        let registry = WindowRegistry()
+        let group = WindowTabGroup.blank(name: "A")
+
+        let first = registry.adoptWindow(group)
+        let second = registry.adoptWindow(group)
+
+        #expect(first === second)
+    }
+
+    @Test func otherWindowsExcludesSelfAndLabelsTheOldestMain() {
+        let registry = WindowRegistry()
+        let main = WindowTabGroup.blank(name: "Telescope Control")
+        let secondary = WindowTabGroup.blank(name: "Post-Processing")
+        _ = registry.adoptWindow(main)
+        _ = registry.adoptWindow(secondary)
+
+        let fromMain = registry.otherWindows(excluding: main.id)
+        let fromSecondary = registry.otherWindows(excluding: secondary.id)
+
+        #expect(fromMain.map(\.title) == ["Post-Processing"])
+        #expect(fromSecondary.map(\.title) == ["Main Window"])
+    }
+
+    @Test func moveTabRelocatesBetweenWindowsAndSelectsItThere() {
+        let registry = WindowRegistry()
+        var sourceGroup = WindowTabGroup.blank(name: "A")
+        let movingTabID = sourceGroup.addingTab(name: "B")
+        let destGroup = WindowTabGroup.blank(name: "C")
+        let source = registry.adoptWindow(sourceGroup)
+        let destination = registry.adoptWindow(destGroup)
+
+        let moved = registry.moveTab(TabDescriptor(id: movingTabID, name: "B"), toWindow: destGroup.id)
+
+        #expect(moved)
+        #expect(source.group.tabs.map(\.id) == [sourceGroup.tabs[0].id])
+        #expect(destination.group.tabs.map(\.id) == [destGroup.tabs[0].id, movingTabID])
+        #expect(destination.group.selectedTabID == movingTabID)
+    }
+
+    @Test func moveTabRefusesToEmptyAWindowsLastTab() {
+        let registry = WindowRegistry()
+        let sourceGroup = WindowTabGroup.blank(name: "Only")
+        let destGroup = WindowTabGroup.blank(name: "Other")
+        let source = registry.adoptWindow(sourceGroup)
+        let destination = registry.adoptWindow(destGroup)
+
+        let moved = registry.moveTab(sourceGroup.tabs[0], toWindow: destGroup.id)
+
+        #expect(!moved)
+        #expect(source.group.tabs.count == 1)
+        #expect(destination.group.tabs.map(\.id) == [destGroup.tabs[0].id])
+    }
+
+    @Test func moveTabRefusesAnUnknownDestination() {
+        let registry = WindowRegistry()
+        var sourceGroup = WindowTabGroup.blank(name: "A")
+        let movingTabID = sourceGroup.addingTab(name: "B")
+        let source = registry.adoptWindow(sourceGroup)
+
+        let moved = registry.moveTab(TabDescriptor(id: movingTabID, name: "B"), toWindow: UUID())
+
+        #expect(!moved)
+        #expect(source.group.tabs.count == 2)
+    }
+
+    @Test func releaseWindowRemovesItFromOtherWindows() {
+        let registry = WindowRegistry()
+        let main = WindowTabGroup.blank(name: "A")
+        let secondary = WindowTabGroup.blank(name: "B")
+        _ = registry.adoptWindow(main)
+        _ = registry.adoptWindow(secondary)
+
+        registry.releaseWindow(secondary.id)
+
+        #expect(registry.otherWindows(excluding: main.id).isEmpty)
+    }
+
+    @Test func launchWindowRestorationGateFiresOnlyOnce() {
+        let registry = WindowRegistry()
+
+        #expect(registry.beginLaunchWindowRestorationIfNeeded())
+        #expect(!registry.beginLaunchWindowRestorationIfNeeded())
+    }
+
+    // Regression test for a real data-loss bug: closing windows one at a time down to zero (a
+    // window closing normally, or every window tearing down in sequence during a full app quit)
+    // must not overwrite a previously-good persisted list with an empty one — that would make
+    // NaviApp's defaultValue reseed the fresh two-tab default on next launch, discarding whatever
+    // the user actually had open. Touches the real UserDefaults key WindowTabGroup persists to
+    // (there's no injectable store), so the previous value is saved and restored around the test.
+    @Test func releasingTheLastWindowDoesNotWipeThePersistedList() {
+        let key = "navi.allWindowTabGroups"
+        let previous = UserDefaults.standard.data(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+
+        let registry = WindowRegistry()
+        let group = WindowTabGroup.blank(name: "Only")
+        _ = registry.adoptWindow(group)
+
+        registry.releaseWindow(group.id)
+
+        #expect(WindowTabGroup.loadAllPersisted().map(\.id) == [group.id])
     }
 }
