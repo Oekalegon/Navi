@@ -16,15 +16,24 @@ import SwiftData
 /// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
 /// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
 ///
-/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose 9 `RigSection` subitems
-/// (Overview, Mount, OTA/Focuser, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater,
-/// Observatory Control) let the user jump straight to one equipment concern instead of scrolling
-/// through `RigEditForm`'s whole form. Tapping the rig's own name/row (the `Section` header) isn't
-/// itself selectable — it navigates to the read-only Overview subitem, and each Overview row has
-/// its own "open" button to jump into that role's editable page from there.
-/// `.listStyle(.sidebar)` is what gives `Section` its collapsible chevron and bold-header rendering
-/// here — a plain `List` row-styling modifier, unrelated to the `NavigationSplitView`
-/// toolbar-chrome conflict noted above; it does not reintroduce that bug.
+/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose subitems (Overview,
+/// OTA/Focuser, Mount, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater, Observatory
+/// Control) let the user jump straight to one equipment concern instead of scrolling through
+/// `RigEditForm`'s whole form. Imaging Train is itself a `DisclosureGroup` with its own four
+/// sub-pages (Camera/Filter Wheel/Rotator/Off-Axis Guider — see `ImagingTrainPart`), since a `List`
+/// `Section` can't nest another `Section` directly but can contain a `DisclosureGroup`. Tapping the
+/// rig's own name/row (the `Section` header) isn't itself selectable — it navigates to the
+/// read-only Overview subitem, and each Overview row has its own "open" button to jump into that
+/// role's editable page from there. The rig's name is bold/larger in this header row to read as a
+/// group heading, distinct from its subitem rows.
+///
+/// Deliberately the default `List` style, not `.sidebar` — `.sidebar`'s vibrancy/background
+/// material is designed for a `List` hosted directly by `NavigationSplitView`; applied to this
+/// plain `HStack` sidebar it rendered as an unexpectedly dark, opaque background instead of
+/// blending with the window. The tradeoff is no native collapse/disclosure triangle on each rig's
+/// own `Section` (Imaging Train's nested `DisclosureGroup` still gets one, since that's a distinct
+/// SwiftUI control unaffected by the `List` style choice) — acceptable given a rig only ever has a
+/// handful of top-level subitems, all shown at once.
 struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
@@ -86,10 +95,7 @@ struct RigSettingsPane: View {
                     // `RigEditForm` instance — no state lost while composing.
                     if case .new = selection {
                         Section {
-                            ForEach(RigSection.allCases) { section in
-                                Label(section.title, systemImage: section.icon)
-                                    .tag(Selection.new(section))
-                            }
+                            rigSectionRows(makeSelection: { .new($0) })
                         } header: {
                             Text("New Rig")
                                 .foregroundStyle(.secondary)
@@ -97,16 +103,20 @@ struct RigSettingsPane: View {
                     }
                     ForEach(rigs) { rig in
                         Section {
-                            ForEach(RigSection.allCases) { section in
-                                Label(section.title, systemImage: section.icon)
-                                    .tag(Selection.existing(rig.persistentModelID, section))
-                            }
+                            rigSectionRows(makeSelection: { .existing(rig.persistentModelID, $0) })
                         } header: {
                             rigHeaderRow(for: rig)
                         }
                     }
                 }
-                .listStyle(.sidebar)
+                // NAVI-81 originally used `.listStyle(.sidebar)` for its collapsible-chevron
+                // rendering, but that style's vibrancy/background material is designed for a
+                // `List` hosted directly by `NavigationSplitView` — here it's a plain `HStack`
+                // sidebar (see this file's own doc comment for why), so `.sidebar` rendered as an
+                // unexpectedly dark, opaque background instead of blending with the window. Falls
+                // back to the same (default) style `ServerSettingsPane`/`ObservatorySettingsPane`
+                // use — no collapse/disclosure triangle, but every subitem stays visible, which is
+                // fine given a rig only ever has 9 of them.
             }
         }
     }
@@ -161,11 +171,48 @@ struct RigSettingsPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The 9 subitem rows shared by a real rig's `Section` and the temporary "New Rig" `Section`
+    /// (NAVI-81) — `makeSelection` turns a `RigSection` into whichever `Selection` case the caller
+    /// needs (`.existing(id, _)` or `.new(_)`). Imaging Train is a `DisclosureGroup`, not a plain
+    /// row: it needs a third nesting level (Camera/Filter Wheel/Rotator/Off-Axis Guider), which
+    /// `List` `Section`s can't nest directly, but `DisclosureGroup` can as row content. Its own
+    /// label just expands/collapses (tapping it doesn't select anything, matching how the rig's own
+    /// `Section` header isn't selectable either) — the first child row is the "which
+    /// `ImagingTrainProfile`" page other rows used to be reached from directly.
+    @ViewBuilder
+    private func rigSectionRows(makeSelection: @escaping (RigSection) -> Selection) -> some View {
+        Label(RigSection.overview.title, systemImage: RigSection.overview.icon)
+            .tag(makeSelection(.overview))
+        Label(RigSection.opticalAssembly.title, systemImage: RigSection.opticalAssembly.icon)
+            .tag(makeSelection(.opticalAssembly))
+        Label(RigSection.mount.title, systemImage: RigSection.mount.icon)
+            .tag(makeSelection(.mount))
+        DisclosureGroup("Imaging Train") {
+            Label(RigSection.imagingTrain(nil).title, systemImage: RigSection.imagingTrain(nil).icon)
+                .tag(makeSelection(.imagingTrain(nil)))
+            ForEach(ImagingTrainPart.allCases) { part in
+                Label(part.title, systemImage: part.icon)
+                    .tag(makeSelection(.imagingTrain(part)))
+            }
+        }
+        Label(RigSection.guideScope.title, systemImage: RigSection.guideScope.icon)
+            .tag(makeSelection(.guideScope))
+        Label(RigSection.powerHub.title, systemImage: RigSection.powerHub.icon)
+            .tag(makeSelection(.powerHub))
+        Label(RigSection.flatScreen.title, systemImage: RigSection.flatScreen.icon)
+            .tag(makeSelection(.flatScreen))
+        Label(RigSection.dewHeater.title, systemImage: RigSection.dewHeater.icon)
+            .tag(makeSelection(.dewHeater))
+        Label(RigSection.observatoryControl.title, systemImage: RigSection.observatoryControl.icon)
+            .tag(makeSelection(.observatoryControl))
+    }
+
     private func rigHeaderRow(for rig: RigProfile) -> some View {
         HStack {
             HStack(spacing: 6) {
                 Text(rig.name)
-                    .font(.body)
+                    .font(.title3)
+                    .fontWeight(.bold)
                 if rig.hasStaleLibraryReferences {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .foregroundStyle(.orange)

@@ -11,10 +11,18 @@ import Foundation
 /// Rig Settings pane's sidebar shows these as subitems under each rig, so editing e.g. the Imaging
 /// Train doesn't mean scrolling past every other role.
 ///
+/// `overview` is a read-only summary of every role at once (each row has a small button to jump to
+/// that role's own editable page) — it's what `RigEditForm` shows when the rig itself is selected,
+/// rather than landing directly on an editable page.
+///
 /// `guideScope` deliberately bundles two of `RigProfile`'s relationships (`guideOpticalAssembly`
 /// *and* `guideCamera`) onto one page — a guide scope and its camera are physically one subsystem
-/// (§4.3). Every other case maps to exactly one `RigProfile` relationship or
-/// `StandaloneComponentEntry` role.
+/// (§4.3). `imagingTrain`'s associated `ImagingTrainPart` splits that one entity's fields across
+/// four sub-pages (Camera/Filter Wheel/Rotator/Off-Axis Guider) instead of one combined form —
+/// `.offAxisGuider` edits the exact same `guideCamera` relationship `guideScope` does (per
+/// `RigProfile`'s own doc comment: `guideCamera` is either a separate guide scope's camera, or an
+/// off-axis guider inserted into the imaging train, depending on whether `guideOpticalAssembly` is
+/// set) — it's the same field reachable from two navigation spots, not a separate one.
 ///
 /// `dewHeater` and `observatoryControl` each still map to a *single* `StandaloneComponentEntry`,
 /// matching today's one-entry-per-role model — not because that's the desired end state, but
@@ -25,31 +33,26 @@ import Foundation
 /// - Moving `observatoryControl` (roof/dome) onto `Observatory` instead of `RigProfile` needs
 ///   INDIMCPKit's `Observatory` to gain a device-binding concept it doesn't have today. See
 ///   NAVI-83/IMCPKIT-70.
-///
-/// `overview` is a read-only summary of every role at once (each row has a small button to jump to
-/// that role's own editable page) — it's what `RigEditForm` shows when the rig itself is selected,
-/// rather than landing directly on an editable page.
-///
-/// `CaseIterable`'s declaration order is the sidebar's display order.
-enum RigSection: String, CaseIterable, Identifiable, Hashable {
+enum RigSection: Hashable {
     case overview
     case opticalAssembly
     case mount
-    case imagingTrain
+    /// `nil` is the "which `ImagingTrainProfile` does this rig use" page — the original
+    /// toggle+picker+New…/Edit… UI, unchanged. A non-nil part is one of the four inline
+    /// field-group pages that edit the *currently-selected* entity's fields directly.
+    case imagingTrain(ImagingTrainPart?)
     case guideScope
     case powerHub
     case flatScreen
     case dewHeater
     case observatoryControl
 
-    var id: String { rawValue }
-
     var title: String {
         switch self {
         case .overview: return "Overview"
         case .opticalAssembly: return "OTA / Focuser"
         case .mount: return "Mount"
-        case .imagingTrain: return "Imaging Train"
+        case .imagingTrain(let part): return part?.title ?? "Imaging Train"
         case .guideScope: return "Guide Scope"
         case .powerHub: return "Power Hub"
         case .flatScreen: return "Flat Screen"
@@ -66,12 +69,43 @@ enum RigSection: String, CaseIterable, Identifiable, Hashable {
         case .overview: return "list.bullet.rectangle.portrait"
         case .opticalAssembly: return "circle.dotted"
         case .mount: return "gyroscope"
-        case .imagingTrain: return "camera"
+        case .imagingTrain(let part): return part?.icon ?? "camera.on.rectangle"
         case .guideScope: return "camera.viewfinder"
         case .powerHub: return "bolt"
         case .flatScreen: return "rectangle.on.rectangle"
         case .dewHeater: return "flame"
         case .observatoryControl: return "building.columns"
+        }
+    }
+}
+
+/// One field-group of an `ImagingTrainProfile` (§4.3), each its own sidebar sub-page under
+/// `RigSection.imagingTrain` (NAVI-81) — edits the *currently-selected* `ImagingTrainProfile`'s
+/// fields directly and immediately (no separate Save step, unlike `ImagingTrainEditForm`'s modal
+/// drill-in, which still exists for creating a brand-new entity or picking a different one).
+enum ImagingTrainPart: CaseIterable, Identifiable, Hashable {
+    case camera
+    case filterWheel
+    case rotator
+    case offAxisGuider
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .camera: return "Camera"
+        case .filterWheel: return "Filter Wheel"
+        case .rotator: return "Rotator"
+        case .offAxisGuider: return "Off-Axis Guider"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .camera: return "camera"
+        case .filterWheel: return "circle.grid.3x3"
+        case .rotator: return "rotate.right"
+        case .offAxisGuider: return "camera.viewfinder"
         }
     }
 }

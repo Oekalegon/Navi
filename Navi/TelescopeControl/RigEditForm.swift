@@ -76,6 +76,15 @@ struct RigEditForm: View {
     @State private var isGuideOpticalAssemblyIncluded = false
     @State private var isImagingTrainIncluded = false
     @State private var isGuideCameraIncluded = false
+    // Same independent-toggle-state reasoning as above, applied to the inline Filter Wheel/Rotator
+    // pages (NAVI-81): binding the Toggle directly to `imagingTrain.hasFilterWheel` (computed from
+    // whether make/model/deviceName are non-nil) meant clearing the last populated field — e.g. the
+    // "Make" text field, while Model/Device are still empty — silently flipped the toggle off and
+    // collapsed the whole section out from under the user's cursor mid-edit. Seeded from
+    // `imagingTrain?.hasFilterWheel`/`hasRotator` in `load()` and re-seeded in the `imagingTrain`
+    // `onChange` below whenever the selected library entity itself changes.
+    @State private var includesImagingTrainFilterWheel = false
+    @State private var includesImagingTrainRotator = false
     @State private var defaultObservatoryID: String?
     @State private var defaultServer: ServerProfile?
     @State private var standaloneComponents: [StandaloneComponentEntry] = []
@@ -126,6 +135,14 @@ struct RigEditForm: View {
             load()
             await refreshObservatories()
             await refreshLiveDevices()
+        }
+        // Re-seed the Filter Wheel/Rotator toggle state whenever the *selected* ImagingTrainProfile
+        // itself changes (picked a different one, or "New…"/"Edit…" swapped it via onSaved) — each
+        // entity has its own hasFilterWheel/hasRotator, so the toggle must reflect the newly
+        // selected entity's actual state, not linger from whichever was selected before.
+        .onChange(of: imagingTrain) { _, newValue in
+            includesImagingTrainFilterWheel = newValue?.hasFilterWheel ?? false
+            includesImagingTrainRotator = newValue?.hasRotator ?? false
         }
     }
 
@@ -179,10 +196,6 @@ struct RigEditForm: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    LabeledField("Rig Name") {
-                        TextField("Backyard EQ6-R Rig", text: $name)
-                            .textFieldStyle(.roundedBorder)
-                    }
                     // Always visible regardless of `visibleSection` — depends on state from both
                     // the Optical Assembly and Guide Scope pages (NAVI-81), so it must stay visible
                     // no matter which of those the user is currently looking at.
@@ -198,32 +211,6 @@ struct RigEditForm: View {
                     Divider()
 
                     sectionContent
-
-                    Divider()
-                    LabeledField("Default Observatory") {
-                        Picker("Default Observatory", selection: $defaultObservatoryID) {
-                            Text("None").tag(String?.none)
-                            ForEach(observatoryOptions, id: \.id) { observatory in
-                                Text(observatory.name).tag(String?.some(observatory.id))
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    LabeledField("Default Server") {
-                        Picker("Default Server", selection: $defaultServer) {
-                            Text("None").tag(ServerProfile?.none)
-                            ForEach(servers) { Text($0.name).tag(ServerProfile?.some($0)) }
-                        }
-                        .labelsHidden()
-                        HStack {
-                            Button("New…") { activeSheet = .server(nil) }
-                            if defaultServer != nil {
-                                Button("Edit…") { activeSheet = .server(defaultServer) }
-                            }
-                        }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -288,7 +275,7 @@ struct RigEditForm: View {
                 onEdit: opticalAssembly.map { o in { activeSheet = .opticalAssembly(o) } }
             )
 
-        case .imagingTrain:
+        case .imagingTrain(nil):
             roleSection(
                 title: "Imaging Train",
                 isIncluded: isImagingTrainIncluded,
@@ -307,6 +294,20 @@ struct RigEditForm: View {
                 onNew: { activeSheet = .imagingTrain(nil) },
                 onEdit: imagingTrain.map { t in { activeSheet = .imagingTrain(t) } }
             )
+
+        case .imagingTrain(.camera):
+            imagingTrainCameraContent
+
+        case .imagingTrain(.filterWheel):
+            imagingTrainFilterWheelContent
+
+        case .imagingTrain(.rotator):
+            imagingTrainRotatorContent
+
+        case .imagingTrain(.offAxisGuider):
+            // Same underlying `guideCamera` relationship `guideScope` edits (see `RigSection`'s
+            // doc comment) — reachable from either navigation spot.
+            guideCameraRoleSection
 
         case .guideScope:
             // Bundles two relationships on one page (NAVI-81) — a guide scope and its camera are
@@ -329,24 +330,7 @@ struct RigEditForm: View {
                 onNew: { activeSheet = .guideOpticalAssembly(nil) },
                 onEdit: guideOpticalAssembly.map { o in { activeSheet = .guideOpticalAssembly(o) } }
             )
-            roleSection(
-                title: "Guide Camera",
-                isIncluded: isGuideCameraIncluded,
-                onToggle: { included in
-                    isGuideCameraIncluded = included
-                    guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
-                },
-                summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                picker: {
-                    Picker("Guide Camera", selection: $guideCamera) {
-                        Text("None").tag(GuideCameraProfile?.none)
-                        ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
-                    }
-                    .labelsHidden()
-                },
-                onNew: { activeSheet = .guideCamera(nil) },
-                onEdit: guideCamera.map { g in { activeSheet = .guideCamera(g) } }
-            )
+            guideCameraRoleSection
 
         case .powerHub:
             standaloneCaption
@@ -374,14 +358,309 @@ struct RigEditForm: View {
             .foregroundStyle(.secondary)
     }
 
+    /// Shared by `.guideScope` and `.imagingTrain(.offAxisGuider)` (NAVI-81) — both pages edit the
+    /// exact same `guideCamera` relationship, just reachable from two navigation spots.
+    private var guideCameraRoleSection: some View {
+        roleSection(
+            title: "Guide Camera",
+            isIncluded: isGuideCameraIncluded,
+            onToggle: { included in
+                isGuideCameraIncluded = included
+                guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
+            },
+            summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+            picker: {
+                Picker("Guide Camera", selection: $guideCamera) {
+                    Text("None").tag(GuideCameraProfile?.none)
+                    ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
+                }
+                .labelsHidden()
+            },
+            onNew: { activeSheet = .guideCamera(nil) },
+            onEdit: guideCamera.map { g in { activeSheet = .guideCamera(g) } }
+        )
+    }
+
+    // MARK: - Imaging Train inline field-group pages (NAVI-81)
+    //
+    // Unlike every other role above, these edit the *currently-selected* `ImagingTrainProfile`'s
+    // fields directly and immediately — no separate Save step, since `ImagingTrainProfile` is a
+    // SwiftData reference type already live-bound via `imagingTrain`. `imagingTrainStringBinding`/
+    // `imagingTrainOptionalBinding` read/write straight through to it and persist on every change.
+
+    private var noImagingTrainSelected: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No Imaging Train selected yet.")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            Button("Select or create an Imaging Train…") { onSelectSection(.imagingTrain(nil)) }
+                .buttonStyle(.link)
+                .font(.caption)
+        }
+    }
+
+    private func imagingTrainStringBinding(_ keyPath: ReferenceWritableKeyPath<ImagingTrainProfile, String?>) -> Binding<String> {
+        Binding(
+            get: { imagingTrain?[keyPath: keyPath] ?? "" },
+            set: { newValue in
+                imagingTrain?[keyPath: keyPath] = newValue.isEmpty ? nil : newValue
+                imagingTrain?.modifiedAt = .now
+                try? modelContext.save()
+            }
+        )
+    }
+
+    private func imagingTrainOptionalBinding<T>(_ keyPath: ReferenceWritableKeyPath<ImagingTrainProfile, T?>) -> Binding<T?> {
+        Binding(
+            get: { imagingTrain?[keyPath: keyPath] },
+            set: { newValue in
+                imagingTrain?[keyPath: keyPath] = newValue
+                imagingTrain?.modifiedAt = .now
+                try? modelContext.save()
+            }
+        )
+    }
+
+    private func imagingTrainBoolBinding(_ keyPath: ReferenceWritableKeyPath<ImagingTrainProfile, Bool?>, default defaultValue: Bool) -> Binding<Bool> {
+        Binding(
+            get: { imagingTrain?[keyPath: keyPath] ?? defaultValue },
+            set: { newValue in
+                imagingTrain?[keyPath: keyPath] = newValue
+                imagingTrain?.modifiedAt = .now
+                try? modelContext.save()
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var imagingTrainCameraContent: some View {
+        if imagingTrain != nil {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    LabeledField("Make") {
+                        TextField("ZWO", text: imagingTrainStringBinding(\.cameraMake))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledField("Model") {
+                        TextField("ASI2600MM Pro", text: imagingTrainStringBinding(\.cameraModel))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                DevicePickerField(
+                    label: "Camera INDI Device",
+                    deviceName: imagingTrainOptionalBinding(\.cameraDeviceName),
+                    sharedDevices: liveDevices
+                )
+                Toggle("Cooled", isOn: imagingTrainBoolBinding(\.cameraCooled, default: false))
+                HStack(spacing: 12) {
+                    LabeledField("Pixels X") {
+                        TextField("0", value: imagingTrainOptionalBinding(\.cameraPixelsX), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledField("Pixels Y") {
+                        TextField("0", value: imagingTrainOptionalBinding(\.cameraPixelsY), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                HStack(spacing: 12) {
+                    LabeledField("Pixel Size (µm)") {
+                        TextField("0", value: imagingTrainOptionalBinding(\.cameraPixelSizeMicron), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledField("Bit Depth") {
+                        TextField("0", value: imagingTrainOptionalBinding(\.cameraBitDepth), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+        } else {
+            noImagingTrainSelected
+        }
+    }
+
+    @ViewBuilder
+    private var imagingTrainFilterWheelContent: some View {
+        if let imagingTrain {
+            VStack(alignment: .leading, spacing: 16) {
+                Toggle("Has Filter Wheel", isOn: Binding(
+                    get: { includesImagingTrainFilterWheel },
+                    set: { included in
+                        includesImagingTrainFilterWheel = included
+                        if included {
+                            if !imagingTrain.hasFilterWheel { imagingTrain.filterWheelMake = "" }
+                        } else {
+                            imagingTrain.filterWheelMake = nil
+                            imagingTrain.filterWheelModel = nil
+                            imagingTrain.filterWheelDeviceName = nil
+                            imagingTrain.filterWheelSlots = nil
+                        }
+                        imagingTrain.modifiedAt = .now
+                        try? modelContext.save()
+                    }
+                ))
+                if includesImagingTrainFilterWheel {
+                    HStack(spacing: 12) {
+                        LabeledField("Make") {
+                            TextField("ZWO", text: imagingTrainStringBinding(\.filterWheelMake))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField("Model") {
+                            TextField("EFW", text: imagingTrainStringBinding(\.filterWheelModel))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                    DevicePickerField(
+                        label: "Filter Wheel INDI Device",
+                        deviceName: imagingTrainOptionalBinding(\.filterWheelDeviceName),
+                        sharedDevices: liveDevices
+                    )
+                    imagingTrainFilterSlotsEditor(for: imagingTrain)
+                }
+            }
+        } else {
+            noImagingTrainSelected
+        }
+    }
+
+    private func imagingTrainFilterSlotsEditor(for imagingTrain: ImagingTrainProfile) -> some View {
+        let slots = imagingTrain.filterWheelSlots ?? []
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Filter Slots")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(slots.indices, id: \.self) { index in
+                HStack {
+                    TextField("Slot", value: Binding(
+                        get: { slots[index].slot },
+                        set: { newValue in
+                            var updated = slots
+                            updated[index].slot = newValue
+                            imagingTrain.filterWheelSlots = updated
+                            try? modelContext.save()
+                        }
+                    ), format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 50)
+                    TextField("Filter name", text: Binding(
+                        get: { slots[index].name },
+                        set: { newValue in
+                            var updated = slots
+                            updated[index].name = newValue
+                            imagingTrain.filterWheelSlots = updated
+                            try? modelContext.save()
+                        }
+                    ))
+                        .textFieldStyle(.roundedBorder)
+                    Button(action: {
+                        var updated = slots
+                        updated.remove(at: index)
+                        imagingTrain.filterWheelSlots = updated
+                        try? modelContext.save()
+                    }) {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Button(action: {
+                let nextSlot = (slots.map(\.slot).max() ?? 0) + 1
+                var updated = slots
+                updated.append(FilterSlotEntry(slot: nextSlot, name: ""))
+                imagingTrain.filterWheelSlots = updated
+                try? modelContext.save()
+            }) {
+                Label("Add Slot", systemImage: "plus")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var imagingTrainRotatorContent: some View {
+        if let imagingTrain {
+            VStack(alignment: .leading, spacing: 16) {
+                Toggle("Has Rotator", isOn: Binding(
+                    get: { includesImagingTrainRotator },
+                    set: { included in
+                        includesImagingTrainRotator = included
+                        if included {
+                            if !imagingTrain.hasRotator { imagingTrain.rotatorMake = "" }
+                        } else {
+                            imagingTrain.rotatorMake = nil
+                            imagingTrain.rotatorModel = nil
+                            imagingTrain.rotatorDeviceName = nil
+                        }
+                        imagingTrain.modifiedAt = .now
+                        try? modelContext.save()
+                    }
+                ))
+                if includesImagingTrainRotator {
+                    HStack(spacing: 12) {
+                        LabeledField("Make") {
+                            TextField("Pegasus", text: imagingTrainStringBinding(\.rotatorMake))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField("Model") {
+                            TextField("Falcon Rotator", text: imagingTrainStringBinding(\.rotatorModel))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                    DevicePickerField(
+                        label: "Rotator INDI Device",
+                        deviceName: imagingTrainOptionalBinding(\.rotatorDeviceName),
+                        sharedDevices: liveDevices
+                    )
+                }
+            }
+        } else {
+            noImagingTrainSelected
+        }
+    }
+
     /// NAVI-81: a read-only summary of every role — shown when the rig itself is selected rather
     /// than a specific subitem. Each row's button calls `onSelectSection` to jump to that role's
     /// own editable page.
     private var overviewContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
+            // Rig Name and the Default Observatory/Server pickers are rig-wide, not tied to any
+            // one component — they used to sit in the always-visible header above every page
+            // (NAVI-81's first pass), which looked like each component had its own default
+            // server/observatory since the same two pickers reappeared on every page. Overview-only
+            // now.
+            LabeledField("Rig Name") {
+                TextField("Backyard EQ6-R Rig", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Default Observatory") {
+                Picker("Default Observatory", selection: $defaultObservatoryID) {
+                    Text("None").tag(String?.none)
+                    ForEach(observatoryOptions, id: \.id) { observatory in
+                        Text(observatory.name).tag(String?.some(observatory.id))
+                    }
+                }
+                .labelsHidden()
+            }
+            LabeledField("Default Server") {
+                Picker("Default Server", selection: $defaultServer) {
+                    Text("None").tag(ServerProfile?.none)
+                    ForEach(servers) { Text($0.name).tag(ServerProfile?.some($0)) }
+                }
+                .labelsHidden()
+                HStack {
+                    Button("New…") { activeSheet = .server(nil) }
+                    if defaultServer != nil {
+                        Button("Edit…") { activeSheet = .server(defaultServer) }
+                    }
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+            }
+
+            Divider()
+
             overviewRow(section: .mount, summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) } ?? "Not configured")
             overviewRow(section: .opticalAssembly, summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") } ?? "Not configured")
-            overviewRow(section: .imagingTrain, summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") } ?? "Not configured")
+            overviewRow(section: .imagingTrain(nil), summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") } ?? "Not configured")
             overviewRow(section: .guideScope, summary: guideScopeSummary)
             Divider()
             overviewRow(section: .powerHub, summary: standaloneSummary(role: "powerHub"))
@@ -557,6 +836,8 @@ struct RigEditForm: View {
         isGuideOpticalAssemblyIncluded = guideOpticalAssembly != nil
         imagingTrain = rig?.imagingTrain
         isImagingTrainIncluded = imagingTrain != nil
+        includesImagingTrainFilterWheel = imagingTrain?.hasFilterWheel ?? false
+        includesImagingTrainRotator = imagingTrain?.hasRotator ?? false
         guideCamera = rig?.guideCamera
         isGuideCameraIncluded = guideCamera != nil
         defaultObservatoryID = rig?.defaultObservatoryID
