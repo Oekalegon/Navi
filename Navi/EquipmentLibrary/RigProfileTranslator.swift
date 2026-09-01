@@ -85,42 +85,46 @@ func makeRigComponents(
         ))
     }
 
-    if let imagingTrain {
+    // Flattened *through* the composition (NAVI-85 follow-up: ImagingTrainProfile no longer holds
+    // flat camera/filter-wheel/rotator fields itself, just relationships to independently-owned
+    // Camera/FilterWheel/RotatorProfile entities) — "is this role present" is simply "is the
+    // relationship non-nil," the same test every other role in this function already uses.
+    if let camera = imagingTrain?.camera {
         components.append(Component(
             role: .camera,
             id: "camera",
-            make: imagingTrain.cameraMake,
-            model: imagingTrain.cameraModel,
-            device: imagingTrain.cameraDeviceName,
-            cooled: imagingTrain.cameraCooled,
-            pixelsX: imagingTrain.cameraPixelsX,
-            pixelsY: imagingTrain.cameraPixelsY,
-            pixelSizeMicron: imagingTrain.cameraPixelSizeMicron,
-            bitDepth: imagingTrain.cameraBitDepth
+            make: camera.make,
+            model: camera.model,
+            device: camera.deviceName,
+            cooled: camera.cooled,
+            pixelsX: camera.pixelsX,
+            pixelsY: camera.pixelsY,
+            pixelSizeMicron: camera.pixelSizeMicron,
+            bitDepth: camera.bitDepth
         ))
-        if imagingTrain.hasFilterWheel {
-            var slots: [Int: String]?
-            if let filterWheelSlots = imagingTrain.filterWheelSlots, !filterWheelSlots.isEmpty {
-                slots = Dictionary(uniqueKeysWithValues: filterWheelSlots.map { ($0.slot, $0.name) })
-            }
-            components.append(Component(
-                role: .filterWheel,
-                id: "filterWheel",
-                make: imagingTrain.filterWheelMake,
-                model: imagingTrain.filterWheelModel,
-                device: imagingTrain.filterWheelDeviceName,
-                slots: slots
-            ))
+    }
+    if let filterWheel = imagingTrain?.filterWheel {
+        var slots: [Int: String]?
+        if let filterWheelSlots = filterWheel.slots, !filterWheelSlots.isEmpty {
+            slots = Dictionary(uniqueKeysWithValues: filterWheelSlots.map { ($0.slot, $0.name) })
         }
-        if imagingTrain.hasRotator {
-            components.append(Component(
-                role: .rotator,
-                id: "rotator",
-                make: imagingTrain.rotatorMake,
-                model: imagingTrain.rotatorModel,
-                device: imagingTrain.rotatorDeviceName
-            ))
-        }
+        components.append(Component(
+            role: .filterWheel,
+            id: "filterWheel",
+            make: filterWheel.make,
+            model: filterWheel.model,
+            device: filterWheel.deviceName,
+            slots: slots
+        ))
+    }
+    if let rotator = imagingTrain?.rotator {
+        components.append(Component(
+            role: .rotator,
+            id: "rotator",
+            make: rotator.make,
+            model: rotator.model,
+            device: rotator.deviceName
+        ))
     }
 
     if let guideCamera {

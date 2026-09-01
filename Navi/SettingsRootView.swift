@@ -11,7 +11,7 @@ import SwiftUI
 
 struct SettingsRootView: View {
     enum Tab: Hashable {
-        case general, apiKey, servers, observatories, equipment, rigs
+        case general, apiKey, servers, observatories, equipment, imagingTrain, rigs
     }
 
     // NAVI-77: an explicit selection binding + `.tag()` per tab, rather than relying on
@@ -47,6 +47,13 @@ struct SettingsRootView: View {
                 .id(Tab.equipment)
                 .tabItem { Label("Equipment", systemImage: "wrench.and.screwdriver") }
                 .tag(Tab.equipment)
+
+            // Composition of equipment (Camera/Filter Wheel/Rotator), not equipment itself — its
+            // own tab rather than a section in Equipment, the same reasoning Rigs already follows.
+            ImagingTrainSettingsPane()
+                .id(Tab.imagingTrain)
+                .tabItem { Label("Imaging Train", systemImage: "camera.on.rectangle") }
+                .tag(Tab.imagingTrain)
 
             RigSettingsPane()
                 .id(Tab.rigs)

@@ -59,18 +59,18 @@ struct EquipmentLibrarySchemaTests {
             focuserDeviceName: "ZWO EAF"
         )
         let guideOTA = OpticalAssemblyProfile(name: "50mm Guide Scope", purpose: .guideScope)
-        let train = ImagingTrainProfile(
-            name: "ASI2600MM Train",
-            cameraDeviceName: "ZWO CCD ASI2600MM Pro",
-            cameraCooled: true,
-            filterWheelDeviceName: "ZWO EFW",
-            filterWheelSlots: [
+        let camera = CameraProfile(name: "ASI2600MM Pro", deviceName: "ZWO CCD ASI2600MM Pro", cooled: true)
+        let filterWheel = FilterWheelProfile(
+            name: "EFW",
+            deviceName: "ZWO EFW",
+            slots: [
                 FilterSlotEntry(slot: 1, name: "Luminance"),
                 FilterSlotEntry(slot: 2, name: "Red"),
                 FilterSlotEntry(slot: 3, name: "Green"),
                 FilterSlotEntry(slot: 4, name: "Blue"),
             ]
         )
+        let train = ImagingTrainProfile(name: "ASI2600MM Train", camera: camera, filterWheel: filterWheel)
         let guideCamera = GuideCameraProfile(name: "ASI120MM Mini", deviceName: "ZWO CCD ASI120MM Mini")
         let server = ServerProfile(name: "Observatory Pi", url: URL(string: "http://observatory.local:8080/mcp")!)
         let powerHub = StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub, deviceName: "Pegasus PPBA")
@@ -99,7 +99,7 @@ struct EquipmentLibrarySchemaTests {
         #expect(fetchedRig.mount?.deviceName == "EQMod Mount")
         #expect(fetchedRig.opticalAssembly?.purpose == .mainImaging)
         #expect(fetchedRig.guideOpticalAssembly?.purpose == .guideScope)
-        #expect(fetchedRig.imagingTrain?.filterWheelSlots?.first { $0.slot == 2 }?.name == "Red")
+        #expect(fetchedRig.imagingTrain?.filterWheel?.slots?.first { $0.slot == 2 }?.name == "Red")
         #expect(fetchedRig.guideCamera?.deviceName == "ZWO CCD ASI120MM Mini")
         #expect(fetchedRig.defaultServer?.url.absoluteString == "http://observatory.local:8080/mcp")
         #expect(fetchedRig.powerHub?.role == .powerHub)
@@ -129,24 +129,24 @@ struct EquipmentLibrarySchemaTests {
         let container = try makeInMemoryContainer()
         let context = ModelContext(container)
 
-        let train = ImagingTrainProfile(
-            name: "Test Train",
-            filterWheelSlots: [FilterSlotEntry(slot: 1, name: "Luminance")]
+        let filterWheel = FilterWheelProfile(
+            name: "Test Filter Wheel",
+            slots: [FilterSlotEntry(slot: 1, name: "Luminance")]
         )
-        context.insert(train)
+        context.insert(filterWheel)
         try context.save()
 
-        let fetchedID = train.persistentModelID
-        var fetched = try #require(context.model(for: fetchedID) as? ImagingTrainProfile)
-        #expect(fetched.filterWheelSlots?.first?.name == "Luminance")
+        let fetchedID = filterWheel.persistentModelID
+        var fetched = try #require(context.model(for: fetchedID) as? FilterWheelProfile)
+        #expect(fetched.slots?.first?.name == "Luminance")
 
         // Setting it back to nil after being populated must actually persist as nil, not leave
         // stale JSON Data behind — exactly the class of bug the Data-backed workaround exists for.
-        fetched.filterWheelSlots = nil
+        fetched.slots = nil
         try context.save()
 
-        fetched = try #require(context.model(for: fetchedID) as? ImagingTrainProfile)
-        #expect(fetched.filterWheelSlots == nil)
+        fetched = try #require(context.model(for: fetchedID) as? FilterWheelProfile)
+        #expect(fetched.slots == nil)
     }
 
     @Test func standaloneEquipmentDefaultsToNilAndRoundTrips() throws {

@@ -40,7 +40,10 @@ struct RigAutoMatcherTests {
         let rig2 = RigProfile(
             serverRigID: "rig-2", name: "Rig 2",
             mount: MountProfile(name: "Mount", deviceName: "EQ6-R"),
-            imagingTrain: ImagingTrainProfile(name: "Train", cameraDeviceName: "ASI2600MM")
+            imagingTrain: ImagingTrainProfile(
+                name: "Train",
+                camera: CameraProfile(name: "ASI2600MM", deviceName: "ASI2600MM")
+            )
         )
         let match = RigAutoMatcher.bestMatch(
             liveNames: ["EQ6-R", "ASI2600MM"],

@@ -156,7 +156,7 @@ struct RigEditForm: View {
                             isImagingTrainIncluded = included
                             imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil
                         },
-                        summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") },
+                        summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.camera?.deviceName, deviceLabel: "Camera") },
                         picker: {
                             Picker("Imaging Train", selection: $imagingTrain) {
                                 Text("None").tag(ImagingTrainProfile?.none)

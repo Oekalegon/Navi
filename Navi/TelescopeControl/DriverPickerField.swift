@@ -40,7 +40,10 @@ struct DriverPickerField: View {
 
     private var isConnected: Bool { telescope.state == .connected }
     private var availableDrivers: [DriverInfo] { sharedDrivers ?? ownDrivers }
-    private var availableLabels: [String] { availableDrivers.map(\.label) }
+    // Deduplicated — the driver catalog can legitimately list the same label more than once (e.g.
+    // a multi-function device appearing under more than one family), which would otherwise feed
+    // `ForEach(id: \.self)` a duplicate id and produce undefined SwiftUI selection behavior.
+    private var availableLabels: [String] { Array(Set(availableDrivers.map(\.label))) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

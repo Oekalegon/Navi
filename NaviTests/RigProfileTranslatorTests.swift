@@ -72,16 +72,16 @@ struct RigProfileTranslatorTests {
     }
 
     @Test func imagingTrainMapsCameraFilterWheelAndRotatorRolesOnlyWhenPresent() throws {
-        let train = ImagingTrainProfile(
-            name: "ASI2600MM Train",
-            cameraDeviceName: "ZWO CCD ASI2600MM Pro",
-            cameraCooled: true,
-            filterWheelDeviceName: "ZWO EFW",
-            filterWheelSlots: [
+        let cameraProfile = CameraProfile(name: "ASI2600MM Pro", deviceName: "ZWO CCD ASI2600MM Pro", cooled: true)
+        let filterWheelProfile = FilterWheelProfile(
+            name: "EFW",
+            deviceName: "ZWO EFW",
+            slots: [
                 FilterSlotEntry(slot: 1, name: "Luminance"),
                 FilterSlotEntry(slot: 2, name: "Red"),
             ]
         )
+        let train = ImagingTrainProfile(name: "ASI2600MM Train", camera: cameraProfile, filterWheel: filterWheelProfile)
         let rig = RigProfile(serverRigID: "rig-train", name: "Train Rig", imagingTrain: train)
 
         let components = try rig.makeComponents()
@@ -160,7 +160,10 @@ struct RigProfileTranslatorTests {
             mount: MountProfile(name: "My EQ6-R", deviceName: "EQMod Mount"),
             opticalAssembly: OpticalAssemblyProfile(name: "Esprit 100", purpose: .mainImaging),
             guideOpticalAssembly: OpticalAssemblyProfile(name: "50mm Guide Scope", purpose: .guideScope),
-            imagingTrain: ImagingTrainProfile(name: "ASI2600MM Train", cameraDeviceName: "ZWO CCD ASI2600MM Pro"),
+            imagingTrain: ImagingTrainProfile(
+                name: "ASI2600MM Train",
+                camera: CameraProfile(name: "ASI2600MM Pro", deviceName: "ZWO CCD ASI2600MM Pro")
+            ),
             guideCamera: GuideCameraProfile(name: "ASI120MM Mini", deviceName: "ZWO CCD ASI120MM Mini"),
             powerHub: StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub)
         )

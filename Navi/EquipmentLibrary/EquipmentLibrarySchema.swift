@@ -257,8 +257,150 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
 /// the first version to actually diverge in shape from `EquipmentLibrarySchemaV1`'s frozen
 /// snapshots, so it's the first to need its own real migration stage (see
 /// `EquipmentLibraryMigrationPlan.stages`) rather than reusing V1's types.
+///
+/// `ImagingTrainProfileV3` and `RigProfileV3` are frozen nested snapshots here (NAVI-85 follow-up),
+/// matching `EquipmentLibrarySchemaV1`'s established pattern: V4 changes `ImagingTrainProfile`'s
+/// live shape from flat camera/filter-wheel/rotator fields to a composition of relationships, and
+/// `RigProfile`'s `imagingTrain` relationship targets that now-different type — a relationship's
+/// target type is part of what a version's checksum covers, so `RigProfile` needs freezing here
+/// too, even though none of `RigProfile`'s own attributes change. `Mount`/`OpticalAssembly`/
+/// `GuideCamera`/`ServerProfile`/`ObservatoryProfile`/`StandaloneEquipmentProfile` don't change in
+/// V4, so they keep referencing the live types, same reasoning `V2` already uses for its own
+/// unchanged models. (The frozen types are named with an explicit `V3` suffix, not bare
+/// `ImagingTrainProfile`/`RigProfile` as `EquipmentLibrarySchemaV1`'s snapshots are, purely to keep
+/// them visually distinct at the call site — during debugging, a "Duplicate version checksums
+/// detected" crash here turned out to be caused by a stale on-disk store left over from a prior
+/// schema version, not by any name or shape collision between declared schemas; deleting the local
+/// store file resolved it. Kept the more explicit naming anyway since it reads better at each
+/// nested type's use site.)
 enum EquipmentLibrarySchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            MountProfile.self,
+            OpticalAssemblyProfile.self,
+            ImagingTrainProfileV3.self,
+            GuideCameraProfile.self,
+            ServerProfile.self,
+            RigProfileV3.self,
+            ObservatoryProfile.self,
+            StandaloneEquipmentProfile.self,
+        ]
+    }
+
+    @Model
+    final class ImagingTrainProfileV3 {
+        var name: String
+        var cameraMake: String?
+        var cameraModel: String?
+        var cameraDeviceName: String?
+        var cameraPreferredDriverLabel: String?
+        var cameraCooled: Bool?
+        var cameraPixelsX: Int?
+        var cameraPixelsY: Int?
+        var cameraPixelSizeMicron: Double?
+        var cameraBitDepth: Int?
+        var filterWheelMake: String?
+        var filterWheelModel: String?
+        var filterWheelDeviceName: String?
+        var filterWheelPreferredDriverLabel: String?
+        private var filterWheelSlotsData: Data?
+        var rotatorMake: String?
+        var rotatorModel: String?
+        var rotatorDeviceName: String?
+        var rotatorPreferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, cameraMake: String? = nil, cameraModel: String? = nil,
+            cameraDeviceName: String? = nil, cameraPreferredDriverLabel: String? = nil,
+            cameraCooled: Bool? = nil, cameraPixelsX: Int? = nil, cameraPixelsY: Int? = nil,
+            cameraPixelSizeMicron: Double? = nil, cameraBitDepth: Int? = nil,
+            filterWheelMake: String? = nil, filterWheelModel: String? = nil,
+            filterWheelDeviceName: String? = nil, filterWheelPreferredDriverLabel: String? = nil,
+            filterWheelSlotsData: Data? = nil, rotatorMake: String? = nil,
+            rotatorModel: String? = nil, rotatorDeviceName: String? = nil,
+            rotatorPreferredDriverLabel: String? = nil, notes: String? = nil,
+            modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.cameraMake = cameraMake
+            self.cameraModel = cameraModel
+            self.cameraDeviceName = cameraDeviceName
+            self.cameraPreferredDriverLabel = cameraPreferredDriverLabel
+            self.cameraCooled = cameraCooled
+            self.cameraPixelsX = cameraPixelsX
+            self.cameraPixelsY = cameraPixelsY
+            self.cameraPixelSizeMicron = cameraPixelSizeMicron
+            self.cameraBitDepth = cameraBitDepth
+            self.filterWheelMake = filterWheelMake
+            self.filterWheelModel = filterWheelModel
+            self.filterWheelDeviceName = filterWheelDeviceName
+            self.filterWheelPreferredDriverLabel = filterWheelPreferredDriverLabel
+            self.filterWheelSlotsData = filterWheelSlotsData
+            self.rotatorMake = rotatorMake
+            self.rotatorModel = rotatorModel
+            self.rotatorDeviceName = rotatorDeviceName
+            self.rotatorPreferredDriverLabel = rotatorPreferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class RigProfileV3 {
+        @Attribute(.unique) var serverRigID: String
+        var name: String
+        @Relationship(deleteRule: .nullify) var mount: MountProfile?
+        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfileV3?
+        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
+        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfile?
+        var defaultObservatoryID: String?
+        @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
+        var lastResyncedAt: Date
+
+        init(
+            serverRigID: String, name: String, mount: MountProfile? = nil,
+            opticalAssembly: OpticalAssemblyProfile? = nil,
+            guideOpticalAssembly: OpticalAssemblyProfile? = nil,
+            imagingTrain: ImagingTrainProfileV3? = nil, guideCamera: GuideCameraProfile? = nil,
+            powerHub: StandaloneEquipmentProfile? = nil, flatScreen: StandaloneEquipmentProfile? = nil,
+            dewHeater: StandaloneEquipmentProfile? = nil,
+            observatoryControl: StandaloneEquipmentProfile? = nil, defaultObservatoryID: String? = nil,
+            defaultServer: ServerProfile? = nil, lastResyncedAt: Date = .now
+        ) {
+            self.serverRigID = serverRigID
+            self.name = name
+            self.mount = mount
+            self.opticalAssembly = opticalAssembly
+            self.guideOpticalAssembly = guideOpticalAssembly
+            self.imagingTrain = imagingTrain
+            self.guideCamera = guideCamera
+            self.powerHub = powerHub
+            self.flatScreen = flatScreen
+            self.dewHeater = dewHeater
+            self.observatoryControl = observatoryControl
+            self.defaultObservatoryID = defaultObservatoryID
+            self.defaultServer = defaultServer
+            self.lastResyncedAt = lastResyncedAt
+        }
+    }
+}
+
+/// Version 4 (NAVI-85 follow-up) — splits `ImagingTrainProfile`'s flat camera/filter-wheel/rotator
+/// fields into three independently-owned equipment types (`CameraProfile`/`FilterWheelProfile`/
+/// `RotatorProfile`), each managed on their own in the Equipment pane; `ImagingTrainProfile` becomes
+/// a pure composition of relationships to them, the same shape `RigProfile` already uses for its
+/// own roles. See each type's own doc comment.
+enum EquipmentLibrarySchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -270,13 +412,16 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
             RigProfile.self,
             ObservatoryProfile.self,
             StandaloneEquipmentProfile.self,
+            CameraProfile.self,
+            FilterWheelProfile.self,
+            RotatorProfile.self,
         ]
     }
 }
 
 enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self]
+        [EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self, EquipmentLibrarySchemaV4.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -287,6 +432,10 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
             // old JSON-blob entries into new StandaloneEquipmentProfile rows/relationships. Accepted
             // for NAVI-85 given this is pre-release local testing data — re-configure once, after.
             .lightweight(fromVersion: EquipmentLibrarySchemaV2.self, toVersion: EquipmentLibrarySchemaV3.self),
+            // Same tradeoff again: any Imaging Train already configured loses its camera/filter-
+            // wheel/rotator bindings here — there's no automatic way to turn the old flat fields
+            // into new relationship targets. Accepted for the same reason as the stage above.
+            .lightweight(fromVersion: EquipmentLibrarySchemaV3.self, toVersion: EquipmentLibrarySchemaV4.self),
         ]
     }
 }
@@ -295,5 +444,5 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
 /// tests build their `Schema`/`ModelConfiguration` from, without every call site needing to know
 /// which `VersionedSchema` is current.
 enum EquipmentLibrarySchema {
-    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV3.models }
+    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV4.models }
 }

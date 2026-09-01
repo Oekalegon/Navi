@@ -32,7 +32,10 @@ struct DevicePickerField: View {
     @State private var loadError: String?
 
     private var isConnected: Bool { telescope.state == .connected }
-    private var availableDevices: [String] { sharedDevices ?? ownDevices }
+    // Deduplicated — a running-driver catalog can legitimately list the same label more than once
+    // (e.g. a multi-function device appearing under more than one family), which would otherwise
+    // feed `ForEach(id: \.self)` a duplicate id and produce undefined SwiftUI selection behavior.
+    private var availableDevices: [String] { Array(Set(sharedDevices ?? ownDevices)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
