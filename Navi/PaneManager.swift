@@ -318,7 +318,7 @@ class PaneManager {
         case .archiveViewer:
             manager.archiveContent = archiveContent
             manager.archiveFilter = archiveFilter
-        case .aiAssistant, .observatoryDashboard, .telescopeMessages, .empty:
+        case .aiAssistant, .observatoryDashboard, .telescopeMessages, .telescopeControl, .empty:
             break
         }
         removeLeaf(leaf)
@@ -484,6 +484,30 @@ class PaneManager {
             saveLayout()
         } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
             splitPane(ai, direction: .horizontal, newPaneType: .telescopeMessages)
+        }
+    }
+
+    var isTelescopeControlVisible: Bool {
+        findPane(ofType: .telescopeControl, in: rootPane) != nil
+    }
+
+    // Button-driven like every other pane (NAVI-52) — no auto-open exception.
+    func toggleTelescopeControl() {
+        if isTelescopeControlVisible {
+            closePane(ofType: .telescopeControl)
+        } else {
+            openTelescopeControlPane()
+        }
+    }
+
+    // Same placement heuristic as the Dashboard/Messages panes: reuse an empty pane if available,
+    // else split from the AI pane.
+    private func openTelescopeControlPane() {
+        if let empty = findPane(ofType: .empty, in: rootPane) {
+            empty.paneType = .telescopeControl
+            saveLayout()
+        } else if let ai = findPane(ofType: .aiAssistant, in: rootPane) {
+            splitPane(ai, direction: .horizontal, newPaneType: .telescopeControl)
         }
     }
 

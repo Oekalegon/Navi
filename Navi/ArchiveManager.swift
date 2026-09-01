@@ -92,6 +92,40 @@ final class ArchiveManager {
         return FITSImportResult(added: added, skipped: skipped, failed: failed)
     }
 
+    /// Imports one already-downloaded FITS file, returning the resulting `ArchivedFrame` — unlike
+    /// `importFITS(urls:)`, which discards each import's exact record for its folder/multi-file
+    /// UI flow. NAVI-52's capture pipeline needs the real archive UUID (not just an added/skipped/
+    /// failed count) to later group a run's frames into a frameset by explicit id.
+    func importCapturedFrame(at url: URL) async throws -> ArchivedFrame {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        let (frame, _) = try await archive.add(fitsFile: url)
+        importVersion += 1
+        return frame
+    }
+
+    // MARK: - Framesets (native Swift API, not the text-formatted callTool(name:arguments:)
+    // dispatch above — that path renders human-readable text for Claude's chat display, not
+    // something a native caller like NAVI-52's capture-import pipeline should parse).
+
+    @discardableResult
+    func createFrameSet(name: String, query: FrameQuery, force: Bool = false) async throws -> ArchivedFrameSet {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        let (frameSet, _) = try await archive.createFrameSet(name: name, query: query, force: force)
+        return frameSet
+    }
+
+    @discardableResult
+    func addFrames(toFrameSet setID: UUID, frameIDs: [UUID], force: Bool = false) async throws -> FrameSetAddResult {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.addFrames(toFrameSet: setID, frameIDs: frameIDs, force: force)
+    }
+
+    @discardableResult
+    func removeFrames(fromFrameSet setID: UUID, frameIDs: [UUID]) async throws -> FrameSetRemoveResult {
+        guard let archive else { throw ArchiveManagerError.notConnected }
+        return try await archive.removeFrames(fromFrameSet: setID, frameIDs: frameIDs)
+    }
+
     // MARK: - Connection
 
     func connect(archivePath: String) async {
@@ -183,6 +217,17 @@ final class ArchiveManager {
             return try await archive?.frame(filePath: filePath)
         } catch {
             logger.error("Failed to fetch archived frame at \(filePath): \(error)")
+            return nil
+        }
+    }
+
+    // NAVI-52: re-resolving CaptureRunTracker's durably-tracked frame ids (which can span
+    // multiple sessions) back into full ArchivedFrame records at frameset-creation time.
+    func archivedFrame(id: UUID) async -> ArchivedFrame? {
+        do {
+            return try await archive?.frame(id: id)
+        } catch {
+            logger.error("Failed to fetch archived frame \(id): \(error)")
             return nil
         }
     }

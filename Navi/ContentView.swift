@@ -99,6 +99,12 @@ struct ContentView: View {
                     title: "Telescope Messages",
                     isVisible: paneManager.isTelescopeMessagesVisible
                 ) { paneManager.toggleTelescopeMessages() }
+
+                PaneToggleButton(
+                    icon: "slider.horizontal.3",
+                    title: "Telescope Control",
+                    isVisible: paneManager.isTelescopeControlVisible
+                ) { paneManager.toggleTelescopeControl() }
             }
         }
 
