@@ -148,7 +148,7 @@ struct DriverManagementSheet: View {
             async let catalogTask = telescope.driverCatalog()
             async let runningTask = telescope.runningDrivers()
             let (fetchedCatalog, running) = try await (catalogTask, runningTask)
-            catalog = fetchedCatalog.sorted { $0.label < $1.label }
+            catalog = fetchedCatalog.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
             runningLabels = Set(running.filter(\.running).map(\.label))
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
