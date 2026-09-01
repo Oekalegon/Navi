@@ -14,10 +14,11 @@ import SwiftData
 /// "selected but no device" vs. "role not present at all" distinction. Every `...DeviceName`
 /// field is picker-only while connected (§4.2), via `DevicePickerField`.
 struct ImagingTrainEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let imagingTrain: ImagingTrainProfile?
     var onSaved: (ImagingTrainProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
 
@@ -138,7 +139,7 @@ struct ImagingTrainEditForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -146,7 +147,7 @@ struct ImagingTrainEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 460, height: 640)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear(perform: load)
     }
 
@@ -272,6 +273,6 @@ struct ImagingTrainEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        dismiss()
+        onFinished()
     }
 }

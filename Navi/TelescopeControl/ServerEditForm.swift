@@ -16,13 +16,14 @@ import SwiftData
 /// surfaces a warning if that fails, since that's also where the live connect/disconnect state
 /// lives (`TelescopeSessionManager`); this form itself stays a plain, synchronous save.
 struct ServerEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let server: ServerProfile?
     /// Called with the saved (inserted-or-mutated) server, so a caller like `RigEditForm` can
     /// adopt it as this rig's `defaultServer` right away, or `ServerSettingsPane` can attempt to
     /// connect to it.
     var onSaved: (ServerProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var urlString = ""
@@ -60,7 +61,7 @@ struct ServerEditForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -68,7 +69,7 @@ struct ServerEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 360, height: 220)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = server?.name ?? ""
             urlString = server?.url.absoluteString ?? ""
@@ -99,6 +100,6 @@ struct ServerEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        dismiss()
+        onFinished()
     }
 }

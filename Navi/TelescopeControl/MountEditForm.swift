@@ -13,12 +13,16 @@ import SwiftData
 /// place. Non-device fields are always editable; the `deviceName` binding is picker-only while
 /// connected (§4.2), matching `DevicePickerField`'s contract.
 struct MountEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let mount: MountProfile?
     /// Called with the saved (inserted-or-mutated) mount, so the Rig editor can adopt it as this
     /// rig's `mount` relationship right away.
     var onSaved: (MountProfile) -> Void = { _ in }
+    /// Called on Cancel and after a successful Save (NAVI-77) — this form is embedded inline as
+    /// detail content, not presented as a sheet, so there's no `dismiss()` to call; the caller
+    /// (e.g. a master-detail pane, or RigEditForm's drill-in) uses this to navigate back to
+    /// whatever it shows when nothing is being edited.
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var make = ""
@@ -62,7 +66,7 @@ struct MountEditForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -70,7 +74,7 @@ struct MountEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 380, height: 320)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = mount?.name ?? ""
             make = mount?.make ?? ""
@@ -112,6 +116,6 @@ struct MountEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        dismiss()
+        onFinished()
     }
 }

@@ -26,10 +26,13 @@ import INDIMCPKit
 /// sub-editors above. `lastResyncedAt` is stamped on success, matching the resync-staleness
 /// contract in `RigProfile`'s own doc comment.
 struct RigEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     let rig: RigProfile?
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel and after a
+    /// successful Save. Distinct from `activeSheet`, which governs this form's *own* nested
+    /// sub-editor drill-in (see `body`) rather than this form's presentation by its caller.
+    var onFinished: () -> Void = {}
 
     @Query(sort: \MountProfile.name) private var mounts: [MountProfile]
     @Query(sort: \OpticalAssemblyProfile.name) private var opticalAssemblies: [OpticalAssemblyProfile]
@@ -96,6 +99,65 @@ struct RigEditForm: View {
     private var guideOpticalAssemblies: [OpticalAssemblyProfile] { opticalAssemblies.filter { $0.purpose == .guideScope } }
 
     var body: some View {
+        Group {
+            if let activeSheet {
+                subEditorView(for: activeSheet)
+            } else {
+                mainContent
+            }
+        }
+        .task {
+            load()
+            await refreshObservatories()
+            await refreshLiveDevices()
+        }
+    }
+
+    @ViewBuilder
+    private func subEditorView(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .mount(let m):
+            MountEditForm(
+                mount: m,
+                onSaved: { mount = $0; isMountIncluded = true },
+                onFinished: { activeSheet = nil }
+            )
+        case .opticalAssembly(let o):
+            OpticalAssemblyEditForm(
+                opticalAssembly: o,
+                purpose: .mainImaging,
+                onSaved: { opticalAssembly = $0; isOpticalAssemblyIncluded = true },
+                onFinished: { activeSheet = nil }
+            )
+        case .guideOpticalAssembly(let o):
+            OpticalAssemblyEditForm(
+                opticalAssembly: o,
+                purpose: .guideScope,
+                onSaved: { guideOpticalAssembly = $0; isGuideOpticalAssemblyIncluded = true },
+                onFinished: { activeSheet = nil }
+            )
+        case .imagingTrain(let t):
+            ImagingTrainEditForm(
+                imagingTrain: t,
+                onSaved: { imagingTrain = $0; isImagingTrainIncluded = true },
+                onFinished: { activeSheet = nil }
+            )
+        case .guideCamera(let g):
+            GuideCameraEditForm(
+                guideCamera: g,
+                onSaved: { guideCamera = $0; isGuideCameraIncluded = true },
+                onFinished: { activeSheet = nil }
+            )
+        case .server(let s):
+            ServerEditForm(
+                server: s,
+                onSaved: { defaultServer = $0 },
+                onFinished: { activeSheet = nil }
+            )
+        }
+    }
+
+    private var mainContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
@@ -256,28 +318,7 @@ struct RigEditForm: View {
             Divider()
             footer
         }
-        .frame(width: 560, height: 640)
-        .task {
-            load()
-            await refreshObservatories()
-            await refreshLiveDevices()
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .mount(let m):
-                MountEditForm(mount: m) { mount = $0; isMountIncluded = true }
-            case .opticalAssembly(let o):
-                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .mainImaging) { opticalAssembly = $0; isOpticalAssemblyIncluded = true }
-            case .guideOpticalAssembly(let o):
-                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .guideScope) { guideOpticalAssembly = $0; isGuideOpticalAssemblyIncluded = true }
-            case .imagingTrain(let t):
-                ImagingTrainEditForm(imagingTrain: t) { imagingTrain = $0; isImagingTrainIncluded = true }
-            case .guideCamera(let g):
-                GuideCameraEditForm(guideCamera: g) { guideCamera = $0; isGuideCameraIncluded = true }
-            case .server(let s):
-                ServerEditForm(server: s) { defaultServer = $0 }
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var header: some View {
@@ -302,7 +343,7 @@ struct RigEditForm: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { onFinished() }
                 .keyboardShortcut(.cancelAction)
             Button("Save") { Task { await save() } }
                 .keyboardShortcut(.defaultAction)
@@ -457,7 +498,7 @@ struct RigEditForm: View {
                 overwrite: rig != nil
             )
             upsertLocalRig(with: saved)
-            dismiss()
+            onFinished()
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }

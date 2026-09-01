@@ -8,41 +8,29 @@
 import SwiftUI
 import SwiftData
 
-/// The Settings "Rig pane" (§4.2): lists the local `RigProfile` library and opens `RigEditForm`
-/// to add/edit. Unlike `ObservatorySettingsPane`, `RigProfile` *is* a local SwiftData model (it
-/// tracks which library entities compose the rig, §4.3) — so this list itself needs no
-/// connection; only saving a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
+/// The Settings "Rig pane" (§4.2): lists the local `RigProfile` library and shows `RigEditForm`
+/// inline as detail content — a native macOS master-detail layout (NAVI-77), not a modal sheet.
+/// Unlike `ObservatorySettingsPane`, `RigProfile` *is* a local SwiftData model (it tracks which
+/// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
+/// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
 struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
 
-    @State private var editingRig: RigProfile?
-    @State private var isPresentingNewRig = false
+    // `.new` shows a blank RigEditForm without inserting a draft RigProfile into the library —
+    // it only gets inserted once the user actually saves (RigEditForm.upsertLocalRig).
+    private enum Selection: Hashable {
+        case existing(PersistentIdentifier)
+        case new
+    }
+    @State private var selection: Selection?
     @State private var rigPendingDeletion: RigProfile?
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsPaneHeader(
-                title: "Rigs",
-                addHelp: "Add Rig",
-                onAdd: { isPresentingNewRig = true }
-            )
-            Divider()
-            if rigs.isEmpty {
-                emptyState
-            } else {
-                List {
-                    ForEach(rigs) { rig in
-                        row(for: rig)
-                    }
-                }
-            }
-        }
-        .sheet(item: $editingRig) { rig in
-            RigEditForm(rig: rig)
-        }
-        .sheet(isPresented: $isPresentingNewRig) {
-            RigEditForm(rig: nil)
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detail
         }
         .confirmationDialog(
             "Delete “\(rigPendingDeletion?.name ?? "")”?",
@@ -60,6 +48,50 @@ struct RigSettingsPane: View {
         } message: {
             Text("This only removes the rig from Navi's local library — it stays saved on the server.")
         }
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            SettingsPaneHeader(
+                title: "Rigs",
+                addHelp: "Add Rig",
+                onAdd: { selection = .new }
+            )
+            Divider()
+            if rigs.isEmpty {
+                emptyState
+            } else {
+                List(selection: $selection) {
+                    ForEach(rigs) { rig in
+                        row(for: rig)
+                            .tag(Selection.existing(rig.persistentModelID))
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .existing(let id):
+            if let rig = rigs.first(where: { $0.persistentModelID == id }) {
+                RigEditForm(rig: rig, onFinished: { selection = nil })
+                    .id(id)
+            } else {
+                placeholder
+            }
+        case .new:
+            RigEditForm(rig: nil, onFinished: { selection = nil })
+        case nil:
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        Text("Select a rig, or add a new one.")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -101,8 +133,6 @@ struct RigSettingsPane: View {
             .foregroundStyle(.secondary)
             .help("Delete Rig")
         }
-        .contentShape(Rectangle())
-        .onTapGesture { editingRig = rig }
     }
 
     private func componentSummary(for rig: RigProfile) -> String {
@@ -119,6 +149,9 @@ struct RigSettingsPane: View {
     private func delete(_ rig: RigProfile) {
         // Local-library-only removal, matching `ObservatorySettingsPane.remove(_:)` — there's no
         // delete-rig call in INDIMCPKit, so the server-side `Rig` file is untouched.
+        if selection == .existing(rig.persistentModelID) {
+            selection = nil
+        }
         modelContext.delete(rig)
         try? modelContext.save()
     }

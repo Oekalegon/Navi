@@ -24,10 +24,11 @@ import INDIMCPKit
 /// `HorizonPoint`, which only exist on INDIMCPKit's unmerged `feature/IMCPKIT-67-horizon-profile`
 /// branch, not the `develop` Navi's CI builds against. Add back once that merges.
 struct ObservatoryEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     let observatoryID: String?
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var latitudeDeg: Double = 0
@@ -83,11 +84,11 @@ struct ObservatoryEditForm: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                     // Always reachable, overriding the form-wide .disabled(!isConnected) below —
-                    // dismissing isn't a server action, and the user must never get stuck in this
-                    // sheet if the connection drops while it's open.
+                    // navigating away isn't a server action, and the user must never get stuck in
+                    // this pane if the connection drops while it's open.
                     .disabled(false)
                 Button("Save") { Task { await save() } }
                     .keyboardShortcut(.defaultAction)
@@ -96,7 +97,7 @@ struct ObservatoryEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 420, height: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .disabled(!isConnected)
         .task { await load() }
     }
@@ -133,7 +134,7 @@ struct ObservatoryEditForm: View {
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
             upsertLocalCache(with: saved)
-            dismiss()
+            onFinished()
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }

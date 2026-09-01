@@ -18,11 +18,12 @@ import SwiftData
 /// `OpticalAssemblyProfile.hasFocuser`); `focuserDeviceName` is picker-only while connected
 /// (§4.2), matching `DevicePickerField`'s contract.
 struct OpticalAssemblyEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let opticalAssembly: OpticalAssemblyProfile?
     let purpose: OpticalAssemblyPurpose
     var onSaved: (OpticalAssemblyProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var make = ""
@@ -123,7 +124,7 @@ struct OpticalAssemblyEditForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -131,7 +132,7 @@ struct OpticalAssemblyEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 440, height: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = opticalAssembly?.name ?? ""
             make = opticalAssembly?.make ?? ""
@@ -207,7 +208,7 @@ struct OpticalAssemblyEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        dismiss()
+        onFinished()
     }
 }
 
