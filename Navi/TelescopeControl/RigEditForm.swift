@@ -31,7 +31,12 @@ struct RigEditForm: View {
     let rig: RigProfile?
     /// NAVI-81: which single equipment-concern page to show in `mainContent`'s
     /// `switch visibleSection` — the caller (`RigSettingsPane`'s sidebar) owns this, not this form.
-    var visibleSection: RigSection = .opticalAssembly
+    /// Defaults to `.overview` — selecting the rig itself (rather than one of its subitems) shows a
+    /// read-only summary of every role, not an editable page.
+    var visibleSection: RigSection = .overview
+    /// Called when the user taps a row's "open" button on the `.overview` page (NAVI-81) — the
+    /// caller updates its own selection so the sidebar and `visibleSection` both move to that page.
+    var onSelectSection: (RigSection) -> Void = { _ in }
     /// Called with the saved (inserted-or-mutated) rig after a successful Save. **Exclusive** with
     /// `onFinished` here — deliberately unlike `MountEditForm`/`OpticalAssemblyEditForm`/etc.,
     /// which call both together on success. Those small sub-editors always want to return to
@@ -240,6 +245,9 @@ struct RigEditForm: View {
     @ViewBuilder
     private var sectionContent: some View {
         switch visibleSection {
+        case .overview:
+            overviewContent
+
         case .mount:
             roleSection(
                 title: "Mount",
@@ -341,17 +349,86 @@ struct RigEditForm: View {
             )
 
         case .powerHub:
+            standaloneCaption
             standaloneRow(role: "powerHub", title: "Power Hub")
 
         case .flatScreen:
+            standaloneCaption
             standaloneRow(role: "flatScreen", title: "Flat Screen")
 
         case .dewHeater:
+            standaloneCaption
             standaloneRow(role: "dewHeater", title: "Dew Heater")
 
         case .observatoryControl:
+            standaloneCaption
             standaloneRow(role: "observatoryControl", title: "Observatory Control (roof/dome)")
         }
+    }
+
+    /// Shown above every standalone-component page (NAVI-81) — explains why these roles have no
+    /// Make/Model picker or reusable library the way Mount/Optical Assembly/etc. do.
+    private var standaloneCaption: some View {
+        Text("No reusable library entity — just a device binding for this rig (§4.3).")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    /// NAVI-81: a read-only summary of every role — shown when the rig itself is selected rather
+    /// than a specific subitem. Each row's button calls `onSelectSection` to jump to that role's
+    /// own editable page.
+    private var overviewContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            overviewRow(section: .mount, summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) } ?? "Not configured")
+            overviewRow(section: .opticalAssembly, summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") } ?? "Not configured")
+            overviewRow(section: .imagingTrain, summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") } ?? "Not configured")
+            overviewRow(section: .guideScope, summary: guideScopeSummary)
+            Divider()
+            overviewRow(section: .powerHub, summary: standaloneSummary(role: "powerHub"))
+            overviewRow(section: .flatScreen, summary: standaloneSummary(role: "flatScreen"))
+            overviewRow(section: .dewHeater, summary: standaloneSummary(role: "dewHeater"))
+            overviewRow(section: .observatoryControl, summary: standaloneSummary(role: "observatoryControl"))
+        }
+    }
+
+    private func overviewRow(section: RigSection, summary: String) -> some View {
+        let isConfigured = summary != "Not configured"
+        return HStack {
+            Image(systemName: section.icon)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(isConfigured ? Color.secondary : Color.orange)
+            }
+            Spacer()
+            Button(action: { onSelectSection(section) }) {
+                Image(systemName: "arrow.right.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Open \(section.title)")
+        }
+    }
+
+    private var guideScopeSummary: String {
+        switch (guideOpticalAssembly?.name, guideCamera?.name) {
+        case (nil, nil): return "Not configured"
+        case (let ota?, nil): return "\(ota) · No guide camera"
+        case (nil, let camera?): return "No guide optical assembly · \(camera)"
+        case (let ota?, let camera?): return "\(ota) · \(camera)"
+        }
+    }
+
+    private func standaloneSummary(role: String) -> String {
+        guard let entry = standaloneComponents.first(where: { $0.role == role }) else {
+            return "Not configured"
+        }
+        return entry.deviceName.map { "Device: \($0)" } ?? "Device: blank"
     }
 
     private var header: some View {

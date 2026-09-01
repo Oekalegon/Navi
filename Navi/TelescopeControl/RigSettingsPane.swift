@@ -16,14 +16,15 @@ import SwiftData
 /// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
 /// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
 ///
-/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose 8 `RigSection` subitems
-/// (Mount, OTA/Focuser, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater, Observatory
-/// Control) let the user jump straight to one equipment concern instead of scrolling through
-/// `RigEditForm`'s whole form. Tapping the rig's own name/row (the `Section` header) isn't itself
-/// selectable — it navigates to the OTA/Focuser subitem, matching "the OTA subitem is selected when
-/// the rig is selected." `.listStyle(.sidebar)` is what gives `Section` its collapsible chevron and
-/// bold-header rendering here — a plain `List` row-styling modifier, unrelated to the
-/// `NavigationSplitView` toolbar-chrome conflict noted above; it does not reintroduce that bug.
+/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose 9 `RigSection` subitems
+/// (Overview, Mount, OTA/Focuser, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater,
+/// Observatory Control) let the user jump straight to one equipment concern instead of scrolling
+/// through `RigEditForm`'s whole form. Tapping the rig's own name/row (the `Section` header) isn't
+/// itself selectable — it navigates to the read-only Overview subitem, and each Overview row has
+/// its own "open" button to jump into that role's editable page from there.
+/// `.listStyle(.sidebar)` is what gives `Section` its collapsible chevron and bold-header rendering
+/// here — a plain `List` row-styling modifier, unrelated to the `NavigationSplitView`
+/// toolbar-chrome conflict noted above; it does not reintroduce that bug.
 struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
@@ -70,7 +71,7 @@ struct RigSettingsPane: View {
             SettingsPaneHeader(
                 title: "Rigs",
                 addHelp: "Add Rig",
-                onAdd: { selection = .new(.opticalAssembly) }
+                onAdd: { selection = .new(.overview) }
             )
             Divider()
             if rigs.isEmpty && selection == nil {
@@ -118,6 +119,7 @@ struct RigSettingsPane: View {
                 RigEditForm(
                     rig: rig,
                     visibleSection: section,
+                    onSelectSection: { newSection in selection = .existing(id, newSection) },
                     onSaved: { saved in selection = .existing(saved.persistentModelID, section) },
                     onFinished: { selection = nil }
                 )
@@ -129,6 +131,7 @@ struct RigSettingsPane: View {
             RigEditForm(
                 rig: nil,
                 visibleSection: section,
+                onSelectSection: { newSection in selection = .new(newSection) },
                 onSaved: { saved in selection = .existing(saved.persistentModelID, section) },
                 onFinished: { selection = nil }
             )
@@ -170,7 +173,7 @@ struct RigSettingsPane: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture { selection = .existing(rig.persistentModelID, .opticalAssembly) }
+            .onTapGesture { selection = .existing(rig.persistentModelID, .overview) }
             Spacer()
             Button(action: { rigPendingDeletion = rig }) {
                 Image(systemName: "trash")

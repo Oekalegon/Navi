@@ -26,8 +26,13 @@ import Foundation
 ///   INDIMCPKit's `Observatory` to gain a device-binding concept it doesn't have today. See
 ///   NAVI-83/IMCPKIT-70.
 ///
+/// `overview` is a read-only summary of every role at once (each row has a small button to jump to
+/// that role's own editable page) — it's what `RigEditForm` shows when the rig itself is selected,
+/// rather than landing directly on an editable page.
+///
 /// `CaseIterable`'s declaration order is the sidebar's display order.
 enum RigSection: String, CaseIterable, Identifiable, Hashable {
+    case overview
     case opticalAssembly
     case mount
     case imagingTrain
@@ -41,6 +46,7 @@ enum RigSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
+        case .overview: return "Overview"
         case .opticalAssembly: return "OTA / Focuser"
         case .mount: return "Mount"
         case .imagingTrain: return "Imaging Train"
@@ -57,6 +63,7 @@ enum RigSection: String, CaseIterable, Identifiable, Hashable {
     // this is keyed by a purely local UI-navigation concept.
     var icon: String {
         switch self {
+        case .overview: return "list.bullet.rectangle.portrait"
         case .opticalAssembly: return "circle.dotted"
         case .mount: return "gyroscope"
         case .imagingTrain: return "camera"
