@@ -9,9 +9,17 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Server pane" (§4.2): a plain list of named INDI-MCP servers (name + URL) in the
-/// local equipment library. A `RigProfile` references one as its default (§4.1's toolbar Connect
-/// targets whichever server the armed rig defaults to) — changing that default is a Rig-editor
-/// action (NAVI-55), not something this pane does.
+/// local equipment library, shown as a master-detail layout (NAVI-77) — the sidebar list on the
+/// left, `ServerEditForm` embedded inline as detail content on the right, no modal sheet.
+/// Deliberately a plain `HStack`, not `NavigationSplitView`: this pane is one tab of
+/// `SettingsRootView`'s `TabView`, and `NavigationSplitView` hooks into the *window's* toolbar/
+/// sidebar chrome the same way `TabView` itself does (see `TelescopeControlView`'s NAVI-76 doc
+/// comment for the sibling case) — nesting one window-chrome-owning container inside another left
+/// a previous tab's sidebar list stuck on screen when switching tabs. A plain `HStack` gives the
+/// same sidebar/detail look with no AppKit toolbar/sidebar integration to conflict with `TabView`.
+/// A `RigProfile` references one as its default (§4.1's toolbar Connect targets whichever
+/// server the armed rig defaults to) — changing that default is a Rig-editor action (NAVI-55), not
+/// something this pane does.
 ///
 /// Edits are live (SwiftData), not batched behind a form-wide Save — matches
 /// `ArchiveFilterSheet`/`TelescopeSelectionSheet`'s pattern of a dedicated view for a
@@ -25,47 +33,30 @@ import SwiftData
 /// server just shows disabled/unavailable while something else is live. Saving a new/edited
 /// server also attempts to connect to it automatically (if nothing else is already connected) and
 /// stays connected on success — warning, not blocking, on failure.
+///
+/// NAVI-62/NAVI-77: the detail pane also embeds `DriverManagementSheet` as a plain conditional
+/// section, shown only while the selected server is the one actually connected — it disappears on
+/// its own on disconnect since the detail view is already reactive to `telescope.state`.
 struct ServerSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @State private var telescope = TelescopeSessionManager.shared
 
-    @State private var editingServer: ServerProfile?
-    @State private var isPresentingNewServer = false
+    private enum Selection: Hashable {
+        case existing(PersistentIdentifier)
+        case new
+    }
+    @State private var selection: Selection?
     @State private var serverPendingDeletion: ServerProfile?
     @State private var unreachableWarning: String?
-    @State private var managingDriversFor: ServerProfile?
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsPaneHeader(
-                title: "Telescope Servers",
-                addHelp: "Add Server",
-                onAdd: { isPresentingNewServer = true }
-            )
+        HStack(spacing: 0) {
+            sidebar
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
             Divider()
-            if servers.isEmpty {
-                emptyState
-            } else {
-                List {
-                    ForEach(servers) { server in
-                        row(for: server)
-                    }
-                }
-            }
-        }
-        .sheet(item: $editingServer) { server in
-            ServerEditForm(server: server, onSaved: { saved in
-                Task { await connectAfterSave(saved) }
-            })
-        }
-        .sheet(isPresented: $isPresentingNewServer) {
-            ServerEditForm(server: nil, onSaved: { saved in
-                Task { await connectAfterSave(saved) }
-            })
-        }
-        .sheet(item: $managingDriversFor) { server in
-            DriverManagementSheet(serverName: server.name)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .confirmationDialog(
             "Delete “\(serverPendingDeletion?.name ?? "")”?",
@@ -96,6 +87,69 @@ struct ServerSettingsPane: View {
         }
     }
 
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            SettingsPaneHeader(
+                title: "Telescope Servers",
+                addHelp: "Add Server",
+                onAdd: { selection = .new }
+            )
+            Divider()
+            if servers.isEmpty {
+                emptyState
+            } else {
+                List(selection: $selection) {
+                    ForEach(servers) { server in
+                        row(for: server)
+                            .tag(Selection.existing(server.persistentModelID))
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .existing(let id):
+            if let server = servers.first(where: { $0.persistentModelID == id }) {
+                serverDetail(for: server)
+                    .id(id)
+            } else {
+                placeholder
+            }
+        case .new:
+            ServerEditForm(
+                server: nil,
+                onSaved: { saved in Task { await connectAfterSave(saved) } },
+                onFinished: { selection = nil }
+            )
+        case nil:
+            placeholder
+        }
+    }
+
+    private func serverDetail(for server: ServerProfile) -> some View {
+        VStack(spacing: 0) {
+            ServerEditForm(
+                server: server,
+                onSaved: { saved in Task { await connectAfterSave(saved) } },
+                onFinished: { selection = nil }
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            if telescope.state == .connected, telescope.currentServer?.persistentModelID == server.persistentModelID {
+                Divider()
+                DriverManagementSheet(serverName: server.name)
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        Text("Select a server, or add a new one.")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "server.rack")
@@ -122,13 +176,6 @@ struct ServerSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            // Driver start/stop needs a live client for this exact server (NAVI-62) — only
-            // meaningful, and only shown, once this row is the one actually connected.
-            if connectionState == .connected {
-                Button("Drivers…") { managingDriversFor = server }
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
             connectionButton(for: server, state: connectionState)
             // Explicit buttons, not a gesture/swipe: macOS's List(selection:)+.onDelete idiom
             // (the iOS edit-mode/swipe convention) has no reachable UI path here without a
@@ -140,8 +187,6 @@ struct ServerSettingsPane: View {
             .foregroundStyle(.secondary)
             .help("Delete Server")
         }
-        .contentShape(Rectangle())
-        .onTapGesture { editingServer = server }
     }
 
     private enum RowConnectionState {
@@ -234,6 +279,9 @@ struct ServerSettingsPane: View {
         // affect by name, so the message stays generic for now.
         if telescope.state == .connected, telescope.currentServer?.persistentModelID == server.persistentModelID {
             Task { await telescope.disconnect() }
+        }
+        if selection == .existing(server.persistentModelID) {
+            selection = nil
         }
         modelContext.delete(server)
         try? modelContext.save()

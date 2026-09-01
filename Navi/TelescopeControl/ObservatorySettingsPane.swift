@@ -8,32 +8,46 @@
 import SwiftUI
 import SwiftData
 
-/// The Settings "Observatory pane" (§4.2): lists the local `ObservatoryProfile` cache and opens
-/// `ObservatoryEditForm` to add/edit. Unlike `ServerSettingsPane`, add/edit require a live
-/// connection (`Observatory` isn't a local model — it's fetched/saved server-side); "Remove" here
-/// only clears this local cache entry, it does not delete the observatory from the server
-/// (INDIMCPKit has no delete-observatory call at all).
+/// The Settings "Observatory pane" (§4.2): lists the local `ObservatoryProfile` cache and shows
+/// `ObservatoryEditForm` inline as detail content — a master-detail layout (NAVI-77), not a modal
+/// sheet. See `ServerSettingsPane`'s doc comment for why this is a plain `HStack`, not
+/// `NavigationSplitView` — the same window-toolbar-chrome conflict with the enclosing `TabView`.
+/// Unlike `ServerSettingsPane`, add/edit require a live connection (`Observatory` isn't a local
+/// model — it's fetched/saved server-side); "Remove" here only clears this local cache entry, it
+/// does not delete the observatory from the server (INDIMCPKit has no delete-observatory call at
+/// all).
 struct ObservatorySettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     @Query(sort: \ObservatoryProfile.name) private var observatories: [ObservatoryProfile]
 
-    // Only ever set to a real id from row(for:) below — the "add new" case is handled
-    // separately by isPresentingNewObservatory, so a plain optional (nil = no sheet) is enough
-    // here; ObservatoryEditForm's own `observatoryID: String?` parameter (nil = new) is a
-    // different, unrelated optional belonging to a different call site.
-    @State private var editingObservatoryID: String?
-    @State private var isPresentingNewObservatory = false
+    // Keyed by `serverObservatoryID` (String), matching `ObservatoryEditForm.observatoryID` —
+    // unrelated to `PersistentIdentifier`, since `Observatory` isn't itself a local model.
+    private enum Selection: Hashable {
+        case existing(String)
+        case new
+    }
+    @State private var selection: Selection?
 
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
+            Divider()
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var sidebar: some View {
         VStack(spacing: 0) {
             SettingsPaneHeader(
                 title: "Observatories",
                 isAddDisabled: !isConnected,
                 addHelp: isConnected ? "Add Observatory" : "Connect to a telescope server first",
-                onAdd: { isPresentingNewObservatory = true }
+                onAdd: { selection = .new }
             ) {
                 if !isConnected {
                     Text("Connect to add or edit")
@@ -45,28 +59,37 @@ struct ObservatorySettingsPane: View {
             if observatories.isEmpty {
                 emptyState
             } else {
-                List {
+                List(selection: $selection) {
                     ForEach(observatories) { observatory in
                         row(for: observatory)
+                            .tag(Selection.existing(observatory.serverObservatoryID))
                     }
                 }
             }
         }
-        .sheet(isPresented: presentingEditForm) {
-            if let editingObservatoryID {
-                ObservatoryEditForm(observatoryID: editingObservatoryID)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .existing(let id):
+            if observatories.contains(where: { $0.serverObservatoryID == id }) {
+                ObservatoryEditForm(observatoryID: id, onFinished: { selection = nil })
+                    .id(id)
+            } else {
+                placeholder
             }
-        }
-        .sheet(isPresented: $isPresentingNewObservatory) {
-            ObservatoryEditForm(observatoryID: nil)
+        case .new:
+            ObservatoryEditForm(observatoryID: nil, onFinished: { selection = nil })
+        case nil:
+            placeholder
         }
     }
 
-    private var presentingEditForm: Binding<Bool> {
-        Binding(
-            get: { editingObservatoryID != nil },
-            set: { if !$0 { editingObservatoryID = nil } }
-        )
+    private var placeholder: some View {
+        Text("Select an observatory, or add a new one.")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -103,14 +126,12 @@ struct ObservatorySettingsPane: View {
             .foregroundStyle(.secondary)
             .help("Remove from this local list — stays saved on the server")
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard isConnected else { return }
-            editingObservatoryID = observatory.serverObservatoryID
-        }
     }
 
     private func remove(_ observatory: ObservatoryProfile) {
+        if selection == .existing(observatory.serverObservatoryID) {
+            selection = nil
+        }
         modelContext.delete(observatory)
         try? modelContext.save()
     }

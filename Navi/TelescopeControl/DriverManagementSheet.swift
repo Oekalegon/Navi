@@ -12,9 +12,12 @@
 import SwiftUI
 import INDIMCPKit
 
+/// Embedded inline in `ServerSettingsPane`'s detail pane (NAVI-77) — shown only while its
+/// `serverName` is the one currently connected. Since the parent already conditions this view's
+/// presence on `telescope.state == .connected`, it disappears on its own the next render after a
+/// disconnect; no dismiss/auto-dismiss machinery needed here.
 struct DriverManagementSheet: View {
     let serverName: String
-    @Environment(\.dismiss) private var dismiss
     @State private var telescope = TelescopeSessionManager.shared
 
     @State private var catalog: [DriverInfo] = []
@@ -31,15 +34,8 @@ struct DriverManagementSheet: View {
             Divider()
             footer
         }
-        .frame(width: 480, height: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await refresh() }
-        .onChange(of: telescope.state) {
-            // Driver management is meaningless without the live client this exact server — if the
-            // user disconnects (from the Server Settings row) while this sheet is still open,
-            // close it rather than leave a stale list up that every further action would just fail
-            // against.
-            if telescope.state != .connected { dismiss() }
-        }
     }
 
     private var header: some View {
@@ -132,8 +128,6 @@ struct DriverManagementSheet: View {
             }
             Spacer()
             Button("Refresh") { Task { await refresh() } }
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

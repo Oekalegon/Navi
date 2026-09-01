@@ -11,10 +11,11 @@ import SwiftData
 /// Add/edit form for one `GuideCameraProfile` (§4.3). `deviceName` is picker-only while connected
 /// (§4.2), via `DevicePickerField`; every other field is freely editable offline.
 struct GuideCameraEditForm: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let guideCamera: GuideCameraProfile?
     var onSaved: (GuideCameraProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
+    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var make = ""
@@ -86,7 +87,7 @@ struct GuideCameraEditForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onFinished() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -94,7 +95,7 @@ struct GuideCameraEditForm: View {
             }
         }
         .padding(16)
-        .frame(width: 420, height: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = guideCamera?.name ?? ""
             make = guideCamera?.make ?? ""
@@ -151,6 +152,6 @@ struct GuideCameraEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        dismiss()
+        onFinished()
     }
 }
