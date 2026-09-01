@@ -34,6 +34,7 @@ struct ServerSettingsPane: View {
     @State private var isPresentingNewServer = false
     @State private var serverPendingDeletion: ServerProfile?
     @State private var unreachableWarning: String?
+    @State private var managingDriversFor: ServerProfile?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,6 +63,9 @@ struct ServerSettingsPane: View {
             ServerEditForm(server: nil, onSaved: { saved in
                 Task { await connectAfterSave(saved) }
             })
+        }
+        .sheet(item: $managingDriversFor) { server in
+            DriverManagementSheet(serverName: server.name)
         }
         .confirmationDialog(
             "Delete “\(serverPendingDeletion?.name ?? "")”?",
@@ -108,7 +112,8 @@ struct ServerSettingsPane: View {
     }
 
     private func row(for server: ServerProfile) -> some View {
-        HStack {
+        let connectionState = rowConnectionState(for: server)
+        return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name)
                     .font(.body)
@@ -117,7 +122,14 @@ struct ServerSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            connectionButton(for: server)
+            // Driver start/stop needs a live client for this exact server (NAVI-62) — only
+            // meaningful, and only shown, once this row is the one actually connected.
+            if connectionState == .connected {
+                Button("Drivers…") { managingDriversFor = server }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+            connectionButton(for: server, state: connectionState)
             // Explicit buttons, not a gesture/swipe: macOS's List(selection:)+.onDelete idiom
             // (the iOS edit-mode/swipe convention) has no reachable UI path here without a
             // selection binding — plain buttons are the reliable, discoverable macOS pattern.
@@ -152,8 +164,8 @@ struct ServerSettingsPane: View {
     }
 
     @ViewBuilder
-    private func connectionButton(for server: ServerProfile) -> some View {
-        switch rowConnectionState(for: server) {
+    private func connectionButton(for server: ServerProfile, state: RowConnectionState) -> some View {
+        switch state {
         case .connected:
             Button(action: { Task { await telescope.disconnect() } }) {
                 Image(systemName: "circle.fill")

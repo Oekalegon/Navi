@@ -405,6 +405,37 @@ final class TelescopeSessionManager {
         return running.filter(\.running).map(\.label).sorted()
     }
 
+    // MARK: - Driver management (NAVI-62)
+    //
+    // Bootstrapping a brand-new rig is a chicken-and-egg problem otherwise: liveDeviceNames()
+    // above only ever finds a device once its driver is already running, but nothing starts a
+    // driver until a rig with a device binding for it exists to trigger the connect cascade
+    // (TelescopeConnectCascade) — and there's no way to create that binding without first seeing
+    // the device. These let the user start/stop a driver directly, independent of any rig.
+
+    /// Every driver the server's device knows about, whether or not it's currently running.
+    func driverCatalog() async throws -> [DriverInfo] {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.listINDIDriverCatalog()
+    }
+
+    /// Every currently-running driver's status (including ones not `running`, per
+    /// `listRunningINDIDrivers`'s own contract — see `liveDeviceNames()`'s `.filter(\.running)`).
+    func runningDrivers() async throws -> [DriverStatus] {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.listRunningINDIDrivers()
+    }
+
+    func startDriver(label: String) async throws {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        _ = try await client.startINDIDriver(label: label)
+    }
+
+    func stopDriver(label: String) async throws {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        _ = try await client.stopINDIDriver(label: label)
+    }
+
     private func startLiveness(client: INDIMCPClient) {
         connectionEventsTask = Task { [weak self] in
             guard let self else { return }
