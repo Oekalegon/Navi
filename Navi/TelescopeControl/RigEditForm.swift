@@ -44,6 +44,19 @@ struct RigEditForm: View {
     @State private var guideOpticalAssembly: OpticalAssemblyProfile?
     @State private var imagingTrain: ImagingTrainProfile?
     @State private var guideCamera: GuideCameraProfile?
+    // Whether each role's toggle is on — deliberately independent of whether an entity is
+    // actually selected. Deriving "included" purely from `mount != nil` (etc.) meant that on an
+    // empty library (no MountProfile/OpticalAssemblyProfile/... created yet at all), turning a
+    // role's toggle on immediately snapped back off — `mount ?? mounts.first` resolves to `nil`
+    // when both are empty, so `isIncluded` was still false on the very next render — and since
+    // the "New…"/"Edit…" buttons only render `if isIncluded`, there was no way to ever create a
+    // role's first library entity from here at all. These track the toggle's own on/off state;
+    // `save()`/`makeRigComponents` still only ever look at the underlying `mount`/etc. values.
+    @State private var isMountIncluded = false
+    @State private var isOpticalAssemblyIncluded = false
+    @State private var isGuideOpticalAssemblyIncluded = false
+    @State private var isImagingTrainIncluded = false
+    @State private var isGuideCameraIncluded = false
     @State private var defaultObservatoryID: String?
     @State private var defaultServer: ServerProfile?
     @State private var standaloneComponents: [StandaloneComponentEntry] = []
@@ -95,8 +108,11 @@ struct RigEditForm: View {
 
                     roleSection(
                         title: "Mount",
-                        isIncluded: mount != nil,
-                        onToggle: { included in mount = included ? (mount ?? mounts.first) : nil },
+                        isIncluded: isMountIncluded,
+                        onToggle: { included in
+                            isMountIncluded = included
+                            mount = included ? (mount ?? mounts.first) : nil
+                        },
                         summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
                         picker: {
                             Picker("Mount", selection: $mount) {
@@ -111,8 +127,11 @@ struct RigEditForm: View {
 
                     roleSection(
                         title: "Optical Assembly",
-                        isIncluded: opticalAssembly != nil,
-                        onToggle: { included in opticalAssembly = included ? (opticalAssembly ?? mainOpticalAssemblies.first) : nil },
+                        isIncluded: isOpticalAssemblyIncluded,
+                        onToggle: { included in
+                            isOpticalAssemblyIncluded = included
+                            opticalAssembly = included ? (opticalAssembly ?? mainOpticalAssemblies.first) : nil
+                        },
                         summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
                         picker: {
                             Picker("Optical Assembly", selection: $opticalAssembly) {
@@ -127,8 +146,11 @@ struct RigEditForm: View {
 
                     roleSection(
                         title: "Guide Optical Assembly",
-                        isIncluded: guideOpticalAssembly != nil,
-                        onToggle: { included in guideOpticalAssembly = included ? (guideOpticalAssembly ?? guideOpticalAssemblies.first) : nil },
+                        isIncluded: isGuideOpticalAssemblyIncluded,
+                        onToggle: { included in
+                            isGuideOpticalAssemblyIncluded = included
+                            guideOpticalAssembly = included ? (guideOpticalAssembly ?? guideOpticalAssemblies.first) : nil
+                        },
                         summary: guideOpticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
                         picker: {
                             Picker("Guide Optical Assembly", selection: $guideOpticalAssembly) {
@@ -151,8 +173,11 @@ struct RigEditForm: View {
 
                     roleSection(
                         title: "Imaging Train",
-                        isIncluded: imagingTrain != nil,
-                        onToggle: { included in imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil },
+                        isIncluded: isImagingTrainIncluded,
+                        onToggle: { included in
+                            isImagingTrainIncluded = included
+                            imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil
+                        },
                         summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") },
                         picker: {
                             Picker("Imaging Train", selection: $imagingTrain) {
@@ -167,8 +192,11 @@ struct RigEditForm: View {
 
                     roleSection(
                         title: "Guide Camera",
-                        isIncluded: guideCamera != nil,
-                        onToggle: { included in guideCamera = included ? (guideCamera ?? guideCameras.first) : nil },
+                        isIncluded: isGuideCameraIncluded,
+                        onToggle: { included in
+                            isGuideCameraIncluded = included
+                            guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
+                        },
                         summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
                         picker: {
                             Picker("Guide Camera", selection: $guideCamera) {
@@ -237,15 +265,15 @@ struct RigEditForm: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .mount(let m):
-                MountEditForm(mount: m) { mount = $0 }
+                MountEditForm(mount: m) { mount = $0; isMountIncluded = true }
             case .opticalAssembly(let o):
-                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .mainImaging) { opticalAssembly = $0 }
+                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .mainImaging) { opticalAssembly = $0; isOpticalAssemblyIncluded = true }
             case .guideOpticalAssembly(let o):
-                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .guideScope) { guideOpticalAssembly = $0 }
+                OpticalAssemblyEditForm(opticalAssembly: o, purpose: .guideScope) { guideOpticalAssembly = $0; isGuideOpticalAssemblyIncluded = true }
             case .imagingTrain(let t):
-                ImagingTrainEditForm(imagingTrain: t) { imagingTrain = $0 }
+                ImagingTrainEditForm(imagingTrain: t) { imagingTrain = $0; isImagingTrainIncluded = true }
             case .guideCamera(let g):
-                GuideCameraEditForm(guideCamera: g) { guideCamera = $0 }
+                GuideCameraEditForm(guideCamera: g) { guideCamera = $0; isGuideCameraIncluded = true }
             case .server(let s):
                 ServerEditForm(server: s) { defaultServer = $0 }
             }
@@ -320,6 +348,13 @@ struct RigEditForm: View {
                     Text(summary)
                         .font(.caption)
                         .foregroundStyle(summary.hasSuffix("blank") ? .orange : .secondary)
+                } else {
+                    // Nothing selected yet — most commonly because the library for this role is
+                    // still empty (nothing to pick from ?? .first would resolve to). Point
+                    // explicitly at "New…" rather than leaving an unexplained blank picker.
+                    Text("No \(title.lowercased()) yet — click New… to add one.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
                 HStack {
                     Button("New…", action: onNew)
@@ -364,10 +399,15 @@ struct RigEditForm: View {
     private func load() {
         name = rig?.name ?? ""
         mount = rig?.mount
+        isMountIncluded = mount != nil
         opticalAssembly = rig?.opticalAssembly
+        isOpticalAssemblyIncluded = opticalAssembly != nil
         guideOpticalAssembly = rig?.guideOpticalAssembly
+        isGuideOpticalAssemblyIncluded = guideOpticalAssembly != nil
         imagingTrain = rig?.imagingTrain
+        isImagingTrainIncluded = imagingTrain != nil
         guideCamera = rig?.guideCamera
+        isGuideCameraIncluded = guideCamera != nil
         defaultObservatoryID = rig?.defaultObservatoryID
         defaultServer = rig?.defaultServer
         standaloneComponents = rig?.standaloneComponents ?? []
