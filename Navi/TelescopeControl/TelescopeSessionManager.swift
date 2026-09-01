@@ -90,6 +90,15 @@ final class TelescopeSessionManager {
     private var connectionEventsTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
 
+    // NAVI-52: capture progress + the frame-import reconciliation loop.
+    /// The runId of the capture this rig session is currently watching, if any — cleared once its
+    /// status turns terminal. Distinct from CaptureRunTracker's durable per-rig record: this is
+    /// just "which one to show live progress for," not "which frames Navi still owes an import."
+    private(set) var activeCaptureRunId: String?
+    private(set) var activeCaptureStatus: ScriptRunStatus?
+    private var captureEventsTask: Task<Void, Never>?
+    private var reconcileTask: Task<Void, Never>?
+
     init() {
         armedRigID = UserDefaults.standard.string(forKey: Self.armedRigIDDefaultsKey)
         armedObservatoryID = UserDefaults.standard.string(forKey: Self.armedObservatoryIDDefaultsKey)
@@ -115,6 +124,8 @@ final class TelescopeSessionManager {
             connectionSessionID = nextSessionID
             state = .connected
             startLiveness(client: client)
+            await resumeActiveCaptureIfNeeded(rig: rig, client: client)
+            Task { await CaptureImportManager.shared.reconcile(rig: rig, client: client) }
         } catch {
             // The cascade may have already completed the MCP handshake before a later step
             // failed — disconnect the locally-constructed client so that session doesn't dangle;
@@ -239,6 +250,71 @@ final class TelescopeSessionManager {
         }
     }
 
+    // MARK: - Camera commands (NAVI-52) — the single choke point for camera hardware commands
+    // (I-9): CameraPanelView never holds a `Camera`/`FilterWheel` handle directly, only calls
+    // through here, so two panes/windows can't independently fire conflicting commands. Reading
+    // standing/live state (temperature, cooler, gain) instead goes through the shared
+    // `ObservableDevice` from `acquireDevice(for: .camera)`, matching every other pane's convention
+    // — only commands that change hardware state route through this section.
+
+    /// Captures one frame and starts tracking its progress (`activeCaptureRunId`/
+    /// `activeCaptureStatus`) — the same runId is recorded in `CaptureRunTracker` immediately, so
+    /// it survives even if Navi disconnects or quits before the exposure finishes.
+    @discardableResult
+    func captureFrame(
+        exposureSeconds: Double, frameType: FrameType, binningX: Int, binningY: Int,
+        gain: Double?, offset: Double?
+    ) async throws -> ScriptRunStarted {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        let started = try await client.camera(rigId: rig.id).captureFrame(
+            exposureSeconds: exposureSeconds, frameType: frameType,
+            binningX: binningX, binningY: binningY, gain: gain, offset: offset)
+        CaptureRunTracker.recordRunStarted(rigId: rig.id, runId: started.runId)
+        activeCaptureRunId = started.runId
+        activeCaptureStatus = .started(started)
+        subscribeToActiveCapture(runId: started.runId, client: client)
+        return started
+    }
+
+    /// Aborts the camera's currently in-progress exposure — an explicit, separate user action
+    /// only (I-3), never implied by this pane closing or Navi quitting.
+    func abortExposure() async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        _ = try await client.camera(rigId: rig.id).abortExposure()
+    }
+
+    func coolCamera(targetTempC: Double) async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        _ = try await client.camera(rigId: rig.id).coolCamera(targetTempC: targetTempC)
+    }
+
+    func coolerOn() async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        _ = try await client.camera(rigId: rig.id).coolerOn()
+    }
+
+    func coolerOff() async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        _ = try await client.camera(rigId: rig.id).coolerOff()
+    }
+
+    func setTargetTempC(_ targetTempC: Double) async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        try await client.camera(rigId: rig.id).setTargetTempC(targetTempC)
+    }
+
+    /// The rig's configured filter-wheel slot names (`Component.slots`) — not a live driver read,
+    /// matching `FilterWheel.filterNames()`'s own contract.
+    func filterNames() async throws -> [Int: String] {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        return try await client.filterWheel(rigId: rig.id).filterNames()
+    }
+
+    func selectFilter(_ filterName: String) async throws {
+        guard let client, let rig = currentRig else { throw TelescopeSessionError.notConnected }
+        _ = try await client.filterWheel(rigId: rig.id).selectFilter(filterName)
+    }
+
     /// Starts (or joins) the shared, unscoped `ObservableMessageStream`, reference-counted the same
     /// way `acquireDevice(for:)` is (§3.3/§4.7). Unscoped (not `messageEvents(device:)`'s single-
     /// device filter) because the pane needs messages from every device in the current rig, and
@@ -354,13 +430,70 @@ final class TelescopeSessionManager {
                 }
             }
         }
+        // NAVI-52: catches up on frames that finished while Navi wasn't watching (or wasn't even
+        // running) — the live scriptEvents subscription alone isn't resilient to disconnects, so
+        // this periodic sweep is the durable backstop, on top of the one-shot pass connect()
+        // already triggers. 60s, not tied to the 30s heartbeat's tighter connection-liveness need.
+        reconcileTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled, let self, let rig = self.currentRig else { return }
+                await CaptureImportManager.shared.reconcile(rig: rig, client: client)
+            }
+        }
     }
 
     private func stopLiveness() {
         connectionEventsTask?.cancel()
         heartbeatTask?.cancel()
+        reconcileTask?.cancel()
+        captureEventsTask?.cancel()
         connectionEventsTask = nil
         heartbeatTask = nil
+        reconcileTask = nil
+        captureEventsTask = nil
+        activeCaptureRunId = nil
+        activeCaptureStatus = nil
+    }
+
+    /// On connect, resumes live progress tracking for whichever of this rig's tracked runs (§NAVI-
+    /// 52's CaptureRunTracker) is still non-terminal — an in-progress exposure keeps running on
+    /// the Pi regardless of what Navi's UI does, so the panel should come up already showing
+    /// progress/abort rather than a stale idle state (I-3), not just after Navi itself started it.
+    private func resumeActiveCaptureIfNeeded(rig: Rig, client: INDIMCPClient) async {
+        for runId in CaptureRunTracker.runIDs(forRig: rig.id) {
+            guard let status = try? await client.getScriptStatus(runId: runId), !status.isTerminal else { continue }
+            activeCaptureRunId = runId
+            activeCaptureStatus = status
+            subscribeToActiveCapture(runId: runId, client: client)
+            return
+        }
+    }
+
+    /// Live progress for the UI only — not relied on for correctness. `scriptEvents` isn't
+    /// resilient to disconnects (I-3); the durable catch-up is `reconcile()`'s periodic sweep and
+    /// `resumeActiveCaptureIfNeeded`'s status poll on the next connect, not this stream.
+    private func subscribeToActiveCapture(runId: String, client: INDIMCPClient) {
+        captureEventsTask?.cancel()
+        captureEventsTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await window in client.scriptEvents(runId: runId) {
+                    guard let latest = window.first else { continue }
+                    await self.applyCaptureStatus(latest, runId: runId)
+                }
+            } catch {
+                // Best-effort live signal only — see this method's own doc comment.
+            }
+        }
+    }
+
+    private func applyCaptureStatus(_ status: ScriptRunStatus, runId: String) {
+        guard activeCaptureRunId == runId else { return }
+        activeCaptureStatus = status
+        if status.isTerminal {
+            activeCaptureRunId = nil
+        }
     }
 
     private func handle(_ events: [ConnectionEvent]) async {
