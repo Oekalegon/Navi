@@ -9,11 +9,13 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Observatory pane" (§4.2): lists the local `ObservatoryProfile` cache and shows
-/// `ObservatoryEditForm` inline as detail content — a native macOS master-detail layout (NAVI-77),
-/// not a modal sheet. Unlike `ServerSettingsPane`, add/edit require a live connection
-/// (`Observatory` isn't a local model — it's fetched/saved server-side); "Remove" here only clears
-/// this local cache entry, it does not delete the observatory from the server (INDIMCPKit has no
-/// delete-observatory call at all).
+/// `ObservatoryEditForm` inline as detail content — a master-detail layout (NAVI-77), not a modal
+/// sheet. See `ServerSettingsPane`'s doc comment for why this is a plain `HStack`, not
+/// `NavigationSplitView` — the same window-toolbar-chrome conflict with the enclosing `TabView`.
+/// Unlike `ServerSettingsPane`, add/edit require a live connection (`Observatory` isn't a local
+/// model — it's fetched/saved server-side); "Remove" here only clears this local cache entry, it
+/// does not delete the observatory from the server (INDIMCPKit has no delete-observatory call at
+/// all).
 struct ObservatorySettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
@@ -30,10 +32,12 @@ struct ObservatorySettingsPane: View {
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
+            Divider()
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

@@ -9,9 +9,15 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Server pane" (§4.2): a plain list of named INDI-MCP servers (name + URL) in the
-/// local equipment library, shown as a native macOS master-detail layout (NAVI-77) — the sidebar
-/// list on the left, `ServerEditForm` embedded inline as detail content on the right, no modal
-/// sheet. A `RigProfile` references one as its default (§4.1's toolbar Connect targets whichever
+/// local equipment library, shown as a master-detail layout (NAVI-77) — the sidebar list on the
+/// left, `ServerEditForm` embedded inline as detail content on the right, no modal sheet.
+/// Deliberately a plain `HStack`, not `NavigationSplitView`: this pane is one tab of
+/// `SettingsRootView`'s `TabView`, and `NavigationSplitView` hooks into the *window's* toolbar/
+/// sidebar chrome the same way `TabView` itself does (see `TelescopeControlView`'s NAVI-76 doc
+/// comment for the sibling case) — nesting one window-chrome-owning container inside another left
+/// a previous tab's sidebar list stuck on screen when switching tabs. A plain `HStack` gives the
+/// same sidebar/detail look with no AppKit toolbar/sidebar integration to conflict with `TabView`.
+/// A `RigProfile` references one as its default (§4.1's toolbar Connect targets whichever
 /// server the armed rig defaults to) — changing that default is a Rig-editor action (NAVI-55), not
 /// something this pane does.
 ///
@@ -45,10 +51,12 @@ struct ServerSettingsPane: View {
     @State private var unreachableWarning: String?
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
+            Divider()
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .confirmationDialog(
             "Delete “\(serverPendingDeletion?.name ?? "")”?",

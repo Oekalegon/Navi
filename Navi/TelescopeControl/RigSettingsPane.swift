@@ -9,7 +9,9 @@ import SwiftUI
 import SwiftData
 
 /// The Settings "Rig pane" (§4.2): lists the local `RigProfile` library and shows `RigEditForm`
-/// inline as detail content — a native macOS master-detail layout (NAVI-77), not a modal sheet.
+/// inline as detail content — a master-detail layout (NAVI-77), not a modal sheet. See
+/// `ServerSettingsPane`'s doc comment for why this is a plain `HStack`, not `NavigationSplitView`
+/// — the same window-toolbar-chrome conflict with the enclosing `TabView`.
 /// Unlike `ObservatorySettingsPane`, `RigProfile` *is* a local SwiftData model (it tracks which
 /// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
 /// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
@@ -27,10 +29,12 @@ struct RigSettingsPane: View {
     @State private var rigPendingDeletion: RigProfile?
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
+            Divider()
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .confirmationDialog(
             "Delete “\(rigPendingDeletion?.name ?? "")”?",
