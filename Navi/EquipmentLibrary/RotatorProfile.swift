@@ -17,8 +17,6 @@ final class RotatorProfile {
     var make: String?
     var model: String?
     var deviceName: String?
-    /// See `MountProfile.preferredDriverLabel`'s doc comment (NAVI-85).
-    var preferredDriverLabel: String?
     var notes: String?
 
     /// Updated whenever this record is saved; drives the §4.3 "Resync all" stale-Rig detection.
@@ -29,7 +27,6 @@ final class RotatorProfile {
         make: String? = nil,
         model: String? = nil,
         deviceName: String? = nil,
-        preferredDriverLabel: String? = nil,
         notes: String? = nil,
         modifiedAt: Date = .now
     ) {
@@ -37,7 +34,6 @@ final class RotatorProfile {
         self.make = make
         self.model = model
         self.deviceName = deviceName
-        self.preferredDriverLabel = preferredDriverLabel
         self.notes = notes
         self.modifiedAt = modifiedAt
     }

@@ -399,8 +399,332 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
 /// `RotatorProfile`), each managed on their own in the Equipment pane; `ImagingTrainProfile` becomes
 /// a pure composition of relationships to them, the same shape `RigProfile` already uses for its
 /// own roles. See each type's own doc comment.
+///
+/// Every model here except `ServerProfile`/`ObservatoryProfile` is frozen as a nested `V4`-suffixed
+/// snapshot (NAVI-85 second follow-up): V5 drops `preferredDriverLabel` from every equipment type
+/// (the "Preferred Driver" picker was removed — starting/stopping a driver is `DriverManagement
+/// Sheet`'s job in the Server pane, not a per-equipment-item choice, and picking one from the full
+/// driver catalog per piece of equipment was an unusably long list). `ImagingTrainProfile` and
+/// `RigProfile` don't lose any field of their own, but both hold relationships whose *target* types
+/// change shape in V5 — per this file's established lesson, a relationship's target type is part of
+/// what a version's checksum covers, so both need freezing here too.
 enum EquipmentLibrarySchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            MountProfileV4.self,
+            OpticalAssemblyProfileV4.self,
+            ImagingTrainProfileV4.self,
+            GuideCameraProfileV4.self,
+            ServerProfile.self,
+            RigProfileV4.self,
+            ObservatoryProfile.self,
+            StandaloneEquipmentProfileV4.self,
+            CameraProfileV4.self,
+            FilterWheelProfileV4.self,
+            RotatorProfileV4.self,
+        ]
+    }
+
+    @Model
+    final class MountProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class OpticalAssemblyProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var apertureMm: Double?
+        var focalLengthMm: Double?
+        var opticalDesign: OpticalDesign?
+        var purpose: OpticalAssemblyPurpose
+        var focuserMake: String?
+        var focuserModel: String?
+        var focuserDeviceName: String?
+        var focuserPreferredDriverLabel: String?
+        var focuserMinPosition: Int?
+        var focuserMaxPosition: Int?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, apertureMm: Double? = nil,
+            focalLengthMm: Double? = nil, opticalDesign: OpticalDesign? = nil,
+            purpose: OpticalAssemblyPurpose = .mainImaging, focuserMake: String? = nil,
+            focuserModel: String? = nil, focuserDeviceName: String? = nil,
+            focuserPreferredDriverLabel: String? = nil, focuserMinPosition: Int? = nil,
+            focuserMaxPosition: Int? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.apertureMm = apertureMm
+            self.focalLengthMm = focalLengthMm
+            self.opticalDesign = opticalDesign
+            self.purpose = purpose
+            self.focuserMake = focuserMake
+            self.focuserModel = focuserModel
+            self.focuserDeviceName = focuserDeviceName
+            self.focuserPreferredDriverLabel = focuserPreferredDriverLabel
+            self.focuserMinPosition = focuserMinPosition
+            self.focuserMaxPosition = focuserMaxPosition
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class CameraProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var cooled: Bool?
+        var pixelsX: Int?
+        var pixelsY: Int?
+        var pixelSizeMicron: Double?
+        var bitDepth: Int?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, cooled: Bool? = nil, pixelsX: Int? = nil,
+            pixelsY: Int? = nil, pixelSizeMicron: Double? = nil, bitDepth: Int? = nil,
+            notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.cooled = cooled
+            self.pixelsX = pixelsX
+            self.pixelsY = pixelsY
+            self.pixelSizeMicron = pixelSizeMicron
+            self.bitDepth = bitDepth
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class FilterWheelProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        private var slotsData: Data?
+        var slots: [FilterSlotEntry]? {
+            get { slotsData.flatMap { try? JSONDecoder().decode([FilterSlotEntry].self, from: $0) } }
+            set { slotsData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+        }
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, slots: [FilterSlotEntry]? = nil,
+            notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.slotsData = nil
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+            self.slots = slots
+        }
+    }
+
+    @Model
+    final class RotatorProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class GuideCameraProfileV4 {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var cooled: Bool?
+        var pixelsX: Int?
+        var pixelsY: Int?
+        var pixelSizeMicron: Double?
+        var bitDepth: Int?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, cooled: Bool? = nil, pixelsX: Int? = nil,
+            pixelsY: Int? = nil, pixelSizeMicron: Double? = nil, bitDepth: Int? = nil,
+            notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.cooled = cooled
+            self.pixelsX = pixelsX
+            self.pixelsY = pixelsY
+            self.pixelSizeMicron = pixelSizeMicron
+            self.bitDepth = bitDepth
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class StandaloneEquipmentProfileV4 {
+        var name: String
+        var role: StandaloneEquipmentRole
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, role: StandaloneEquipmentRole, make: String? = nil, model: String? = nil,
+            deviceName: String? = nil, preferredDriverLabel: String? = nil, notes: String? = nil,
+            modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.role = role
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class ImagingTrainProfileV4 {
+        var name: String
+        @Relationship(deleteRule: .nullify) var camera: CameraProfileV4?
+        @Relationship(deleteRule: .nullify) var filterWheel: FilterWheelProfileV4?
+        @Relationship(deleteRule: .nullify) var rotator: RotatorProfileV4?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, camera: CameraProfileV4? = nil, filterWheel: FilterWheelProfileV4? = nil,
+            rotator: RotatorProfileV4? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.camera = camera
+            self.filterWheel = filterWheel
+            self.rotator = rotator
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class RigProfileV4 {
+        @Attribute(.unique) var serverRigID: String
+        var name: String
+        @Relationship(deleteRule: .nullify) var mount: MountProfileV4?
+        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfileV4?
+        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfileV4?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfileV4?
+        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfileV4?
+        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfileV4?
+        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfileV4?
+        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfileV4?
+        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfileV4?
+        var defaultObservatoryID: String?
+        @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
+        var lastResyncedAt: Date
+
+        init(
+            serverRigID: String, name: String, mount: MountProfileV4? = nil,
+            opticalAssembly: OpticalAssemblyProfileV4? = nil,
+            guideOpticalAssembly: OpticalAssemblyProfileV4? = nil,
+            imagingTrain: ImagingTrainProfileV4? = nil, guideCamera: GuideCameraProfileV4? = nil,
+            powerHub: StandaloneEquipmentProfileV4? = nil, flatScreen: StandaloneEquipmentProfileV4? = nil,
+            dewHeater: StandaloneEquipmentProfileV4? = nil,
+            observatoryControl: StandaloneEquipmentProfileV4? = nil, defaultObservatoryID: String? = nil,
+            defaultServer: ServerProfile? = nil, lastResyncedAt: Date = .now
+        ) {
+            self.serverRigID = serverRigID
+            self.name = name
+            self.mount = mount
+            self.opticalAssembly = opticalAssembly
+            self.guideOpticalAssembly = guideOpticalAssembly
+            self.imagingTrain = imagingTrain
+            self.guideCamera = guideCamera
+            self.powerHub = powerHub
+            self.flatScreen = flatScreen
+            self.dewHeater = dewHeater
+            self.observatoryControl = observatoryControl
+            self.defaultObservatoryID = defaultObservatoryID
+            self.defaultServer = defaultServer
+            self.lastResyncedAt = lastResyncedAt
+        }
+    }
+}
+
+/// Version 5 (NAVI-85 second follow-up) — drops the "Preferred Driver" field/picker from every
+/// equipment type. Starting/stopping an INDI driver is server-wide configuration
+/// (`DriverManagementSheet`, embedded in the Server pane), not a per-equipment-item choice, and the
+/// full driver catalog was an unusably long list to pick from once per piece of equipment — the
+/// live `INDI Device` picker (already restricted to the *connected*, relevant devices) is the only
+/// device-selection affordance equipment needs.
+enum EquipmentLibrarySchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -421,7 +745,10 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
 
 enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self, EquipmentLibrarySchemaV4.self]
+        [
+            EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self,
+            EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self,
+        ]
     }
     static var stages: [MigrationStage] {
         [
@@ -436,6 +763,9 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
             // wheel/rotator bindings here — there's no automatic way to turn the old flat fields
             // into new relationship targets. Accepted for the same reason as the stage above.
             .lightweight(fromVersion: EquipmentLibrarySchemaV3.self, toVersion: EquipmentLibrarySchemaV4.self),
+            // Dropping `preferredDriverLabel` is a pure field removal — lightweight migration
+            // handles this without any value loss elsewhere.
+            .lightweight(fromVersion: EquipmentLibrarySchemaV4.self, toVersion: EquipmentLibrarySchemaV5.self),
         ]
     }
 }
@@ -444,5 +774,5 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
 /// tests build their `Schema`/`ModelConfiguration` from, without every call site needing to know
 /// which `VersionedSchema` is current.
 enum EquipmentLibrarySchema {
-    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV4.models }
+    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV5.models }
 }

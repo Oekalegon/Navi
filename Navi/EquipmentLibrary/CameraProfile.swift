@@ -18,8 +18,6 @@ final class CameraProfile {
     var make: String?
     var model: String?
     var deviceName: String?
-    /// See `MountProfile.preferredDriverLabel`'s doc comment (NAVI-85).
-    var preferredDriverLabel: String?
     var cooled: Bool?
     var pixelsX: Int?
     var pixelsY: Int?
@@ -35,7 +33,6 @@ final class CameraProfile {
         make: String? = nil,
         model: String? = nil,
         deviceName: String? = nil,
-        preferredDriverLabel: String? = nil,
         cooled: Bool? = nil,
         pixelsX: Int? = nil,
         pixelsY: Int? = nil,
@@ -48,7 +45,6 @@ final class CameraProfile {
         self.make = make
         self.model = model
         self.deviceName = deviceName
-        self.preferredDriverLabel = preferredDriverLabel
         self.cooled = cooled
         self.pixelsX = pixelsX
         self.pixelsY = pixelsY

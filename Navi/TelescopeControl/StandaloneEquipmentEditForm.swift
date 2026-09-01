@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `StandaloneEquipmentProfile` (§4.3's equipment library) — shared by all
 /// four standalone roles (Power Hub, Flat Screen, Dew Heater, Observatory Control), `role` fixed by
@@ -17,7 +16,6 @@ struct StandaloneEquipmentEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let equipment: StandaloneEquipmentProfile?
     let role: StandaloneEquipmentRole
-    var sharedDrivers: [DriverInfo]?
     /// Called with the saved (inserted-or-mutated) entity, so the Equipment pane can adopt it as
     /// the current selection right away.
     var onSaved: (StandaloneEquipmentProfile) -> Void = { _ in }
@@ -28,7 +26,6 @@ struct StandaloneEquipmentEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
-    @State private var preferredDriverLabel: String?
     @State private var notes = ""
     @State private var validationError: String?
 
@@ -52,7 +49,6 @@ struct StandaloneEquipmentEditForm: View {
                 }
             }
             DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-            DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
             LabeledField("Notes") {
                 TextField("Optional notes", text: $notes)
                     .textFieldStyle(.roundedBorder)
@@ -82,7 +78,6 @@ struct StandaloneEquipmentEditForm: View {
             make = equipment?.make ?? ""
             model = equipment?.model ?? ""
             deviceName = equipment?.deviceName
-            preferredDriverLabel = equipment?.preferredDriverLabel
             notes = equipment?.notes ?? ""
         }
     }
@@ -103,7 +98,6 @@ struct StandaloneEquipmentEditForm: View {
             equipment.make = trimmedMake.isEmpty ? nil : trimmedMake
             equipment.model = trimmedModel.isEmpty ? nil : trimmedModel
             equipment.deviceName = deviceName
-            equipment.preferredDriverLabel = preferredDriverLabel
             equipment.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             equipment.modifiedAt = .now
             saved = equipment
@@ -114,7 +108,6 @@ struct StandaloneEquipmentEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
-                preferredDriverLabel: preferredDriverLabel,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             modelContext.insert(created)

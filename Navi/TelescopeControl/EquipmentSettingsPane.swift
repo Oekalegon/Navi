@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// The Settings "Equipment pane" (§4.3, NAVI-85): every reusable equipment-library entity — Mount,
 /// Optical Assembly (main and guide), Camera, Filter Wheel, Rotator, Guide Camera, and the four
@@ -34,12 +33,13 @@ import INDIMCPKit
 /// `mainOpticalAssemblies`/`guideOpticalAssemblies` split) rather than exposing a raw `purpose`
 /// picker — same reasoning `OpticalAssemblyEditForm`'s `purpose` parameter already encodes.
 ///
-/// Fetches `telescope.driverCatalog()` once and shares it with whichever edit form is active via
-/// `sharedDrivers:`, mirroring how `RigEditForm` already shares `liveDevices` across its device
-/// pickers.
+/// Every device-bearing field here is `DevicePickerField` only — picked from the live, *connected*
+/// INDI device list (§4.2), never free text. There is deliberately no separate "preferred driver"
+/// picker over the full INDI driver catalog: starting/stopping drivers is `DriverManagementSheet`'s
+/// job, embedded in the Server pane (NAVI-62) — a driver is server-wide config, not a per-equipment
+/// choice, and the full catalog is far too long a list to pick from once per piece of equipment.
 struct EquipmentSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var telescope = TelescopeSessionManager.shared
 
     @Query(sort: \MountProfile.name) private var mounts: [MountProfile]
     @Query(sort: \OpticalAssemblyProfile.name) private var opticalAssemblies: [OpticalAssemblyProfile]
@@ -120,7 +120,6 @@ struct EquipmentSettingsPane: View {
     }
     @State private var selection: Selection?
     @State private var pendingDeletion: (name: String, action: () -> Void)?
-    @State private var driverCatalog: [DriverInfo] = []
 
     /// One row in the sidebar tree — a kind's own row (`instanceSelection == nil`) or one of its
     /// owned instances (`instanceSelection` is that instance's own selection, driving the delete
@@ -215,14 +214,6 @@ struct EquipmentSettingsPane: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .task(id: telescope.state) {
-            // Keyed on `telescope.state`, not a plain `.task { }` — this pane's `.id(Tab.equipment)`
-            // keeps it alive across tab switches (it isn't recreated), so a plain one-shot `.task`
-            // would leave every `DriverPickerField`'s `sharedDrivers` permanently empty if the user
-            // opens Settings before connecting and only connects afterward.
-            guard telescope.state == .connected else { return }
-            driverCatalog = (try? await telescope.driverCatalog()) ?? []
-        }
         .confirmationDialog(
             "Delete “\(pendingDeletion?.name ?? "")”?",
             isPresented: Binding(
@@ -246,6 +237,11 @@ struct EquipmentSettingsPane: View {
             OutlineGroup(topLevelNodes, children: \.children) { node in
                 row(for: node).tag(node.selection)
             }
+            // `.listStyle(.plain)` alone doesn't remove macOS's row separator lines — that's a
+            // separate, per-row modifier (`.listRowSeparator(.hidden)`, macOS 13+). Without it,
+            // `.plain` only drops the `.sidebar` vibrancy background; the hairline between every
+            // row remains.
+            .listRowSeparator(.hidden)
         }
         .listStyle(.plain)
     }
@@ -274,53 +270,53 @@ struct EquipmentSettingsPane: View {
             kindOverview(for: kind)
         case .existingMount(let id):
             if let mount = mounts.first(where: { $0.persistentModelID == id }) {
-                MountEditForm(mount: mount, sharedDrivers: driverCatalog, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
+                MountEditForm(mount: mount, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
                     .id(id)
             } else { placeholder }
         case .newMount:
-            MountEditForm(mount: nil, sharedDrivers: driverCatalog, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
+            MountEditForm(mount: nil, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
         case .existingOpticalAssembly(let id):
             if let assembly = opticalAssemblies.first(where: { $0.persistentModelID == id }) {
-                OpticalAssemblyEditForm(opticalAssembly: assembly, purpose: assembly.purpose, sharedDrivers: driverCatalog, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(assembly.purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
+                OpticalAssemblyEditForm(opticalAssembly: assembly, purpose: assembly.purpose, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(assembly.purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
                     .id(id)
             } else { placeholder }
         case .newOpticalAssembly(let purpose):
-            OpticalAssemblyEditForm(opticalAssembly: nil, purpose: purpose, sharedDrivers: driverCatalog, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
+            OpticalAssemblyEditForm(opticalAssembly: nil, purpose: purpose, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
         case .existingCamera(let id):
             if let camera = cameras.first(where: { $0.persistentModelID == id }) {
-                CameraEditForm(camera: camera, sharedDrivers: driverCatalog, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
+                CameraEditForm(camera: camera, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
                     .id(id)
             } else { placeholder }
         case .newCamera:
-            CameraEditForm(camera: nil, sharedDrivers: driverCatalog, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
+            CameraEditForm(camera: nil, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
         case .existingFilterWheel(let id):
             if let filterWheel = filterWheels.first(where: { $0.persistentModelID == id }) {
-                FilterWheelEditForm(filterWheel: filterWheel, sharedDrivers: driverCatalog, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
+                FilterWheelEditForm(filterWheel: filterWheel, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
                     .id(id)
             } else { placeholder }
         case .newFilterWheel:
-            FilterWheelEditForm(filterWheel: nil, sharedDrivers: driverCatalog, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
+            FilterWheelEditForm(filterWheel: nil, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
         case .existingRotator(let id):
             if let rotator = rotators.first(where: { $0.persistentModelID == id }) {
-                RotatorEditForm(rotator: rotator, sharedDrivers: driverCatalog, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
+                RotatorEditForm(rotator: rotator, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
                     .id(id)
             } else { placeholder }
         case .newRotator:
-            RotatorEditForm(rotator: nil, sharedDrivers: driverCatalog, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
+            RotatorEditForm(rotator: nil, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
         case .existingGuideCamera(let id):
             if let camera = guideCameras.first(where: { $0.persistentModelID == id }) {
-                GuideCameraEditForm(guideCamera: camera, sharedDrivers: driverCatalog, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
+                GuideCameraEditForm(guideCamera: camera, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
                     .id(id)
             } else { placeholder }
         case .newGuideCamera:
-            GuideCameraEditForm(guideCamera: nil, sharedDrivers: driverCatalog, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
+            GuideCameraEditForm(guideCamera: nil, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
         case .existingStandalone(let id):
             if let equipment = standaloneEquipment.first(where: { $0.persistentModelID == id }) {
-                StandaloneEquipmentEditForm(equipment: equipment, role: equipment.role, sharedDrivers: driverCatalog, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: equipment.role)) })
+                StandaloneEquipmentEditForm(equipment: equipment, role: equipment.role, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: equipment.role)) })
                     .id(id)
             } else { placeholder }
         case .newStandalone(let role):
-            StandaloneEquipmentEditForm(equipment: nil, role: role, sharedDrivers: driverCatalog, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: role)) })
+            StandaloneEquipmentEditForm(equipment: nil, role: role, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: role)) })
         case nil:
             placeholder
         }
@@ -363,6 +359,7 @@ struct EquipmentSettingsPane: View {
                         Text(instance.name)
                     }
                     .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
                 }
                 .listStyle(.plain)
             }

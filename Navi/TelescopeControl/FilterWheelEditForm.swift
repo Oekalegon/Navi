@@ -7,14 +7,12 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `FilterWheelProfile` (§4.3). `deviceName` is picker-only while connected
 /// (§4.2), via `DevicePickerField`.
 struct FilterWheelEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let filterWheel: FilterWheelProfile?
-    var sharedDrivers: [DriverInfo]?
     var onSaved: (FilterWheelProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -23,7 +21,6 @@ struct FilterWheelEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
-    @State private var preferredDriverLabel: String?
     @State private var slots: [FilterSlotEntry] = []
     @State private var notes = ""
     @State private var validationError: String?
@@ -50,7 +47,6 @@ struct FilterWheelEditForm: View {
                         }
                     }
                     DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-                    DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
                     slotsEditor
                     LabeledField("Notes") {
                         TextField("Optional notes", text: $notes)
@@ -81,7 +77,6 @@ struct FilterWheelEditForm: View {
             make = filterWheel?.make ?? ""
             model = filterWheel?.model ?? ""
             deviceName = filterWheel?.deviceName
-            preferredDriverLabel = filterWheel?.preferredDriverLabel
             slots = filterWheel?.slots ?? []
             notes = filterWheel?.notes ?? ""
         }
@@ -132,7 +127,6 @@ struct FilterWheelEditForm: View {
             filterWheel.make = trimmedMake.isEmpty ? nil : trimmedMake
             filterWheel.model = trimmedModel.isEmpty ? nil : trimmedModel
             filterWheel.deviceName = deviceName
-            filterWheel.preferredDriverLabel = preferredDriverLabel
             filterWheel.slots = resolvedSlots
             filterWheel.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             filterWheel.modifiedAt = .now
@@ -143,7 +137,6 @@ struct FilterWheelEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
-                preferredDriverLabel: preferredDriverLabel,
                 slots: resolvedSlots,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )

@@ -17,8 +17,6 @@ final class FilterWheelProfile {
     var make: String?
     var model: String?
     var deviceName: String?
-    /// See `MountProfile.preferredDriverLabel`'s doc comment (NAVI-85).
-    var preferredDriverLabel: String?
 
     // Stored as JSON `Data`, not `[FilterSlotEntry]?` directly — SwiftData's "collection of
     // codable" attribute support fails a runtime cast for custom struct arrays at save/fetch time,
@@ -40,7 +38,6 @@ final class FilterWheelProfile {
         make: String? = nil,
         model: String? = nil,
         deviceName: String? = nil,
-        preferredDriverLabel: String? = nil,
         slots: [FilterSlotEntry]? = nil,
         notes: String? = nil,
         modifiedAt: Date = .now
@@ -49,7 +46,6 @@ final class FilterWheelProfile {
         self.make = make
         self.model = model
         self.deviceName = deviceName
-        self.preferredDriverLabel = preferredDriverLabel
         self.slotsData = nil
         self.notes = notes
         self.modifiedAt = modifiedAt

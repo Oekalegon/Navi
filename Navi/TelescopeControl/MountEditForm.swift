@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `MountProfile` (§4.3's equipment library). `mount == nil` means
 /// "creating a new one" — saving inserts it; otherwise saving mutates the passed-in record in
@@ -16,7 +15,6 @@ import INDIMCPKit
 struct MountEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let mount: MountProfile?
-    var sharedDrivers: [DriverInfo]?
     /// Called with the saved (inserted-or-mutated) mount, so the Rig editor can adopt it as this
     /// rig's `mount` relationship right away.
     var onSaved: (MountProfile) -> Void = { _ in }
@@ -30,7 +28,6 @@ struct MountEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
-    @State private var preferredDriverLabel: String?
     @State private var notes = ""
     @State private var validationError: String?
 
@@ -54,7 +51,6 @@ struct MountEditForm: View {
                 }
             }
             DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-            DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
             LabeledField("Notes") {
                 TextField("Optional notes", text: $notes)
                     .textFieldStyle(.roundedBorder)
@@ -84,7 +80,6 @@ struct MountEditForm: View {
             make = mount?.make ?? ""
             model = mount?.model ?? ""
             deviceName = mount?.deviceName
-            preferredDriverLabel = mount?.preferredDriverLabel
             notes = mount?.notes ?? ""
         }
     }
@@ -105,7 +100,6 @@ struct MountEditForm: View {
             mount.make = trimmedMake.isEmpty ? nil : trimmedMake
             mount.model = trimmedModel.isEmpty ? nil : trimmedModel
             mount.deviceName = deviceName
-            mount.preferredDriverLabel = preferredDriverLabel
             mount.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             mount.modifiedAt = .now
             saved = mount
@@ -115,7 +109,6 @@ struct MountEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
-                preferredDriverLabel: preferredDriverLabel,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             modelContext.insert(created)

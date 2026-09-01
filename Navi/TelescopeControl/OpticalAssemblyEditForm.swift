@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `OpticalAssemblyProfile` (§4.3) — shared by the Rig editor's main
 /// optical assembly and guide optical assembly sections, which are ordinary, independently-
@@ -22,7 +21,6 @@ struct OpticalAssemblyEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let opticalAssembly: OpticalAssemblyProfile?
     let purpose: OpticalAssemblyPurpose
-    var sharedDrivers: [DriverInfo]?
     var onSaved: (OpticalAssemblyProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -37,7 +35,6 @@ struct OpticalAssemblyEditForm: View {
     @State private var focuserMake = ""
     @State private var focuserModel = ""
     @State private var focuserDeviceName: String?
-    @State private var focuserPreferredDriverLabel: String?
     @State private var focuserMinPosition: Int?
     @State private var focuserMaxPosition: Int?
     @State private var notes = ""
@@ -100,7 +97,6 @@ struct OpticalAssemblyEditForm: View {
                             }
                         }
                         DevicePickerField(label: "Focuser INDI Device", deviceName: $focuserDeviceName)
-                        DriverPickerField(label: "Focuser Preferred Driver", driverLabel: $focuserPreferredDriverLabel, sharedDrivers: sharedDrivers)
                         HStack(spacing: 12) {
                             LabeledField("Min Position") {
                                 TextField("0", value: $focuserMinPosition, format: .number)
@@ -148,7 +144,6 @@ struct OpticalAssemblyEditForm: View {
             focuserMake = opticalAssembly?.focuserMake ?? ""
             focuserModel = opticalAssembly?.focuserModel ?? ""
             focuserDeviceName = opticalAssembly?.focuserDeviceName
-            focuserPreferredDriverLabel = opticalAssembly?.focuserPreferredDriverLabel
             focuserMinPosition = opticalAssembly?.focuserMinPosition
             focuserMaxPosition = opticalAssembly?.focuserMaxPosition
             notes = opticalAssembly?.notes ?? ""
@@ -172,7 +167,6 @@ struct OpticalAssemblyEditForm: View {
         let resolvedFocuserMake = includesFocuser && !trimmedFocuserMake.isEmpty ? trimmedFocuserMake : nil
         let resolvedFocuserModel = includesFocuser && !trimmedFocuserModel.isEmpty ? trimmedFocuserModel : nil
         let resolvedFocuserDevice = includesFocuser ? focuserDeviceName : nil
-        let resolvedFocuserDriverLabel = includesFocuser ? focuserPreferredDriverLabel : nil
         let resolvedFocuserMin = includesFocuser ? focuserMinPosition : nil
         let resolvedFocuserMax = includesFocuser ? focuserMaxPosition : nil
 
@@ -188,7 +182,6 @@ struct OpticalAssemblyEditForm: View {
             opticalAssembly.focuserMake = resolvedFocuserMake
             opticalAssembly.focuserModel = resolvedFocuserModel
             opticalAssembly.focuserDeviceName = resolvedFocuserDevice
-            opticalAssembly.focuserPreferredDriverLabel = resolvedFocuserDriverLabel
             opticalAssembly.focuserMinPosition = resolvedFocuserMin
             opticalAssembly.focuserMaxPosition = resolvedFocuserMax
             opticalAssembly.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
@@ -206,7 +199,6 @@ struct OpticalAssemblyEditForm: View {
                 focuserMake: resolvedFocuserMake,
                 focuserModel: resolvedFocuserModel,
                 focuserDeviceName: resolvedFocuserDevice,
-                focuserPreferredDriverLabel: resolvedFocuserDriverLabel,
                 focuserMinPosition: resolvedFocuserMin,
                 focuserMaxPosition: resolvedFocuserMax,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes

@@ -7,14 +7,12 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `CameraProfile` (§4.3). `deviceName` is picker-only while connected
 /// (§4.2), via `DevicePickerField`; every other field is freely editable offline.
 struct CameraEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let camera: CameraProfile?
-    var sharedDrivers: [DriverInfo]?
     var onSaved: (CameraProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -23,7 +21,6 @@ struct CameraEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
-    @State private var preferredDriverLabel: String?
     @State private var cooled = false
     @State private var pixelsX: Int?
     @State private var pixelsY: Int?
@@ -54,7 +51,6 @@ struct CameraEditForm: View {
                         }
                     }
                     DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-                    DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
                     Toggle("Cooled", isOn: $cooled)
                     HStack(spacing: 12) {
                         LabeledField("Pixels X") {
@@ -105,7 +101,6 @@ struct CameraEditForm: View {
             make = camera?.make ?? ""
             model = camera?.model ?? ""
             deviceName = camera?.deviceName
-            preferredDriverLabel = camera?.preferredDriverLabel
             cooled = camera?.cooled ?? false
             pixelsX = camera?.pixelsX
             pixelsY = camera?.pixelsY
@@ -131,7 +126,6 @@ struct CameraEditForm: View {
             camera.make = trimmedMake.isEmpty ? nil : trimmedMake
             camera.model = trimmedModel.isEmpty ? nil : trimmedModel
             camera.deviceName = deviceName
-            camera.preferredDriverLabel = preferredDriverLabel
             camera.cooled = cooled
             camera.pixelsX = pixelsX
             camera.pixelsY = pixelsY
@@ -146,7 +140,6 @@ struct CameraEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
-                preferredDriverLabel: preferredDriverLabel,
                 cooled: cooled,
                 pixelsX: pixelsX,
                 pixelsY: pixelsY,

@@ -10,9 +10,9 @@ import SwiftData
 
 /// A reusable definition for one of the four device-bearing roles with no natural equipment
 /// concept before NAVI-85: Power Hub, Flat Screen, Dew Heater, Observatory Control (§4.3). One
-/// shared `@Model` for all four — they're structurally identical (name, make, model, device,
-/// preferred driver) — distinguished by `role`, the same pattern `OpticalAssemblyProfile` already
-/// uses for main-imaging vs. guide-scope purposes.
+/// shared `@Model` for all four — they're structurally identical (name, make, model, device) —
+/// distinguished by `role`, the same pattern `OpticalAssemblyProfile` already uses for
+/// main-imaging vs. guide-scope purposes.
 ///
 /// Replaces `StandaloneComponentEntry` (an anonymous, JSON-blob-backed value embedded directly on
 /// `RigProfile`) entirely — giving these a real name/identity is the point: a power hub or dew
@@ -25,7 +25,6 @@ final class StandaloneEquipmentProfile {
     var make: String?
     var model: String?
     var deviceName: String?
-    var preferredDriverLabel: String?
     var notes: String?
 
     /// Updated whenever this record is saved; drives the §4.3 "Resync all" stale-Rig detection.
@@ -37,7 +36,6 @@ final class StandaloneEquipmentProfile {
         make: String? = nil,
         model: String? = nil,
         deviceName: String? = nil,
-        preferredDriverLabel: String? = nil,
         notes: String? = nil,
         modifiedAt: Date = .now
     ) {
@@ -46,7 +44,6 @@ final class StandaloneEquipmentProfile {
         self.make = make
         self.model = model
         self.deviceName = deviceName
-        self.preferredDriverLabel = preferredDriverLabel
         self.notes = notes
         self.modifiedAt = modifiedAt
     }

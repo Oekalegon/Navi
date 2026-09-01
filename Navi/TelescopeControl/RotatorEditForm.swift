@@ -7,14 +7,12 @@
 
 import SwiftUI
 import SwiftData
-import INDIMCPKit
 
 /// Add/edit form for one `RotatorProfile` (§4.3). `deviceName` is picker-only while connected
 /// (§4.2), via `DevicePickerField`; every other field is freely editable offline.
 struct RotatorEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let rotator: RotatorProfile?
-    var sharedDrivers: [DriverInfo]?
     var onSaved: (RotatorProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -23,7 +21,6 @@ struct RotatorEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
-    @State private var preferredDriverLabel: String?
     @State private var notes = ""
     @State private var validationError: String?
 
@@ -47,7 +44,6 @@ struct RotatorEditForm: View {
                 }
             }
             DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-            DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
             LabeledField("Notes") {
                 TextField("Optional notes", text: $notes)
                     .textFieldStyle(.roundedBorder)
@@ -77,7 +73,6 @@ struct RotatorEditForm: View {
             make = rotator?.make ?? ""
             model = rotator?.model ?? ""
             deviceName = rotator?.deviceName
-            preferredDriverLabel = rotator?.preferredDriverLabel
             notes = rotator?.notes ?? ""
         }
     }
@@ -98,7 +93,6 @@ struct RotatorEditForm: View {
             rotator.make = trimmedMake.isEmpty ? nil : trimmedMake
             rotator.model = trimmedModel.isEmpty ? nil : trimmedModel
             rotator.deviceName = deviceName
-            rotator.preferredDriverLabel = preferredDriverLabel
             rotator.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             rotator.modifiedAt = .now
             saved = rotator
@@ -108,7 +102,6 @@ struct RotatorEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
-                preferredDriverLabel: preferredDriverLabel,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             modelContext.insert(created)
