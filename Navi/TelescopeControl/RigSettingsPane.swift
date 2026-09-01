@@ -15,15 +15,26 @@ import SwiftData
 /// Unlike `ObservatorySettingsPane`, `RigProfile` *is* a local SwiftData model (it tracks which
 /// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
 /// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
+///
+/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose 8 `RigSection` subitems
+/// (Mount, OTA/Focuser, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater, Observatory
+/// Control) let the user jump straight to one equipment concern instead of scrolling through
+/// `RigEditForm`'s whole form. Tapping the rig's own name/row (the `Section` header) isn't itself
+/// selectable — it navigates to the OTA/Focuser subitem, matching "the OTA subitem is selected when
+/// the rig is selected." `.listStyle(.sidebar)` is what gives `Section` its collapsible chevron and
+/// bold-header rendering here — a plain `List` row-styling modifier, unrelated to the
+/// `NavigationSplitView` toolbar-chrome conflict noted above; it does not reintroduce that bug.
 struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
 
     // `.new` shows a blank RigEditForm without inserting a draft RigProfile into the library —
-    // it only gets inserted once the user actually saves (RigEditForm.upsertLocalRig).
+    // it only gets inserted once the user actually saves (RigEditForm.upsertLocalRig). Keyed by
+    // `.id(rig.persistentModelID)` only (not the section) in `detail` below, so switching *sections*
+    // for the same rig re-renders RigEditForm in place instead of remounting it.
     private enum Selection: Hashable {
-        case existing(PersistentIdentifier)
-        case new
+        case existing(PersistentIdentifier, RigSection)
+        case new(RigSection)
     }
     @State private var selection: Selection?
     @State private var rigPendingDeletion: RigProfile?
@@ -59,18 +70,42 @@ struct RigSettingsPane: View {
             SettingsPaneHeader(
                 title: "Rigs",
                 addHelp: "Add Rig",
-                onAdd: { selection = .new }
+                onAdd: { selection = .new(.opticalAssembly) }
             )
             Divider()
-            if rigs.isEmpty {
+            if rigs.isEmpty && selection == nil {
                 emptyState
             } else {
                 List(selection: $selection) {
+                    // A `.new` draft has no `RigProfile` yet, so it isn't among `rigs` below —
+                    // without this, there'd be no sidebar row for any section but the one the "+"
+                    // button lands on (.opticalAssembly), making Mount/Imaging Train/etc.
+                    // unreachable until *after* the first Save. Neither `.new` case applies `.id()`
+                    // in `detail`, so switching between these rows re-renders the same
+                    // `RigEditForm` instance — no state lost while composing.
+                    if case .new = selection {
+                        Section {
+                            ForEach(RigSection.allCases) { section in
+                                Label(section.title, systemImage: section.icon)
+                                    .tag(Selection.new(section))
+                            }
+                        } header: {
+                            Text("New Rig")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     ForEach(rigs) { rig in
-                        row(for: rig)
-                            .tag(Selection.existing(rig.persistentModelID))
+                        Section {
+                            ForEach(RigSection.allCases) { section in
+                                Label(section.title, systemImage: section.icon)
+                                    .tag(Selection.existing(rig.persistentModelID, section))
+                            }
+                        } header: {
+                            rigHeaderRow(for: rig)
+                        }
                     }
                 }
+                .listStyle(.sidebar)
             }
         }
     }
@@ -78,15 +113,25 @@ struct RigSettingsPane: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
-        case .existing(let id):
+        case .existing(let id, let section):
             if let rig = rigs.first(where: { $0.persistentModelID == id }) {
-                RigEditForm(rig: rig, onFinished: { selection = nil })
-                    .id(id)
+                RigEditForm(
+                    rig: rig,
+                    visibleSection: section,
+                    onSaved: { saved in selection = .existing(saved.persistentModelID, section) },
+                    onFinished: { selection = nil }
+                )
+                .id(id)
             } else {
                 placeholder
             }
-        case .new:
-            RigEditForm(rig: nil, onFinished: { selection = nil })
+        case .new(let section):
+            RigEditForm(
+                rig: nil,
+                visibleSection: section,
+                onSaved: { saved in selection = .existing(saved.persistentModelID, section) },
+                onFinished: { selection = nil }
+            )
         case nil:
             placeholder
         }
@@ -113,22 +158,19 @@ struct RigSettingsPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func row(for rig: RigProfile) -> some View {
+    private func rigHeaderRow(for rig: RigProfile) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(rig.name)
-                        .font(.body)
-                    if rig.hasStaleLibraryReferences {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundStyle(.orange)
-                            .help("A referenced library entity changed since this rig was last saved to the server.")
-                    }
+            HStack(spacing: 6) {
+                Text(rig.name)
+                    .font(.body)
+                if rig.hasStaleLibraryReferences {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.orange)
+                        .help("A referenced library entity changed since this rig was last saved to the server.")
                 }
-                Text(componentSummary(for: rig))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { selection = .existing(rig.persistentModelID, .opticalAssembly) }
             Spacer()
             Button(action: { rigPendingDeletion = rig }) {
                 Image(systemName: "trash")
@@ -139,21 +181,10 @@ struct RigSettingsPane: View {
         }
     }
 
-    private func componentSummary(for rig: RigProfile) -> String {
-        var parts: [String] = []
-        if rig.mount != nil { parts.append("Mount") }
-        if rig.opticalAssembly != nil { parts.append("OTA") }
-        if rig.guideOpticalAssembly != nil { parts.append("Guide OTA") }
-        if rig.imagingTrain != nil { parts.append("Imaging Train") }
-        if rig.guideCamera != nil { parts.append("Guide Camera") }
-        if !rig.standaloneComponents.isEmpty { parts.append("\(rig.standaloneComponents.count) other") }
-        return parts.isEmpty ? "No components yet" : parts.joined(separator: " · ")
-    }
-
     private func delete(_ rig: RigProfile) {
         // Local-library-only removal, matching `ObservatorySettingsPane.remove(_:)` — there's no
         // delete-rig call in INDIMCPKit, so the server-side `Rig` file is untouched.
-        if selection == .existing(rig.persistentModelID) {
+        if case .existing(let id, _) = selection, id == rig.persistentModelID {
             selection = nil
         }
         modelContext.delete(rig)

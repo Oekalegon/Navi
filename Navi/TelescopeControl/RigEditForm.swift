@@ -29,8 +29,19 @@ struct RigEditForm: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     let rig: RigProfile?
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel and after a
-    /// successful Save. Distinct from `activeSheet`, which governs this form's *own* nested
+    /// NAVI-81: which single equipment-concern page to show in `mainContent`'s
+    /// `switch visibleSection` — the caller (`RigSettingsPane`'s sidebar) owns this, not this form.
+    var visibleSection: RigSection = .opticalAssembly
+    /// Called with the saved (inserted-or-mutated) rig after a successful Save. **Exclusive** with
+    /// `onFinished` here — deliberately unlike `MountEditForm`/`OpticalAssemblyEditForm`/etc.,
+    /// which call both together on success. Those small sub-editors always want to return to
+    /// `RigEditForm.mainContent` regardless of outcome; `RigEditForm` itself, now that its caller
+    /// has a real sidebar to stay on (NAVI-81), should keep the user on the same rig+section after
+    /// Save rather than bouncing them back to the "select a rig" placeholder — so `onSaved` alone
+    /// fires on Save, and `onFinished` alone fires on Cancel.
+    var onSaved: (RigProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called only on Cancel here (see
+    /// `onSaved` above). Distinct from `activeSheet`, which governs this form's *own* nested
     /// sub-editor drill-in (see `body`) rather than this form's presentation by its caller.
     var onFinished: () -> Void = {}
 
@@ -167,63 +178,9 @@ struct RigEditForm: View {
                         TextField("Backyard EQ6-R Rig", text: $name)
                             .textFieldStyle(.roundedBorder)
                     }
-
-                    roleSection(
-                        title: "Mount",
-                        isIncluded: isMountIncluded,
-                        onToggle: { included in
-                            isMountIncluded = included
-                            mount = included ? (mount ?? mounts.first) : nil
-                        },
-                        summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Mount", selection: $mount) {
-                                Text("None").tag(MountProfile?.none)
-                                ForEach(mounts) { Text($0.name).tag(MountProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        },
-                        onNew: { activeSheet = .mount(nil) },
-                        onEdit: mount.map { m in { activeSheet = .mount(m) } }
-                    )
-
-                    roleSection(
-                        title: "Optical Assembly",
-                        isIncluded: isOpticalAssemblyIncluded,
-                        onToggle: { included in
-                            isOpticalAssemblyIncluded = included
-                            opticalAssembly = included ? (opticalAssembly ?? mainOpticalAssemblies.first) : nil
-                        },
-                        summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
-                        picker: {
-                            Picker("Optical Assembly", selection: $opticalAssembly) {
-                                Text("None").tag(OpticalAssemblyProfile?.none)
-                                ForEach(mainOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        },
-                        onNew: { activeSheet = .opticalAssembly(nil) },
-                        onEdit: opticalAssembly.map { o in { activeSheet = .opticalAssembly(o) } }
-                    )
-
-                    roleSection(
-                        title: "Guide Optical Assembly",
-                        isIncluded: isGuideOpticalAssemblyIncluded,
-                        onToggle: { included in
-                            isGuideOpticalAssemblyIncluded = included
-                            guideOpticalAssembly = included ? (guideOpticalAssembly ?? guideOpticalAssemblies.first) : nil
-                        },
-                        summary: guideOpticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
-                        picker: {
-                            Picker("Guide Optical Assembly", selection: $guideOpticalAssembly) {
-                                Text("None").tag(OpticalAssemblyProfile?.none)
-                                ForEach(guideOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        },
-                        onNew: { activeSheet = .guideOpticalAssembly(nil) },
-                        onEdit: guideOpticalAssembly.map { o in { activeSheet = .guideOpticalAssembly(o) } }
-                    )
+                    // Always visible regardless of `visibleSection` — depends on state from both
+                    // the Optical Assembly and Guide Scope pages (NAVI-81), so it must stay visible
+                    // no matter which of those the user is currently looking at.
                     if opticalAssembly?.hasFocuser == true && guideOpticalAssembly?.hasFocuser == true {
                         Label(
                             "Both the optical assembly and guide optical assembly have a focuser — this rig can't be saved until one is removed (INDIMCP-138).",
@@ -233,53 +190,9 @@ struct RigEditForm: View {
                         .foregroundStyle(.orange)
                     }
 
-                    roleSection(
-                        title: "Imaging Train",
-                        isIncluded: isImagingTrainIncluded,
-                        onToggle: { included in
-                            isImagingTrainIncluded = included
-                            imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil
-                        },
-                        summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") },
-                        picker: {
-                            Picker("Imaging Train", selection: $imagingTrain) {
-                                Text("None").tag(ImagingTrainProfile?.none)
-                                ForEach(imagingTrains) { Text($0.name).tag(ImagingTrainProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        },
-                        onNew: { activeSheet = .imagingTrain(nil) },
-                        onEdit: imagingTrain.map { t in { activeSheet = .imagingTrain(t) } }
-                    )
-
-                    roleSection(
-                        title: "Guide Camera",
-                        isIncluded: isGuideCameraIncluded,
-                        onToggle: { included in
-                            isGuideCameraIncluded = included
-                            guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
-                        },
-                        summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Guide Camera", selection: $guideCamera) {
-                                Text("None").tag(GuideCameraProfile?.none)
-                                ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        },
-                        onNew: { activeSheet = .guideCamera(nil) },
-                        onEdit: guideCamera.map { g in { activeSheet = .guideCamera(g) } }
-                    )
-
                     Divider()
-                    Text("Standalone Components").font(.subheadline).fontWeight(.semibold)
-                    Text("No reusable library entity — just a device binding for this rig (§4.3).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    standaloneRow(role: "powerHub", title: "Power Hub")
-                    standaloneRow(role: "observatoryControl", title: "Observatory Control (roof/dome)")
-                    standaloneRow(role: "flatScreen", title: "Flat Screen")
-                    standaloneRow(role: "dewHeater", title: "Dew Heater")
+
+                    sectionContent
 
                     Divider()
                     LabeledField("Default Observatory") {
@@ -319,6 +232,126 @@ struct RigEditForm: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// NAVI-81: exactly one equipment-concern page, chosen by the sidebar via `visibleSection`.
+    /// Every case reuses the same `roleSection`/`standaloneRow` helper calls this form always had —
+    /// this only changes *which* of them render at once, not their behavior.
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch visibleSection {
+        case .mount:
+            roleSection(
+                title: "Mount",
+                isIncluded: isMountIncluded,
+                onToggle: { included in
+                    isMountIncluded = included
+                    mount = included ? (mount ?? mounts.first) : nil
+                },
+                summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Mount", selection: $mount) {
+                        Text("None").tag(MountProfile?.none)
+                        ForEach(mounts) { Text($0.name).tag(MountProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                },
+                onNew: { activeSheet = .mount(nil) },
+                onEdit: mount.map { m in { activeSheet = .mount(m) } }
+            )
+
+        case .opticalAssembly:
+            roleSection(
+                title: "Optical Assembly",
+                isIncluded: isOpticalAssemblyIncluded,
+                onToggle: { included in
+                    isOpticalAssemblyIncluded = included
+                    opticalAssembly = included ? (opticalAssembly ?? mainOpticalAssemblies.first) : nil
+                },
+                summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
+                picker: {
+                    Picker("Optical Assembly", selection: $opticalAssembly) {
+                        Text("None").tag(OpticalAssemblyProfile?.none)
+                        ForEach(mainOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                },
+                onNew: { activeSheet = .opticalAssembly(nil) },
+                onEdit: opticalAssembly.map { o in { activeSheet = .opticalAssembly(o) } }
+            )
+
+        case .imagingTrain:
+            roleSection(
+                title: "Imaging Train",
+                isIncluded: isImagingTrainIncluded,
+                onToggle: { included in
+                    isImagingTrainIncluded = included
+                    imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil
+                },
+                summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.cameraDeviceName, deviceLabel: "Camera") },
+                picker: {
+                    Picker("Imaging Train", selection: $imagingTrain) {
+                        Text("None").tag(ImagingTrainProfile?.none)
+                        ForEach(imagingTrains) { Text($0.name).tag(ImagingTrainProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                },
+                onNew: { activeSheet = .imagingTrain(nil) },
+                onEdit: imagingTrain.map { t in { activeSheet = .imagingTrain(t) } }
+            )
+
+        case .guideScope:
+            // Bundles two relationships on one page (NAVI-81) — a guide scope and its camera are
+            // physically one subsystem. Both `roleSection` calls are unchanged from before.
+            roleSection(
+                title: "Guide Optical Assembly",
+                isIncluded: isGuideOpticalAssemblyIncluded,
+                onToggle: { included in
+                    isGuideOpticalAssemblyIncluded = included
+                    guideOpticalAssembly = included ? (guideOpticalAssembly ?? guideOpticalAssemblies.first) : nil
+                },
+                summary: guideOpticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
+                picker: {
+                    Picker("Guide Optical Assembly", selection: $guideOpticalAssembly) {
+                        Text("None").tag(OpticalAssemblyProfile?.none)
+                        ForEach(guideOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                },
+                onNew: { activeSheet = .guideOpticalAssembly(nil) },
+                onEdit: guideOpticalAssembly.map { o in { activeSheet = .guideOpticalAssembly(o) } }
+            )
+            roleSection(
+                title: "Guide Camera",
+                isIncluded: isGuideCameraIncluded,
+                onToggle: { included in
+                    isGuideCameraIncluded = included
+                    guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
+                },
+                summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Guide Camera", selection: $guideCamera) {
+                        Text("None").tag(GuideCameraProfile?.none)
+                        ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                },
+                onNew: { activeSheet = .guideCamera(nil) },
+                onEdit: guideCamera.map { g in { activeSheet = .guideCamera(g) } }
+            )
+
+        case .powerHub:
+            standaloneRow(role: "powerHub", title: "Power Hub")
+
+        case .flatScreen:
+            standaloneRow(role: "flatScreen", title: "Flat Screen")
+
+        case .dewHeater:
+            standaloneRow(role: "dewHeater", title: "Dew Heater")
+
+        case .observatoryControl:
+            standaloneRow(role: "observatoryControl", title: "Observatory Control (roof/dome)")
+        }
     }
 
     private var header: some View {
@@ -497,14 +530,14 @@ struct RigEditForm: View {
                 Rig(id: serverRigID, name: trimmedName, components: components),
                 overwrite: rig != nil
             )
-            upsertLocalRig(with: saved)
-            onFinished()
+            onSaved(upsertLocalRig(with: saved))
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }
     }
 
-    private func upsertLocalRig(with savedRig: Rig) {
+    @discardableResult
+    private func upsertLocalRig(with savedRig: Rig) -> RigProfile {
         let target = rig ?? {
             let created = RigProfile(serverRigID: savedRig.id, name: savedRig.name)
             modelContext.insert(created)
@@ -521,5 +554,6 @@ struct RigEditForm: View {
         target.standaloneComponents = standaloneComponents
         target.lastResyncedAt = .now
         try? modelContext.save()
+        return target
     }
 }
