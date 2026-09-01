@@ -16,24 +16,18 @@ import SwiftData
 /// library entities compose the rig, §4.3) — so this list itself needs no connection; only saving
 /// a rig (which pushes it via `saveRig`) does, enforced by `RigEditForm`.
 ///
-/// NAVI-81: the sidebar is a nested list — each rig is a `Section` whose subitems (Overview,
-/// OTA/Focuser, Mount, Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater, Observatory
-/// Control) let the user jump straight to one equipment concern instead of scrolling through
-/// `RigEditForm`'s whole form. Imaging Train is itself a `DisclosureGroup` with its own four
-/// sub-pages (Camera/Filter Wheel/Rotator/Off-Axis Guider — see `ImagingTrainPart`), since a `List`
-/// `Section` can't nest another `Section` directly but can contain a `DisclosureGroup`. Tapping the
-/// rig's own name/row (the `Section` header) isn't itself selectable — it navigates to the
-/// read-only Overview subitem, and each Overview row has its own "open" button to jump into that
-/// role's editable page from there. The rig's name is bold/larger in this header row to read as a
-/// group heading, distinct from its subitem rows.
-///
-/// Deliberately the default `List` style, not `.sidebar` — `.sidebar`'s vibrancy/background
-/// material is designed for a `List` hosted directly by `NavigationSplitView`; applied to this
-/// plain `HStack` sidebar it rendered as an unexpectedly dark, opaque background instead of
-/// blending with the window. The tradeoff is no native collapse/disclosure triangle on each rig's
-/// own `Section` (Imaging Train's nested `DisclosureGroup` still gets one, since that's a distinct
-/// SwiftUI control unaffected by the `List` style choice) — acceptable given a rig only ever has a
-/// handful of top-level subitems, all shown at once.
+/// NAVI-81: the sidebar is an `OutlineGroup` tree, not `Section`s — each rig is itself a
+/// *selectable* row (showing `RigSection.overview`) with its own children (OTA/Focuser, Mount,
+/// Imaging Train, Guide Scope, Power Hub, Flat Screen, Dew Heater, Observatory Control); Imaging
+/// Train is in turn a selectable row (showing `RigSection.imagingTrain(nil)`, the "which
+/// `ImagingTrainProfile`" picker) with its own four children (Camera/Filter Wheel/Rotator/
+/// Off-Axis Guider — see `ImagingTrainPart`). `OutlineGroup` — not `Section`+`DisclosureGroup`,
+/// tried first — is what makes a *parent* row itself selectable while still independently
+/// expandable/collapsible via its own disclosure triangle; `DisclosureGroup` conflates the two
+/// (tapping anywhere on it just toggles expansion), and `Section` headers aren't part of a
+/// `List`'s selection model at all. Because the rig/Imaging-Train rows are themselves selectable,
+/// there's no separate "Overview" or "Imaging Train" leaf row alongside their children — the
+/// parent row *is* that page.
 struct RigSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RigProfile.name) private var rigs: [RigProfile]
@@ -48,6 +42,22 @@ struct RigSettingsPane: View {
     }
     @State private var selection: Selection?
     @State private var rigPendingDeletion: RigProfile?
+
+    /// One row in the sidebar tree. `rig` is non-nil only for a real rig's own root row (carries
+    /// the delete button + stale-library icon); the "New Rig" draft root and every other row
+    /// (including the Imaging Train parent) render as a plain `Label`. Identity/equality is driven
+    /// entirely by `selection`, since that's already unique per row across the whole tree.
+    private struct SidebarNode: Identifiable, Hashable {
+        let title: String
+        let icon: String
+        let selection: Selection
+        var children: [SidebarNode]?
+        var rig: RigProfile?
+
+        var id: Selection { selection }
+        static func == (lhs: Self, rhs: Self) -> Bool { lhs.selection == rhs.selection }
+        func hash(into hasher: inout Hasher) { hasher.combine(selection) }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -89,35 +99,89 @@ struct RigSettingsPane: View {
                 List(selection: $selection) {
                     // A `.new` draft has no `RigProfile` yet, so it isn't among `rigs` below —
                     // without this, there'd be no sidebar row for any section but the one the "+"
-                    // button lands on (.opticalAssembly), making Mount/Imaging Train/etc.
-                    // unreachable until *after* the first Save. Neither `.new` case applies `.id()`
-                    // in `detail`, so switching between these rows re-renders the same
-                    // `RigEditForm` instance — no state lost while composing.
+                    // button lands on (.overview), making Mount/Imaging Train/etc. unreachable
+                    // until *after* the first Save. Neither `.new` case applies `.id()` in
+                    // `detail`, so switching between these rows re-renders the same `RigEditForm`
+                    // instance — no state lost while composing.
                     if case .new = selection {
-                        Section {
-                            rigSectionRows(makeSelection: { .new($0) })
-                        } header: {
-                            Text("New Rig")
-                                .foregroundStyle(.secondary)
+                        OutlineGroup([rigNode(title: "New Rig", rig: nil, makeSelection: { .new($0) })], children: \.children) { node in
+                            row(for: node).tag(node.selection)
                         }
                     }
                     ForEach(rigs) { rig in
-                        Section {
-                            rigSectionRows(makeSelection: { .existing(rig.persistentModelID, $0) })
-                        } header: {
-                            rigHeaderRow(for: rig)
+                        OutlineGroup([rigNode(title: rig.name, rig: rig, makeSelection: { .existing(rig.persistentModelID, $0) })], children: \.children) { node in
+                            row(for: node).tag(node.selection)
                         }
                     }
                 }
-                // NAVI-81 originally used `.listStyle(.sidebar)` for its collapsible-chevron
-                // rendering, but that style's vibrancy/background material is designed for a
-                // `List` hosted directly by `NavigationSplitView` — here it's a plain `HStack`
-                // sidebar (see this file's own doc comment for why), so `.sidebar` rendered as an
-                // unexpectedly dark, opaque background instead of blending with the window. Falls
-                // back to the same (default) style `ServerSettingsPane`/`ObservatorySettingsPane`
-                // use — no collapse/disclosure triangle, but every subitem stays visible, which is
-                // fine given a rig only ever has 9 of them.
+                .listStyle(.plain)
             }
+        }
+    }
+
+    private func imagingTrainNode(makeSelection: @escaping (RigSection) -> Selection) -> SidebarNode {
+        SidebarNode(
+            title: RigSection.imagingTrain(nil).title,
+            icon: RigSection.imagingTrain(nil).icon,
+            selection: makeSelection(.imagingTrain(nil)),
+            children: ImagingTrainPart.allCases.map { part in
+                SidebarNode(title: part.title, icon: part.icon, selection: makeSelection(.imagingTrain(part)), children: nil)
+            }
+        )
+    }
+
+    private func rigNode(title: String, rig: RigProfile?, makeSelection: @escaping (RigSection) -> Selection) -> SidebarNode {
+        SidebarNode(
+            title: title,
+            icon: "scope",
+            selection: makeSelection(.overview),
+            children: [
+                SidebarNode(title: RigSection.opticalAssembly.title, icon: RigSection.opticalAssembly.icon, selection: makeSelection(.opticalAssembly), children: nil),
+                SidebarNode(title: RigSection.mount.title, icon: RigSection.mount.icon, selection: makeSelection(.mount), children: nil),
+                imagingTrainNode(makeSelection: makeSelection),
+                SidebarNode(title: RigSection.guideScope.title, icon: RigSection.guideScope.icon, selection: makeSelection(.guideScope), children: nil),
+                SidebarNode(title: RigSection.powerHub.title, icon: RigSection.powerHub.icon, selection: makeSelection(.powerHub), children: nil),
+                SidebarNode(title: RigSection.flatScreen.title, icon: RigSection.flatScreen.icon, selection: makeSelection(.flatScreen), children: nil),
+                SidebarNode(title: RigSection.dewHeater.title, icon: RigSection.dewHeater.icon, selection: makeSelection(.dewHeater), children: nil),
+                SidebarNode(title: RigSection.observatoryControl.title, icon: RigSection.observatoryControl.icon, selection: makeSelection(.observatoryControl), children: nil),
+            ],
+            rig: rig
+        )
+    }
+
+    @ViewBuilder
+    private func row(for node: SidebarNode) -> some View {
+        if let rig = node.rig {
+            // A real rig's own root row: bold/larger to read as a group heading, plus the
+            // stale-library icon and delete button that used to live in a separate, non-selectable
+            // `Section` header.
+            HStack {
+                HStack(spacing: 6) {
+                    Text(node.title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    if rig.hasStaleLibraryReferences {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.orange)
+                            .help("A referenced library entity changed since this rig was last saved to the server.")
+                    }
+                }
+                Spacer()
+                Button(action: { rigPendingDeletion = rig }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Delete Rig")
+            }
+        } else if node.children != nil && node.selection == .new(.overview) {
+            // The "New Rig" draft root — same heading treatment, no delete button (nothing
+            // persisted yet to delete).
+            Text(node.title)
+                .font(.title3)
+                .fontWeight(.bold)
+        } else {
+            Label(node.title, systemImage: node.icon)
         }
     }
 
@@ -169,66 +233,6 @@ struct RigSettingsPane: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The 9 subitem rows shared by a real rig's `Section` and the temporary "New Rig" `Section`
-    /// (NAVI-81) — `makeSelection` turns a `RigSection` into whichever `Selection` case the caller
-    /// needs (`.existing(id, _)` or `.new(_)`). Imaging Train is a `DisclosureGroup`, not a plain
-    /// row: it needs a third nesting level (Camera/Filter Wheel/Rotator/Off-Axis Guider), which
-    /// `List` `Section`s can't nest directly, but `DisclosureGroup` can as row content. Its own
-    /// label just expands/collapses (tapping it doesn't select anything, matching how the rig's own
-    /// `Section` header isn't selectable either) — the first child row is the "which
-    /// `ImagingTrainProfile`" page other rows used to be reached from directly.
-    @ViewBuilder
-    private func rigSectionRows(makeSelection: @escaping (RigSection) -> Selection) -> some View {
-        Label(RigSection.overview.title, systemImage: RigSection.overview.icon)
-            .tag(makeSelection(.overview))
-        Label(RigSection.opticalAssembly.title, systemImage: RigSection.opticalAssembly.icon)
-            .tag(makeSelection(.opticalAssembly))
-        Label(RigSection.mount.title, systemImage: RigSection.mount.icon)
-            .tag(makeSelection(.mount))
-        DisclosureGroup("Imaging Train") {
-            Label(RigSection.imagingTrain(nil).title, systemImage: RigSection.imagingTrain(nil).icon)
-                .tag(makeSelection(.imagingTrain(nil)))
-            ForEach(ImagingTrainPart.allCases) { part in
-                Label(part.title, systemImage: part.icon)
-                    .tag(makeSelection(.imagingTrain(part)))
-            }
-        }
-        Label(RigSection.guideScope.title, systemImage: RigSection.guideScope.icon)
-            .tag(makeSelection(.guideScope))
-        Label(RigSection.powerHub.title, systemImage: RigSection.powerHub.icon)
-            .tag(makeSelection(.powerHub))
-        Label(RigSection.flatScreen.title, systemImage: RigSection.flatScreen.icon)
-            .tag(makeSelection(.flatScreen))
-        Label(RigSection.dewHeater.title, systemImage: RigSection.dewHeater.icon)
-            .tag(makeSelection(.dewHeater))
-        Label(RigSection.observatoryControl.title, systemImage: RigSection.observatoryControl.icon)
-            .tag(makeSelection(.observatoryControl))
-    }
-
-    private func rigHeaderRow(for rig: RigProfile) -> some View {
-        HStack {
-            HStack(spacing: 6) {
-                Text(rig.name)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                if rig.hasStaleLibraryReferences {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.orange)
-                        .help("A referenced library entity changed since this rig was last saved to the server.")
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { selection = .existing(rig.persistentModelID, .overview) }
-            Spacer()
-            Button(action: { rigPendingDeletion = rig }) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Delete Rig")
-        }
     }
 
     private func delete(_ rig: RigProfile) {
