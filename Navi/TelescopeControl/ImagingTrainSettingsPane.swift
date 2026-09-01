@@ -67,8 +67,13 @@ struct ImagingTrainSettingsPane: View {
                     ForEach(imagingTrains) { train in
                         row(for: train)
                             .tag(Selection.existing(train.persistentModelID))
+                            // See `EquipmentSettingsPane.sidebar` — `.listStyle(.plain)` drops the
+                            // `.sidebar` vibrancy background but not macOS's per-row separator
+                            // hairline; that needs `.listRowSeparator(.hidden)` on the row itself.
+                            .listRowSeparator(.hidden)
                     }
                 }
+                .listStyle(.plain)
             }
         }
     }
