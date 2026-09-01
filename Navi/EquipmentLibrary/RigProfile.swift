@@ -48,6 +48,14 @@ final class RigProfile {
     @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
     @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
     @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
+    // NAVI-85: these four used to be an anonymous `[StandaloneComponentEntry]` embedded directly
+    // here (JSON-blob-backed, since SwiftData can't store arrays of custom Codable structs) — now
+    // real named `StandaloneEquipmentProfile` library entities, same relationship shape as the five
+    // above.
+    @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
+    @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
+    @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfile?
+    @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfile?
 
     /// The id of the server-side `Observatory` this rig defaults to. `Observatory` lives entirely
     /// server-side (fetched via `listObservatories`/`saveObservatory`) — Navi doesn't mirror it
@@ -57,19 +65,6 @@ final class RigProfile {
     /// The rig's default INDI-MCP server (§4.2) — overriding this mapping is a Settings-only
     /// action, never a transient toolbar override (§4.1).
     @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
-
-    // Stored as JSON `Data`, not `[StandaloneComponentEntry]` directly — SwiftData's "collection
-    // of codable" attribute support fails a runtime cast for custom struct arrays at save/fetch
-    // time, confirmed empirically (see `ImagingTrainProfile.filterWheelSlotsData`). `Data` is a
-    // plain, reliably-supported attribute type.
-    private var standaloneComponentsData: Data
-
-    /// Components for roles with no reusable library entity (§4.3): `.powerHub`,
-    /// `.observatoryControl`, `.flatScreen`, `.dewHeater`.
-    var standaloneComponents: [StandaloneComponentEntry] {
-        get { (try? JSONDecoder().decode([StandaloneComponentEntry].self, from: standaloneComponentsData)) ?? [] }
-        set { standaloneComponentsData = (try? JSONEncoder().encode(newValue)) ?? Data() }
-    }
 
     /// When this rig's `Component` list was last pushed to the server via `saveRig`. Compared
     /// against each referenced library entity's `modifiedAt` to drive the §4.3 "Resync all"
@@ -85,9 +80,12 @@ final class RigProfile {
         guideOpticalAssembly: OpticalAssemblyProfile? = nil,
         imagingTrain: ImagingTrainProfile? = nil,
         guideCamera: GuideCameraProfile? = nil,
+        powerHub: StandaloneEquipmentProfile? = nil,
+        flatScreen: StandaloneEquipmentProfile? = nil,
+        dewHeater: StandaloneEquipmentProfile? = nil,
+        observatoryControl: StandaloneEquipmentProfile? = nil,
         defaultObservatoryID: String? = nil,
         defaultServer: ServerProfile? = nil,
-        standaloneComponents: [StandaloneComponentEntry] = [],
         lastResyncedAt: Date = .now
     ) {
         self.serverRigID = serverRigID
@@ -97,13 +95,13 @@ final class RigProfile {
         self.guideOpticalAssembly = guideOpticalAssembly
         self.imagingTrain = imagingTrain
         self.guideCamera = guideCamera
+        self.powerHub = powerHub
+        self.flatScreen = flatScreen
+        self.dewHeater = dewHeater
+        self.observatoryControl = observatoryControl
         self.defaultObservatoryID = defaultObservatoryID
         self.defaultServer = defaultServer
-        self.standaloneComponentsData = Data()
         self.lastResyncedAt = lastResyncedAt
-        // Must come after every stored property above is set (definite initialization) since
-        // this goes through the computed `standaloneComponents` setter, not a plain assignment.
-        self.standaloneComponents = standaloneComponents
     }
 
     /// Whether any referenced library entity has changed since this rig was last resynced —
@@ -115,6 +113,10 @@ final class RigProfile {
             guideOpticalAssembly?.modifiedAt,
             imagingTrain?.modifiedAt,
             guideCamera?.modifiedAt,
+            powerHub?.modifiedAt,
+            flatScreen?.modifiedAt,
+            dewHeater?.modifiedAt,
+            observatoryControl?.modifiedAt,
             defaultServer?.modifiedAt,
         ].compactMap { $0 }
         return referencedEntityDates.contains { $0 > lastResyncedAt }

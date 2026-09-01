@@ -29,6 +29,9 @@ final class OpticalAssemblyProfile {
     var focuserMake: String?
     var focuserModel: String?
     var focuserDeviceName: String?
+    /// See `MountProfile.preferredDriverLabel`'s doc comment (NAVI-85) — named `focuser...` since
+    /// the assembly's tube itself has no device; only the focuser does.
+    var focuserPreferredDriverLabel: String?
     var focuserMinPosition: Int?
     var focuserMaxPosition: Int?
 
@@ -48,6 +51,7 @@ final class OpticalAssemblyProfile {
         focuserMake: String? = nil,
         focuserModel: String? = nil,
         focuserDeviceName: String? = nil,
+        focuserPreferredDriverLabel: String? = nil,
         focuserMinPosition: Int? = nil,
         focuserMaxPosition: Int? = nil,
         notes: String? = nil,
@@ -63,6 +67,7 @@ final class OpticalAssemblyProfile {
         self.focuserMake = focuserMake
         self.focuserModel = focuserModel
         self.focuserDeviceName = focuserDeviceName
+        self.focuserPreferredDriverLabel = focuserPreferredDriverLabel
         self.focuserMinPosition = focuserMinPosition
         self.focuserMaxPosition = focuserMaxPosition
         self.notes = notes

@@ -26,6 +26,9 @@ final class ImagingTrainProfile {
     var cameraMake: String?
     var cameraModel: String?
     var cameraDeviceName: String?
+    /// See `MountProfile.preferredDriverLabel`'s doc comment (NAVI-85). One of three independent
+    /// driver fields here, since camera/filter wheel/rotator are each their own device.
+    var cameraPreferredDriverLabel: String?
     var cameraCooled: Bool?
     var cameraPixelsX: Int?
     var cameraPixelsY: Int?
@@ -35,6 +38,7 @@ final class ImagingTrainProfile {
     var filterWheelMake: String?
     var filterWheelModel: String?
     var filterWheelDeviceName: String?
+    var filterWheelPreferredDriverLabel: String?
 
     // Stored as JSON `Data`, not `[FilterSlotEntry]?` directly — SwiftData's "collection of
     // codable" attribute support fails a runtime cast for custom struct arrays at save/fetch time
@@ -50,6 +54,7 @@ final class ImagingTrainProfile {
     var rotatorMake: String?
     var rotatorModel: String?
     var rotatorDeviceName: String?
+    var rotatorPreferredDriverLabel: String?
 
     var notes: String?
 
@@ -61,6 +66,7 @@ final class ImagingTrainProfile {
         cameraMake: String? = nil,
         cameraModel: String? = nil,
         cameraDeviceName: String? = nil,
+        cameraPreferredDriverLabel: String? = nil,
         cameraCooled: Bool? = nil,
         cameraPixelsX: Int? = nil,
         cameraPixelsY: Int? = nil,
@@ -69,10 +75,12 @@ final class ImagingTrainProfile {
         filterWheelMake: String? = nil,
         filterWheelModel: String? = nil,
         filterWheelDeviceName: String? = nil,
+        filterWheelPreferredDriverLabel: String? = nil,
         filterWheelSlots: [FilterSlotEntry]? = nil,
         rotatorMake: String? = nil,
         rotatorModel: String? = nil,
         rotatorDeviceName: String? = nil,
+        rotatorPreferredDriverLabel: String? = nil,
         notes: String? = nil,
         modifiedAt: Date = .now
     ) {
@@ -80,6 +88,7 @@ final class ImagingTrainProfile {
         self.cameraMake = cameraMake
         self.cameraModel = cameraModel
         self.cameraDeviceName = cameraDeviceName
+        self.cameraPreferredDriverLabel = cameraPreferredDriverLabel
         self.cameraCooled = cameraCooled
         self.cameraPixelsX = cameraPixelsX
         self.cameraPixelsY = cameraPixelsY
@@ -88,10 +97,12 @@ final class ImagingTrainProfile {
         self.filterWheelMake = filterWheelMake
         self.filterWheelModel = filterWheelModel
         self.filterWheelDeviceName = filterWheelDeviceName
+        self.filterWheelPreferredDriverLabel = filterWheelPreferredDriverLabel
         self.filterWheelSlotsData = nil
         self.rotatorMake = rotatorMake
         self.rotatorModel = rotatorModel
         self.rotatorDeviceName = rotatorDeviceName
+        self.rotatorPreferredDriverLabel = rotatorPreferredDriverLabel
         self.notes = notes
         self.modifiedAt = modifiedAt
         // Must come after every stored property above is set (definite initialization) since

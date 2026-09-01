@@ -7,12 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import INDIMCPKit
 
 /// Add/edit form for one `GuideCameraProfile` (§4.3). `deviceName` is picker-only while connected
 /// (§4.2), via `DevicePickerField`; every other field is freely editable offline.
 struct GuideCameraEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let guideCamera: GuideCameraProfile?
+    var sharedDrivers: [DriverInfo]?
     var onSaved: (GuideCameraProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -21,6 +23,7 @@ struct GuideCameraEditForm: View {
     @State private var make = ""
     @State private var model = ""
     @State private var deviceName: String?
+    @State private var preferredDriverLabel: String?
     @State private var cooled = false
     @State private var pixelsX: Int?
     @State private var pixelsY: Int?
@@ -51,6 +54,7 @@ struct GuideCameraEditForm: View {
                         }
                     }
                     DevicePickerField(label: "INDI Device", deviceName: $deviceName)
+                    DriverPickerField(label: "Preferred Driver", driverLabel: $preferredDriverLabel, sharedDrivers: sharedDrivers)
                     Toggle("Cooled", isOn: $cooled)
                     HStack(spacing: 12) {
                         LabeledField("Pixels X") {
@@ -101,6 +105,7 @@ struct GuideCameraEditForm: View {
             make = guideCamera?.make ?? ""
             model = guideCamera?.model ?? ""
             deviceName = guideCamera?.deviceName
+            preferredDriverLabel = guideCamera?.preferredDriverLabel
             cooled = guideCamera?.cooled ?? false
             pixelsX = guideCamera?.pixelsX
             pixelsY = guideCamera?.pixelsY
@@ -126,6 +131,7 @@ struct GuideCameraEditForm: View {
             guideCamera.make = trimmedMake.isEmpty ? nil : trimmedMake
             guideCamera.model = trimmedModel.isEmpty ? nil : trimmedModel
             guideCamera.deviceName = deviceName
+            guideCamera.preferredDriverLabel = preferredDriverLabel
             guideCamera.cooled = cooled
             guideCamera.pixelsX = pixelsX
             guideCamera.pixelsY = pixelsY
@@ -140,6 +146,7 @@ struct GuideCameraEditForm: View {
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,
+                preferredDriverLabel: preferredDriverLabel,
                 cooled: cooled,
                 pixelsX: pixelsX,
                 pixelsY: pixelsY,

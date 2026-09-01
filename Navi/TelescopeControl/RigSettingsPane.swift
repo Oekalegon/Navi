@@ -80,13 +80,13 @@ struct RigSettingsPane: View {
         switch selection {
         case .existing(let id):
             if let rig = rigs.first(where: { $0.persistentModelID == id }) {
-                RigEditForm(rig: rig, onFinished: { selection = nil })
+                RigEditForm(rig: rig, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
                     .id(id)
             } else {
                 placeholder
             }
         case .new:
-            RigEditForm(rig: nil, onFinished: { selection = nil })
+            RigEditForm(rig: nil, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
         case nil:
             placeholder
         }
@@ -146,7 +146,8 @@ struct RigSettingsPane: View {
         if rig.guideOpticalAssembly != nil { parts.append("Guide OTA") }
         if rig.imagingTrain != nil { parts.append("Imaging Train") }
         if rig.guideCamera != nil { parts.append("Guide Camera") }
-        if !rig.standaloneComponents.isEmpty { parts.append("\(rig.standaloneComponents.count) other") }
+        let standaloneCount = [rig.powerHub, rig.flatScreen, rig.dewHeater, rig.observatoryControl].compactMap { $0 }.count
+        if standaloneCount > 0 { parts.append("\(standaloneCount) other") }
         return parts.isEmpty ? "No components yet" : parts.joined(separator: " · ")
     }
 

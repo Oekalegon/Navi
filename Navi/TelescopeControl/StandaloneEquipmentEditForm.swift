@@ -1,29 +1,27 @@
 //
-//  MountEditForm.swift
+//  StandaloneEquipmentEditForm.swift
 //  Navi
 //
-//  See docs/design/INDI-MCP-Integration.md §4.2/§4.3.
+//  See docs/design/INDI-MCP-Integration.md §4.3. NAVI-85.
 //
 
 import SwiftUI
 import SwiftData
 import INDIMCPKit
 
-/// Add/edit form for one `MountProfile` (§4.3's equipment library). `mount == nil` means
-/// "creating a new one" — saving inserts it; otherwise saving mutates the passed-in record in
-/// place. Non-device fields are always editable; the `deviceName` binding is picker-only while
-/// connected (§4.2), matching `DevicePickerField`'s contract.
-struct MountEditForm: View {
+/// Add/edit form for one `StandaloneEquipmentProfile` (§4.3's equipment library) — shared by all
+/// four standalone roles (Power Hub, Flat Screen, Dew Heater, Observatory Control), `role` fixed by
+/// the caller (same pattern as `OpticalAssemblyEditForm`'s `purpose`). `equipment == nil` means
+/// "creating a new one" — saving inserts it; otherwise saving mutates the passed-in record in place.
+struct StandaloneEquipmentEditForm: View {
     @Environment(\.modelContext) private var modelContext
-    let mount: MountProfile?
+    let equipment: StandaloneEquipmentProfile?
+    let role: StandaloneEquipmentRole
     var sharedDrivers: [DriverInfo]?
-    /// Called with the saved (inserted-or-mutated) mount, so the Rig editor can adopt it as this
-    /// rig's `mount` relationship right away.
-    var onSaved: (MountProfile) -> Void = { _ in }
-    /// Called on Cancel and after a successful Save (NAVI-77) — this form is embedded inline as
-    /// detail content, not presented as a sheet, so there's no `dismiss()` to call; the caller
-    /// (e.g. a master-detail pane, or RigEditForm's drill-in) uses this to navigate back to
-    /// whatever it shows when nothing is being edited.
+    /// Called with the saved (inserted-or-mutated) entity, so the Equipment pane can adopt it as
+    /// the current selection right away.
+    var onSaved: (StandaloneEquipmentProfile) -> Void = { _ in }
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
 
     @State private var name = ""
@@ -36,20 +34,20 @@ struct MountEditForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(mount == nil ? "Add Mount" : "Edit Mount")
+            Text(equipment == nil ? "Add \(role.title)" : "Edit \(role.title)")
                 .font(.headline)
 
             LabeledField("Name") {
-                TextField("EQ6-R Pro", text: $name)
+                TextField("\(role.title) 1", text: $name)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
                 LabeledField("Make") {
-                    TextField("Sky-Watcher", text: $make)
+                    TextField("Optional", text: $make)
                         .textFieldStyle(.roundedBorder)
                 }
                 LabeledField("Model") {
-                    TextField("EQ6-R Pro", text: $model)
+                    TextField("Optional", text: $model)
                         .textFieldStyle(.roundedBorder)
                 }
             }
@@ -80,12 +78,12 @@ struct MountEditForm: View {
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            name = mount?.name ?? ""
-            make = mount?.make ?? ""
-            model = mount?.model ?? ""
-            deviceName = mount?.deviceName
-            preferredDriverLabel = mount?.preferredDriverLabel
-            notes = mount?.notes ?? ""
+            name = equipment?.name ?? ""
+            make = equipment?.make ?? ""
+            model = equipment?.model ?? ""
+            deviceName = equipment?.deviceName
+            preferredDriverLabel = equipment?.preferredDriverLabel
+            notes = equipment?.notes ?? ""
         }
     }
 
@@ -99,19 +97,20 @@ struct MountEditForm: View {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let saved: MountProfile
-        if let mount {
-            mount.name = trimmedName
-            mount.make = trimmedMake.isEmpty ? nil : trimmedMake
-            mount.model = trimmedModel.isEmpty ? nil : trimmedModel
-            mount.deviceName = deviceName
-            mount.preferredDriverLabel = preferredDriverLabel
-            mount.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-            mount.modifiedAt = .now
-            saved = mount
+        let saved: StandaloneEquipmentProfile
+        if let equipment {
+            equipment.name = trimmedName
+            equipment.make = trimmedMake.isEmpty ? nil : trimmedMake
+            equipment.model = trimmedModel.isEmpty ? nil : trimmedModel
+            equipment.deviceName = deviceName
+            equipment.preferredDriverLabel = preferredDriverLabel
+            equipment.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+            equipment.modifiedAt = .now
+            saved = equipment
         } else {
-            let created = MountProfile(
+            let created = StandaloneEquipmentProfile(
                 name: trimmedName,
+                role: role,
                 make: trimmedMake.isEmpty ? nil : trimmedMake,
                 model: trimmedModel.isEmpty ? nil : trimmedModel,
                 deviceName: deviceName,

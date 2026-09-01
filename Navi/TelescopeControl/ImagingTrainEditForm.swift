@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import INDIMCPKit
 
 /// Add/edit form for one `ImagingTrainProfile` (§4.3) — the camera, filter wheel, and rotator
 /// behind an optical assembly. The camera is always present; filter wheel and rotator are each
@@ -16,6 +17,7 @@ import SwiftData
 struct ImagingTrainEditForm: View {
     @Environment(\.modelContext) private var modelContext
     let imagingTrain: ImagingTrainProfile?
+    var sharedDrivers: [DriverInfo]?
     var onSaved: (ImagingTrainProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
     var onFinished: () -> Void = {}
@@ -25,6 +27,7 @@ struct ImagingTrainEditForm: View {
     @State private var cameraMake = ""
     @State private var cameraModel = ""
     @State private var cameraDeviceName: String?
+    @State private var cameraPreferredDriverLabel: String?
     @State private var cameraCooled = false
     @State private var cameraPixelsX: Int?
     @State private var cameraPixelsY: Int?
@@ -35,12 +38,14 @@ struct ImagingTrainEditForm: View {
     @State private var filterWheelMake = ""
     @State private var filterWheelModel = ""
     @State private var filterWheelDeviceName: String?
+    @State private var filterWheelPreferredDriverLabel: String?
     @State private var filterWheelSlots: [FilterSlotEntry] = []
 
     @State private var includesRotator = false
     @State private var rotatorMake = ""
     @State private var rotatorModel = ""
     @State private var rotatorDeviceName: String?
+    @State private var rotatorPreferredDriverLabel: String?
 
     @State private var notes = ""
     @State private var validationError: String?
@@ -69,6 +74,7 @@ struct ImagingTrainEditForm: View {
                         }
                     }
                     DevicePickerField(label: "Camera INDI Device", deviceName: $cameraDeviceName)
+                    DriverPickerField(label: "Camera Preferred Driver", driverLabel: $cameraPreferredDriverLabel, sharedDrivers: sharedDrivers)
                     Toggle("Cooled", isOn: $cameraCooled)
                     HStack(spacing: 12) {
                         LabeledField("Pixels X") {
@@ -105,6 +111,7 @@ struct ImagingTrainEditForm: View {
                             }
                         }
                         DevicePickerField(label: "Filter Wheel INDI Device", deviceName: $filterWheelDeviceName)
+                        DriverPickerField(label: "Filter Wheel Preferred Driver", driverLabel: $filterWheelPreferredDriverLabel, sharedDrivers: sharedDrivers)
                         filterSlotsEditor
                     }
 
@@ -122,6 +129,7 @@ struct ImagingTrainEditForm: View {
                             }
                         }
                         DevicePickerField(label: "Rotator INDI Device", deviceName: $rotatorDeviceName)
+                        DriverPickerField(label: "Rotator Preferred Driver", driverLabel: $rotatorPreferredDriverLabel, sharedDrivers: sharedDrivers)
                     }
 
                     LabeledField("Notes") {
@@ -184,6 +192,7 @@ struct ImagingTrainEditForm: View {
         cameraMake = imagingTrain?.cameraMake ?? ""
         cameraModel = imagingTrain?.cameraModel ?? ""
         cameraDeviceName = imagingTrain?.cameraDeviceName
+        cameraPreferredDriverLabel = imagingTrain?.cameraPreferredDriverLabel
         cameraCooled = imagingTrain?.cameraCooled ?? false
         cameraPixelsX = imagingTrain?.cameraPixelsX
         cameraPixelsY = imagingTrain?.cameraPixelsY
@@ -194,12 +203,14 @@ struct ImagingTrainEditForm: View {
         filterWheelMake = imagingTrain?.filterWheelMake ?? ""
         filterWheelModel = imagingTrain?.filterWheelModel ?? ""
         filterWheelDeviceName = imagingTrain?.filterWheelDeviceName
+        filterWheelPreferredDriverLabel = imagingTrain?.filterWheelPreferredDriverLabel
         filterWheelSlots = imagingTrain?.filterWheelSlots ?? []
 
         includesRotator = imagingTrain?.hasRotator ?? false
         rotatorMake = imagingTrain?.rotatorMake ?? ""
         rotatorModel = imagingTrain?.rotatorModel ?? ""
         rotatorDeviceName = imagingTrain?.rotatorDeviceName
+        rotatorPreferredDriverLabel = imagingTrain?.rotatorPreferredDriverLabel
 
         notes = imagingTrain?.notes ?? ""
     }
@@ -219,6 +230,7 @@ struct ImagingTrainEditForm: View {
         let resolvedFilterWheelMake = includesFilterWheel && !trimmedFilterWheelMake.isEmpty ? trimmedFilterWheelMake : nil
         let resolvedFilterWheelModel = includesFilterWheel && !trimmedFilterWheelModel.isEmpty ? trimmedFilterWheelModel : nil
         let resolvedFilterWheelDevice = includesFilterWheel ? filterWheelDeviceName : nil
+        let resolvedFilterWheelDriverLabel = includesFilterWheel ? filterWheelPreferredDriverLabel : nil
         let resolvedFilterWheelSlots = includesFilterWheel && !filterWheelSlots.isEmpty ? filterWheelSlots : nil
 
         let trimmedRotatorMake = rotatorMake.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -226,6 +238,7 @@ struct ImagingTrainEditForm: View {
         let resolvedRotatorMake = includesRotator && !trimmedRotatorMake.isEmpty ? trimmedRotatorMake : nil
         let resolvedRotatorModel = includesRotator && !trimmedRotatorModel.isEmpty ? trimmedRotatorModel : nil
         let resolvedRotatorDevice = includesRotator ? rotatorDeviceName : nil
+        let resolvedRotatorDriverLabel = includesRotator ? rotatorPreferredDriverLabel : nil
 
         let saved: ImagingTrainProfile
         if let imagingTrain {
@@ -233,6 +246,7 @@ struct ImagingTrainEditForm: View {
             imagingTrain.cameraMake = trimmedCameraMake.isEmpty ? nil : trimmedCameraMake
             imagingTrain.cameraModel = trimmedCameraModel.isEmpty ? nil : trimmedCameraModel
             imagingTrain.cameraDeviceName = cameraDeviceName
+            imagingTrain.cameraPreferredDriverLabel = cameraPreferredDriverLabel
             imagingTrain.cameraCooled = cameraCooled
             imagingTrain.cameraPixelsX = cameraPixelsX
             imagingTrain.cameraPixelsY = cameraPixelsY
@@ -241,10 +255,12 @@ struct ImagingTrainEditForm: View {
             imagingTrain.filterWheelMake = resolvedFilterWheelMake
             imagingTrain.filterWheelModel = resolvedFilterWheelModel
             imagingTrain.filterWheelDeviceName = resolvedFilterWheelDevice
+            imagingTrain.filterWheelPreferredDriverLabel = resolvedFilterWheelDriverLabel
             imagingTrain.filterWheelSlots = resolvedFilterWheelSlots
             imagingTrain.rotatorMake = resolvedRotatorMake
             imagingTrain.rotatorModel = resolvedRotatorModel
             imagingTrain.rotatorDeviceName = resolvedRotatorDevice
+            imagingTrain.rotatorPreferredDriverLabel = resolvedRotatorDriverLabel
             imagingTrain.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             imagingTrain.modifiedAt = .now
             saved = imagingTrain
@@ -254,6 +270,7 @@ struct ImagingTrainEditForm: View {
                 cameraMake: trimmedCameraMake.isEmpty ? nil : trimmedCameraMake,
                 cameraModel: trimmedCameraModel.isEmpty ? nil : trimmedCameraModel,
                 cameraDeviceName: cameraDeviceName,
+                cameraPreferredDriverLabel: cameraPreferredDriverLabel,
                 cameraCooled: cameraCooled,
                 cameraPixelsX: cameraPixelsX,
                 cameraPixelsY: cameraPixelsY,
@@ -262,10 +279,12 @@ struct ImagingTrainEditForm: View {
                 filterWheelMake: resolvedFilterWheelMake,
                 filterWheelModel: resolvedFilterWheelModel,
                 filterWheelDeviceName: resolvedFilterWheelDevice,
+                filterWheelPreferredDriverLabel: resolvedFilterWheelDriverLabel,
                 filterWheelSlots: resolvedFilterWheelSlots,
                 rotatorMake: resolvedRotatorMake,
                 rotatorModel: resolvedRotatorModel,
                 rotatorDeviceName: resolvedRotatorDevice,
+                rotatorPreferredDriverLabel: resolvedRotatorDriverLabel,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             modelContext.insert(created)

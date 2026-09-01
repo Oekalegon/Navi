@@ -9,35 +9,34 @@ import SwiftUI
 import SwiftData
 import INDIMCPKit
 
-/// Add/edit form for one `RigProfile` (§4.2's Rig pane) — the full CRUD editor built on the
-/// equipment library (§4.3). Every role (mount, optical assembly, guide optical assembly,
-/// imaging train, guide camera) is individually selectable/deselectable: pick an existing library
-/// entity, create a new one inline, or edit the selected one — all via the small per-entity edit
-/// forms (`MountEditForm`, `OpticalAssemblyEditForm`, `ImagingTrainEditForm`,
-/// `GuideCameraEditForm`), which own their own local scratch state the same way
-/// `ServerEditForm`/`ObservatoryEditForm` do. Non-device fields on those entities are editable
-/// offline; only the `device` bindings (surfaced there via `DevicePickerField`) require a live
-/// connection.
+/// Add/edit form for one `RigProfile` (§4.2's Rig pane). NAVI-85: a rig is pure *composition* —
+/// for each role, pick which already-defined `EquipmentSettingsPane` library entity this rig uses.
+/// There's no inline creation/editing here anymore (that used to drill into `MountEditForm` etc.
+/// directly from this form); an empty role's library points the user at the Equipment tab instead
+/// (see `selectSettingsTab` in the environment).
 ///
 /// `rig == nil` means "creating a new one." Saving here does two things in order: flattens the
 /// current selection into `[Component]` via `RigProfile.makeComponents()` (surfacing
 /// `RigProfileTranslationError.duplicateRole` inline rather than crashing — §4.2's duplicate-role
-/// guard), then pushes it with `saveRig` — which needs a live connection, unlike the library-entity
-/// sub-editors above. `lastResyncedAt` is stamped on success, matching the resync-staleness
-/// contract in `RigProfile`'s own doc comment.
+/// guard), then pushes it with `saveRig` — which needs a live connection. `lastResyncedAt` is
+/// stamped on success, matching the resync-staleness contract in `RigProfile`'s own doc comment.
 struct RigEditForm: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.selectSettingsTab) private var selectSettingsTab
     @State private var telescope = TelescopeSessionManager.shared
     let rig: RigProfile?
+    /// Called with the saved (inserted-or-mutated) rig after a successful Save, so the caller can
+    /// adopt it as the current selection right away.
+    var onSaved: (RigProfile) -> Void = { _ in }
     /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel and after a
-    /// successful Save. Distinct from `activeSheet`, which governs this form's *own* nested
-    /// sub-editor drill-in (see `body`) rather than this form's presentation by its caller.
+    /// successful Save.
     var onFinished: () -> Void = {}
 
     @Query(sort: \MountProfile.name) private var mounts: [MountProfile]
     @Query(sort: \OpticalAssemblyProfile.name) private var opticalAssemblies: [OpticalAssemblyProfile]
     @Query(sort: \ImagingTrainProfile.name) private var imagingTrains: [ImagingTrainProfile]
     @Query(sort: \GuideCameraProfile.name) private var guideCameras: [GuideCameraProfile]
+    @Query(sort: \StandaloneEquipmentProfile.name) private var standaloneEquipment: [StandaloneEquipmentProfile]
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @Query(sort: \ObservatoryProfile.name) private var cachedObservatories: [ObservatoryProfile]
 
@@ -47,117 +46,40 @@ struct RigEditForm: View {
     @State private var guideOpticalAssembly: OpticalAssemblyProfile?
     @State private var imagingTrain: ImagingTrainProfile?
     @State private var guideCamera: GuideCameraProfile?
+    @State private var powerHub: StandaloneEquipmentProfile?
+    @State private var flatScreen: StandaloneEquipmentProfile?
+    @State private var dewHeater: StandaloneEquipmentProfile?
+    @State private var observatoryControl: StandaloneEquipmentProfile?
     // Whether each role's toggle is on — deliberately independent of whether an entity is
     // actually selected. Deriving "included" purely from `mount != nil` (etc.) meant that on an
-    // empty library (no MountProfile/OpticalAssemblyProfile/... created yet at all), turning a
-    // role's toggle on immediately snapped back off — `mount ?? mounts.first` resolves to `nil`
-    // when both are empty, so `isIncluded` was still false on the very next render — and since
-    // the "New…"/"Edit…" buttons only render `if isIncluded`, there was no way to ever create a
-    // role's first library entity from here at all. These track the toggle's own on/off state;
-    // `save()`/`makeRigComponents` still only ever look at the underlying `mount`/etc. values.
+    // empty library, turning a role's toggle on immediately snapped back off — `mount ?? mounts
+    // .first` resolves to `nil` when both are empty, so `isIncluded` was still false on the very
+    // next render. These track the toggle's own on/off state; `save()`/`makeRigComponents` still
+    // only ever look at the underlying `mount`/etc. values.
     @State private var isMountIncluded = false
     @State private var isOpticalAssemblyIncluded = false
     @State private var isGuideOpticalAssemblyIncluded = false
     @State private var isImagingTrainIncluded = false
     @State private var isGuideCameraIncluded = false
+    @State private var isPowerHubIncluded = false
+    @State private var isFlatScreenIncluded = false
+    @State private var isDewHeaterIncluded = false
+    @State private var isObservatoryControlIncluded = false
     @State private var defaultObservatoryID: String?
     @State private var defaultServer: ServerProfile?
-    @State private var standaloneComponents: [StandaloneComponentEntry] = []
 
     @State private var liveObservatories: [ObservatorySummary] = []
-    // Fetched once here rather than letting each standalone-component row's DevicePickerField
-    // independently re-issue the same liveDeviceNames() call — see DevicePickerField.sharedDevices.
-    @State private var liveDevices: [String] = []
     @State private var isSaving = false
     @State private var errorMessage: String?
-
-    // ActiveSheet covers every sub-editor this form can present — one optional instead of ten
-    // separate `showingX`/`showingY` booleans, since exactly one can be open at a time.
-    private enum ActiveSheet: Identifiable {
-        case mount(MountProfile?)
-        case opticalAssembly(OpticalAssemblyProfile?)
-        case guideOpticalAssembly(OpticalAssemblyProfile?)
-        case imagingTrain(ImagingTrainProfile?)
-        case guideCamera(GuideCameraProfile?)
-        case server(ServerProfile?)
-
-        var id: String {
-            switch self {
-            case .mount(let m): return "mount-\(m?.persistentModelID.hashValue ?? 0)"
-            case .opticalAssembly(let o): return "oa-\(o?.persistentModelID.hashValue ?? 0)"
-            case .guideOpticalAssembly(let o): return "goa-\(o?.persistentModelID.hashValue ?? 0)"
-            case .imagingTrain(let t): return "train-\(t?.persistentModelID.hashValue ?? 0)"
-            case .guideCamera(let g): return "guide-\(g?.persistentModelID.hashValue ?? 0)"
-            case .server(let s): return "server-\(s?.persistentModelID.hashValue ?? 0)"
-            }
-        }
-    }
-    @State private var activeSheet: ActiveSheet?
 
     private var isConnected: Bool { telescope.state == .connected }
     private var mainOpticalAssemblies: [OpticalAssemblyProfile] { opticalAssemblies.filter { $0.purpose == .mainImaging } }
     private var guideOpticalAssemblies: [OpticalAssemblyProfile] { opticalAssemblies.filter { $0.purpose == .guideScope } }
+    private func standaloneEquipment(for role: StandaloneEquipmentRole) -> [StandaloneEquipmentProfile] {
+        standaloneEquipment.filter { $0.role == role }
+    }
 
     var body: some View {
-        Group {
-            if let activeSheet {
-                subEditorView(for: activeSheet)
-            } else {
-                mainContent
-            }
-        }
-        .task {
-            load()
-            await refreshObservatories()
-            await refreshLiveDevices()
-        }
-    }
-
-    @ViewBuilder
-    private func subEditorView(for sheet: ActiveSheet) -> some View {
-        switch sheet {
-        case .mount(let m):
-            MountEditForm(
-                mount: m,
-                onSaved: { mount = $0; isMountIncluded = true },
-                onFinished: { activeSheet = nil }
-            )
-        case .opticalAssembly(let o):
-            OpticalAssemblyEditForm(
-                opticalAssembly: o,
-                purpose: .mainImaging,
-                onSaved: { opticalAssembly = $0; isOpticalAssemblyIncluded = true },
-                onFinished: { activeSheet = nil }
-            )
-        case .guideOpticalAssembly(let o):
-            OpticalAssemblyEditForm(
-                opticalAssembly: o,
-                purpose: .guideScope,
-                onSaved: { guideOpticalAssembly = $0; isGuideOpticalAssemblyIncluded = true },
-                onFinished: { activeSheet = nil }
-            )
-        case .imagingTrain(let t):
-            ImagingTrainEditForm(
-                imagingTrain: t,
-                onSaved: { imagingTrain = $0; isImagingTrainIncluded = true },
-                onFinished: { activeSheet = nil }
-            )
-        case .guideCamera(let g):
-            GuideCameraEditForm(
-                guideCamera: g,
-                onSaved: { guideCamera = $0; isGuideCameraIncluded = true },
-                onFinished: { activeSheet = nil }
-            )
-        case .server(let s):
-            ServerEditForm(
-                server: s,
-                onSaved: { defaultServer = $0 },
-                onFinished: { activeSheet = nil }
-            )
-        }
-    }
-
-    private var mainContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
@@ -182,9 +104,7 @@ struct RigEditForm: View {
                                 ForEach(mounts) { Text($0.name).tag(MountProfile?.some($0)) }
                             }
                             .labelsHidden()
-                        },
-                        onNew: { activeSheet = .mount(nil) },
-                        onEdit: mount.map { m in { activeSheet = .mount(m) } }
+                        }
                     )
 
                     roleSection(
@@ -201,9 +121,7 @@ struct RigEditForm: View {
                                 ForEach(mainOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
                             }
                             .labelsHidden()
-                        },
-                        onNew: { activeSheet = .opticalAssembly(nil) },
-                        onEdit: opticalAssembly.map { o in { activeSheet = .opticalAssembly(o) } }
+                        }
                     )
 
                     roleSection(
@@ -220,9 +138,7 @@ struct RigEditForm: View {
                                 ForEach(guideOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
                             }
                             .labelsHidden()
-                        },
-                        onNew: { activeSheet = .guideOpticalAssembly(nil) },
-                        onEdit: guideOpticalAssembly.map { o in { activeSheet = .guideOpticalAssembly(o) } }
+                        }
                     )
                     if opticalAssembly?.hasFocuser == true && guideOpticalAssembly?.hasFocuser == true {
                         Label(
@@ -247,9 +163,7 @@ struct RigEditForm: View {
                                 ForEach(imagingTrains) { Text($0.name).tag(ImagingTrainProfile?.some($0)) }
                             }
                             .labelsHidden()
-                        },
-                        onNew: { activeSheet = .imagingTrain(nil) },
-                        onEdit: imagingTrain.map { t in { activeSheet = .imagingTrain(t) } }
+                        }
                     )
 
                     roleSection(
@@ -266,20 +180,78 @@ struct RigEditForm: View {
                                 ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
                             }
                             .labelsHidden()
-                        },
-                        onNew: { activeSheet = .guideCamera(nil) },
-                        onEdit: guideCamera.map { g in { activeSheet = .guideCamera(g) } }
+                        }
                     )
 
                     Divider()
-                    Text("Standalone Components").font(.subheadline).fontWeight(.semibold)
-                    Text("No reusable library entity — just a device binding for this rig (§4.3).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    standaloneRow(role: "powerHub", title: "Power Hub")
-                    standaloneRow(role: "observatoryControl", title: "Observatory Control (roof/dome)")
-                    standaloneRow(role: "flatScreen", title: "Flat Screen")
-                    standaloneRow(role: "dewHeater", title: "Dew Heater")
+
+                    roleSection(
+                        title: "Power Hub",
+                        isIncluded: isPowerHubIncluded,
+                        onToggle: { included in
+                            isPowerHubIncluded = included
+                            powerHub = included ? (powerHub ?? standaloneEquipment(for: .powerHub).first) : nil
+                        },
+                        summary: powerHub.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                        picker: {
+                            Picker("Power Hub", selection: $powerHub) {
+                                Text("None").tag(StandaloneEquipmentProfile?.none)
+                                ForEach(standaloneEquipment(for: .powerHub)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
+                            }
+                            .labelsHidden()
+                        }
+                    )
+
+                    roleSection(
+                        title: "Flat Screen",
+                        isIncluded: isFlatScreenIncluded,
+                        onToggle: { included in
+                            isFlatScreenIncluded = included
+                            flatScreen = included ? (flatScreen ?? standaloneEquipment(for: .flatScreen).first) : nil
+                        },
+                        summary: flatScreen.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                        picker: {
+                            Picker("Flat Screen", selection: $flatScreen) {
+                                Text("None").tag(StandaloneEquipmentProfile?.none)
+                                ForEach(standaloneEquipment(for: .flatScreen)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
+                            }
+                            .labelsHidden()
+                        }
+                    )
+
+                    roleSection(
+                        title: "Dew Heater",
+                        isIncluded: isDewHeaterIncluded,
+                        onToggle: { included in
+                            isDewHeaterIncluded = included
+                            dewHeater = included ? (dewHeater ?? standaloneEquipment(for: .dewHeater).first) : nil
+                        },
+                        summary: dewHeater.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                        picker: {
+                            Picker("Dew Heater", selection: $dewHeater) {
+                                Text("None").tag(StandaloneEquipmentProfile?.none)
+                                ForEach(standaloneEquipment(for: .dewHeater)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
+                            }
+                            .labelsHidden()
+                        }
+                    )
+
+                    roleSection(
+                        title: "Observatory Control",
+                        isIncluded: isObservatoryControlIncluded,
+                        onToggle: { included in
+                            isObservatoryControlIncluded = included
+                            observatoryControl = included ? (observatoryControl ?? standaloneEquipment(for: .observatoryControl).first) : nil
+                        },
+                        summary: observatoryControl.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                        picker: {
+                            Picker("Observatory Control", selection: $observatoryControl) {
+                                Text("None").tag(StandaloneEquipmentProfile?.none)
+                                ForEach(standaloneEquipment(for: .observatoryControl)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
+                            }
+                            .labelsHidden()
+                        }
+                    )
 
                     Divider()
                     LabeledField("Default Observatory") {
@@ -297,14 +269,6 @@ struct RigEditForm: View {
                             ForEach(servers) { Text($0.name).tag(ServerProfile?.some($0)) }
                         }
                         .labelsHidden()
-                        HStack {
-                            Button("New…") { activeSheet = .server(nil) }
-                            if defaultServer != nil {
-                                Button("Edit…") { activeSheet = .server(defaultServer) }
-                            }
-                        }
-                        .buttonStyle(.link)
-                        .font(.caption)
                     }
 
                     if let errorMessage {
@@ -319,6 +283,10 @@ struct RigEditForm: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task {
+            load()
+            await refreshObservatories()
+        }
     }
 
     private var header: some View {
@@ -369,15 +337,15 @@ struct RigEditForm: View {
         return "\(name) · \(deviceLabel): blank"
     }
 
+    /// NAVI-85: pure picking, no "New…"/"Edit…" — an empty library points the user at the
+    /// Equipment tab (`selectSettingsTab`) instead of drilling into a sub-editor from here.
     @ViewBuilder
     private func roleSection(
         title: String,
         isIncluded: Bool,
         onToggle: @escaping (Bool) -> Void,
         summary: String?,
-        @ViewBuilder picker: () -> some View,
-        onNew: @escaping () -> Void,
-        onEdit: (() -> Void)?
+        @ViewBuilder picker: () -> some View
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(title, isOn: Binding(get: { isIncluded }, set: onToggle))
@@ -390,49 +358,15 @@ struct RigEditForm: View {
                         .font(.caption)
                         .foregroundStyle(summary.hasSuffix("blank") ? .orange : .secondary)
                 } else {
-                    // Nothing selected yet — most commonly because the library for this role is
-                    // still empty (nothing to pick from ?? .first would resolve to). Point
-                    // explicitly at "New…" rather than leaving an unexplained blank picker.
-                    Text("No \(title.lowercased()) yet — click New… to add one.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                HStack {
-                    Button("New…", action: onNew)
-                    if let onEdit {
-                        Button("Edit…", action: onEdit)
+                    HStack(spacing: 4) {
+                        Text("No \(title.lowercased()) defined yet —")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Button("go to Equipment…") { selectSettingsTab(.equipment) }
+                            .buttonStyle(.link)
+                            .font(.caption)
                     }
                 }
-                .buttonStyle(.link)
-                .font(.caption)
-            }
-        }
-    }
-
-    private func standaloneRow(role: String, title: String) -> some View {
-        let index = standaloneComponents.firstIndex { $0.role == role }
-        let isIncluded = index != nil
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle(title, isOn: Binding(
-                get: { isIncluded },
-                set: { included in
-                    if included {
-                        guard standaloneComponents.firstIndex(where: { $0.role == role }) == nil else { return }
-                        standaloneComponents.append(StandaloneComponentEntry(id: role, role: role))
-                    } else {
-                        standaloneComponents.removeAll { $0.role == role }
-                    }
-                }
-            ))
-            if let index {
-                DevicePickerField(
-                    label: "\(title) INDI Device",
-                    deviceName: Binding(
-                        get: { standaloneComponents[index].deviceName },
-                        set: { standaloneComponents[index].deviceName = $0 }
-                    ),
-                    sharedDevices: liveDevices
-                )
             }
         }
     }
@@ -449,19 +383,21 @@ struct RigEditForm: View {
         isImagingTrainIncluded = imagingTrain != nil
         guideCamera = rig?.guideCamera
         isGuideCameraIncluded = guideCamera != nil
+        powerHub = rig?.powerHub
+        isPowerHubIncluded = powerHub != nil
+        flatScreen = rig?.flatScreen
+        isFlatScreenIncluded = flatScreen != nil
+        dewHeater = rig?.dewHeater
+        isDewHeaterIncluded = dewHeater != nil
+        observatoryControl = rig?.observatoryControl
+        isObservatoryControlIncluded = observatoryControl != nil
         defaultObservatoryID = rig?.defaultObservatoryID
         defaultServer = rig?.defaultServer
-        standaloneComponents = rig?.standaloneComponents ?? []
     }
 
     private func refreshObservatories() async {
         guard isConnected else { return }
         liveObservatories = (try? await telescope.listObservatories()) ?? []
-    }
-
-    private func refreshLiveDevices() async {
-        guard isConnected else { return }
-        liveDevices = (try? await telescope.liveDeviceNames()) ?? []
     }
 
     private func save() async {
@@ -483,7 +419,10 @@ struct RigEditForm: View {
                 guideOpticalAssembly: guideOpticalAssembly,
                 imagingTrain: imagingTrain,
                 guideCamera: guideCamera,
-                standaloneComponents: standaloneComponents
+                powerHub: powerHub,
+                flatScreen: flatScreen,
+                dewHeater: dewHeater,
+                observatoryControl: observatoryControl
             )
         } catch {
             errorMessage = (error as? RigProfileTranslationError)?.description ?? "\(error)"
@@ -497,14 +436,14 @@ struct RigEditForm: View {
                 Rig(id: serverRigID, name: trimmedName, components: components),
                 overwrite: rig != nil
             )
-            upsertLocalRig(with: saved)
-            onFinished()
+            onSaved(upsertLocalRig(with: saved))
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }
     }
 
-    private func upsertLocalRig(with savedRig: Rig) {
+    @discardableResult
+    private func upsertLocalRig(with savedRig: Rig) -> RigProfile {
         let target = rig ?? {
             let created = RigProfile(serverRigID: savedRig.id, name: savedRig.name)
             modelContext.insert(created)
@@ -516,10 +455,14 @@ struct RigEditForm: View {
         target.guideOpticalAssembly = guideOpticalAssembly
         target.imagingTrain = imagingTrain
         target.guideCamera = guideCamera
+        target.powerHub = powerHub
+        target.flatScreen = flatScreen
+        target.dewHeater = dewHeater
+        target.observatoryControl = observatoryControl
         target.defaultObservatoryID = defaultObservatoryID
         target.defaultServer = defaultServer
-        target.standaloneComponents = standaloneComponents
         target.lastResyncedAt = .now
         try? modelContext.save()
+        return target
     }
 }

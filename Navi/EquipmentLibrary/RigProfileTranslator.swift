@@ -41,18 +41,21 @@ enum RigProfileTranslationError: Error, CustomStringConvertible {
 /// that's absent entirely isn't represented at all.
 ///
 /// - Throws: `RigProfileTranslationError.duplicateRole` if two components would resolve to the
-///   same `Role`. Given this model's shape (every role but the four standalone ones is a single
-///   optional relationship, not an array), the only place this can actually arise is
-///   `opticalAssembly` and `guideOpticalAssembly` both having a focuser — everything else maps 1:1
-///   from a distinct relationship (or a distinct, per-entry `StandaloneComponentEntry.id`) to a
-///   distinct role, so duplication elsewhere isn't representable in this UI at all.
+///   same `Role`. Given this model's shape (every role, including the four standalone ones since
+///   NAVI-85, is a single optional relationship, not an array), the only place this can actually
+///   arise is `opticalAssembly` and `guideOpticalAssembly` both having a focuser — everything else
+///   maps 1:1 from a distinct relationship to a distinct, fixed role, so duplication elsewhere
+///   isn't representable in this UI at all.
 func makeRigComponents(
     mount: MountProfile?,
     opticalAssembly: OpticalAssemblyProfile?,
     guideOpticalAssembly: OpticalAssemblyProfile?,
     imagingTrain: ImagingTrainProfile?,
     guideCamera: GuideCameraProfile?,
-    standaloneComponents: [StandaloneComponentEntry]
+    powerHub: StandaloneEquipmentProfile?,
+    flatScreen: StandaloneEquipmentProfile?,
+    dewHeater: StandaloneEquipmentProfile?,
+    observatoryControl: StandaloneEquipmentProfile?
 ) throws -> [Component] {
     var components: [Component] = []
 
@@ -135,14 +138,19 @@ func makeRigComponents(
         ))
     }
 
-    for entry in standaloneComponents {
-        components.append(Component(
-            role: Role(rawValue: entry.role),
-            id: entry.id,
-            make: entry.make,
-            model: entry.model,
-            device: entry.deviceName
-        ))
+    // Fixed per-slot id, matching "mount"/"telescope"/"camera" above — simpler than trying to
+    // carry over a user-authored or `persistentModelID`-derived id for a single-slot role.
+    if let powerHub {
+        components.append(Component(role: .powerHub, id: "powerHub", make: powerHub.make, model: powerHub.model, device: powerHub.deviceName))
+    }
+    if let flatScreen {
+        components.append(Component(role: .flatScreen, id: "flatScreen", make: flatScreen.make, model: flatScreen.model, device: flatScreen.deviceName))
+    }
+    if let dewHeater {
+        components.append(Component(role: .dewHeater, id: "dewHeater", make: dewHeater.make, model: dewHeater.model, device: dewHeater.deviceName))
+    }
+    if let observatoryControl {
+        components.append(Component(role: .observatoryControl, id: "observatoryControl", make: observatoryControl.make, model: observatoryControl.model, device: observatoryControl.deviceName))
     }
 
     // Duplicate-role guard (see this function's doc comment for why the focuser pairing is the
@@ -167,7 +175,10 @@ extension RigProfile {
             guideOpticalAssembly: guideOpticalAssembly,
             imagingTrain: imagingTrain,
             guideCamera: guideCamera,
-            standaloneComponents: standaloneComponents
+            powerHub: powerHub,
+            flatScreen: flatScreen,
+            dewHeater: dewHeater,
+            observatoryControl: observatoryControl
         )
     }
 }

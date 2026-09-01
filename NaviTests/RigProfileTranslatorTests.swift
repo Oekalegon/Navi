@@ -108,14 +108,12 @@ struct RigProfileTranslatorTests {
         #expect(components.first?.device == "ZWO CCD ASI120MM Mini")
     }
 
-    @Test func standaloneComponentsRoundTripTheirRawRoleString() throws {
+    @Test func standaloneEquipmentMapsToFixedRoles() throws {
         let rig = RigProfile(
             serverRigID: "rig-standalone",
             name: "Standalone Rig",
-            standaloneComponents: [
-                StandaloneComponentEntry(id: "powerHub", role: "powerHub", deviceName: "Pegasus PPBA"),
-                StandaloneComponentEntry(id: "dewHeater", role: "dewHeater"),
-            ]
+            powerHub: StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub, deviceName: "Pegasus PPBA"),
+            dewHeater: StandaloneEquipmentProfile(name: "Dew Heater 1", role: .dewHeater)
         )
 
         let components = try rig.makeComponents()
@@ -164,7 +162,7 @@ struct RigProfileTranslatorTests {
             guideOpticalAssembly: OpticalAssemblyProfile(name: "50mm Guide Scope", purpose: .guideScope),
             imagingTrain: ImagingTrainProfile(name: "ASI2600MM Train", cameraDeviceName: "ZWO CCD ASI2600MM Pro"),
             guideCamera: GuideCameraProfile(name: "ASI120MM Mini", deviceName: "ZWO CCD ASI120MM Mini"),
-            standaloneComponents: [StandaloneComponentEntry(id: "powerHub", role: "powerHub")]
+            powerHub: StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub)
         )
 
         let components = try rig.makeComponents()

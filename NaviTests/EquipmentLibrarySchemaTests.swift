@@ -21,6 +21,30 @@ struct EquipmentLibrarySchemaTests {
         return try ModelContainer(for: schema, configurations: [configuration])
     }
 
+    // A real, file-backed container with the actual migration plan — not the in-memory-only
+    // `makeInMemoryContainer()` helper other tests use, which skips staged migration entirely and
+    // so wouldn't have caught NAVI-85's "Duplicate version checksums detected" regression (two
+    // `VersionedSchema`s referencing the same *live* type collide once nothing differs between
+    // them — see `EquipmentLibrarySchemaV2`'s doc comment). Exercises the exact
+    // `ModelContainer(for:migrationPlan:configurations:)` call `NaviApp` makes, against a scratch
+    // file this test owns and cleans up itself.
+    @Test func migrationPlanBuildsWithoutDuplicateVersionChecksums() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EquipmentLibrarySchemaTests-\(UUID().uuidString)")
+            .appendingPathExtension("store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let schema = Schema(EquipmentLibrarySchema.models)
+        let container = try ModelContainer(
+            for: schema,
+            migrationPlan: EquipmentLibraryMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+        )
+        // Reaching here without throwing is the assertion — a duplicate-checksum schema fails at
+        // `ModelContainer` init, before any store operation.
+        _ = ModelContext(container)
+    }
+
     @Test func schemaBuildsAndPersistsARig() throws {
         let container = try makeInMemoryContainer()
         let context = ModelContext(container)
@@ -49,6 +73,7 @@ struct EquipmentLibrarySchemaTests {
         )
         let guideCamera = GuideCameraProfile(name: "ASI120MM Mini", deviceName: "ZWO CCD ASI120MM Mini")
         let server = ServerProfile(name: "Observatory Pi", url: URL(string: "http://observatory.local:8080/mcp")!)
+        let powerHub = StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub, deviceName: "Pegasus PPBA")
 
         let rig = RigProfile(
             serverRigID: "rig-001",
@@ -58,11 +83,9 @@ struct EquipmentLibrarySchemaTests {
             guideOpticalAssembly: guideOTA,
             imagingTrain: train,
             guideCamera: guideCamera,
+            powerHub: powerHub,
             defaultObservatoryID: "obs-001",
-            defaultServer: server,
-            standaloneComponents: [
-                StandaloneComponentEntry(id: "power-1", role: "powerHub", deviceName: "Pegasus PPBA")
-            ]
+            defaultServer: server
         )
         context.insert(rig)
         try context.save()
@@ -79,7 +102,7 @@ struct EquipmentLibrarySchemaTests {
         #expect(fetchedRig.imagingTrain?.filterWheelSlots?.first { $0.slot == 2 }?.name == "Red")
         #expect(fetchedRig.guideCamera?.deviceName == "ZWO CCD ASI120MM Mini")
         #expect(fetchedRig.defaultServer?.url.absoluteString == "http://observatory.local:8080/mcp")
-        #expect(fetchedRig.standaloneComponents.first?.role == "powerHub")
+        #expect(fetchedRig.powerHub?.role == .powerHub)
         #expect(fetchedRig.hasStaleLibraryReferences == false)
     }
 
@@ -126,7 +149,7 @@ struct EquipmentLibrarySchemaTests {
         #expect(fetched.filterWheelSlots == nil)
     }
 
-    @Test func standaloneComponentsDefaultsToEmptyAndRoundTrips() throws {
+    @Test func standaloneEquipmentDefaultsToNilAndRoundTrips() throws {
         let container = try makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -136,16 +159,15 @@ struct EquipmentLibrarySchemaTests {
 
         let fetchedID = rig.persistentModelID
         var fetched = try #require(context.model(for: fetchedID) as? RigProfile)
-        #expect(fetched.standaloneComponents.isEmpty)
+        #expect(fetched.dewHeater == nil)
 
-        fetched.standaloneComponents = [
-            StandaloneComponentEntry(id: "dew-1", role: "dewHeater", deviceName: "Pegasus DewHeater")
-        ]
+        let dewHeater = StandaloneEquipmentProfile(name: "Pegasus DewHeater", role: .dewHeater, deviceName: "Pegasus DewHeater")
+        context.insert(dewHeater)
+        fetched.dewHeater = dewHeater
         try context.save()
 
         fetched = try #require(context.model(for: fetchedID) as? RigProfile)
-        #expect(fetched.standaloneComponents.count == 1)
-        #expect(fetched.standaloneComponents.first?.role == "dewHeater")
+        #expect(fetched.dewHeater?.role == .dewHeater)
     }
 
     @Test func deletingAServerNullifiesRigsThatDefaultToIt() throws {

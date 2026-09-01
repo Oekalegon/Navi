@@ -23,6 +23,10 @@ final class MountProfile {
     var make: String?
     var model: String?
     var deviceName: String?
+    /// The INDI driver this mount expects (e.g. "EQMod Mount") — NAVI-85. Informational plus a
+    /// manual "Start Driver" convenience (see `DriverPickerField`'s doc comment); never auto-bound
+    /// to `deviceName`, since a driver's resulting device name isn't queryable from INDIMCPKit.
+    var preferredDriverLabel: String?
     var notes: String?
 
     /// Updated whenever this record is saved; drives the §4.3 "Resync all" stale-Rig detection —
@@ -34,6 +38,7 @@ final class MountProfile {
         make: String? = nil,
         model: String? = nil,
         deviceName: String? = nil,
+        preferredDriverLabel: String? = nil,
         notes: String? = nil,
         modifiedAt: Date = .now
     ) {
@@ -41,6 +46,7 @@ final class MountProfile {
         self.make = make
         self.model = model
         self.deviceName = deviceName
+        self.preferredDriverLabel = preferredDriverLabel
         self.notes = notes
         self.modifiedAt = modifiedAt
     }
