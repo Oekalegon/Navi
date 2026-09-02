@@ -13,10 +13,15 @@ import INDIMCPKit
 /// updates `TelescopeSessionManager`'s *armed* selection — it never connects anything itself.
 ///
 /// Both lists are always populated from the local equipment library (`RigProfile`/
-/// `ObservatoryProfile`) so the picker has something to show even before ever connecting. Rows
-/// are only selectable while `TelescopeSessionManager` is connected — picking a *different*
-/// server-side Rig/Observatory needs a live session to make sense of, but the already-armed
-/// choice still displays (dimmed) while disconnected rather than disappearing.
+/// `ObservatoryProfile`) so the picker has something to show even before ever connecting.
+///
+/// **Rigs are selectable offline; Observatories aren't.** Arming a Rig is a purely local act — a
+/// `RigProfile` is Navi's own record (§4.3) and arming only notes which one you intend to use, so
+/// requiring a connection first was a chicken-and-egg: the natural step after creating your first
+/// rig is to connect *to that rig*, but the rig couldn't be armed until you were already
+/// connected, and Connect needs an armed rig. An `Observatory` is genuinely server-side (fetched
+/// via `listObservatories`), so picking a different one still needs a live session; those rows
+/// stay dimmed while disconnected rather than disappearing.
 struct TelescopeSelectionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -52,7 +57,8 @@ struct TelescopeSelectionSheet: View {
                     ForEach(observatories) { observatory in
                         row(
                             title: observatory.name,
-                            isSelected: selectedObservatoryID == observatory.serverObservatoryID
+                            isSelected: selectedObservatoryID == observatory.serverObservatoryID,
+                            isEnabled: isConnected
                         ) {
                             selectedObservatoryID = observatory.serverObservatoryID
                         }
@@ -65,7 +71,8 @@ struct TelescopeSelectionSheet: View {
                     title: "Rig",
                     isEmpty: rigs.isEmpty,
                     isRefreshing: false,
-                    emptyMessage: "No rigs in the equipment library yet."
+                    emptyMessage: "No rigs in the equipment library yet.",
+                    requiresConnection: false
                 ) {
                     ForEach(rigs) { rig in
                         row(title: rig.name, isSelected: selectedRigID == rig.serverRigID) {
@@ -117,6 +124,7 @@ struct TelescopeSelectionSheet: View {
         isEmpty: Bool,
         isRefreshing: Bool,
         emptyMessage: String,
+        requiresConnection: Bool = true,
         @ViewBuilder rows: () -> some View
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -149,7 +157,7 @@ struct TelescopeSelectionSheet: View {
                 }
             }
 
-            if !isConnected {
+            if requiresConnection && !isConnected {
                 Text("Connect to change this selection.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -160,7 +168,12 @@ struct TelescopeSelectionSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func row(title: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
+    private func row(
+        title: String,
+        isSelected: Bool,
+        isEnabled: Bool = true,
+        select: @escaping () -> Void
+    ) -> some View {
         HStack {
             Text(title)
                 .font(.callout)
@@ -176,8 +189,8 @@ struct TelescopeSelectionSheet: View {
         .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         .cornerRadius(6)
         .contentShape(Rectangle())
-        .opacity(isConnected ? 1 : 0.5)
-        .allowsHitTesting(isConnected)
+        .opacity(isEnabled ? 1 : 0.5)
+        .allowsHitTesting(isEnabled)
         .onTapGesture { select() }
     }
 
