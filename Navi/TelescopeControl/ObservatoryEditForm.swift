@@ -72,9 +72,27 @@ struct ObservatoryEditForm: View {
     var body: some View {
         SettingsDetailForm(title: name.isEmpty ? "Untitled Observatory" : name) {
             if !isConnected {
-                Label("Connect to a telescope server to edit observatories.", systemImage: "exclamationmark.triangle")
+                // Three genuinely different situations, so one blanket "connect first" was wrong
+                // once offline editing became possible.
+                // `observatoryID == nil` is folded into the first case rather than given its own:
+                // a new observatory gets its baseline synchronously, so it's always editable
+                // offline — but `.task` runs after the first render, so testing `loadedSnapshot`
+                // alone would flash the wrong message at it.
+                if loadedSnapshot != nil || observatoryID == nil {
+                    Label(
+                        "Not connected — changes are saved in Navi and pushed to the server next time you edit this observatory while connected.",
+                        systemImage: "icloud.slash"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Label(
+                        "Connect once to load this observatory's coordinates before editing — Navi only has its name so far.",
+                        systemImage: "exclamationmark.triangle"
+                    )
                     .font(.caption)
                     .foregroundStyle(.orange)
+                }
             }
 
             LabeledField("Name") {
@@ -108,7 +126,6 @@ struct ObservatoryEditForm: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .disabled(!isConnected)
         .task { await load() }
         // Unlike the local equipment editors, an Observatory only exists server-side, so edits
         // can't just be written as they're typed — that would be one `saveObservatory` per
@@ -186,7 +203,21 @@ struct ObservatoryEditForm: View {
             loadedSnapshot = currentSnapshot
             return
         }
-        guard isConnected else { return }
+        guard isConnected else {
+            // Offline: the local record can stand in, but only if its coordinates were actually
+            // fetched at some point. `listObservatories` seeds the cache with id and name alone,
+            // leaving coordinates at 0 — editing one of those and pushing it later would replace
+            // the observatory's real location with 0/0/0, so a summary-only record stays
+            // un-editable (no baseline means nothing registers as an edit) until it's hydrated.
+            if let profile = localProfile(id: observatoryID), profile.detailsFetchedAt != nil {
+                name = profile.name
+                latitudeDeg = profile.latitudeDeg
+                longitudeDeg = profile.longitudeDeg
+                elevationMeters = profile.elevationMeters
+                loadedSnapshot = currentSnapshot
+            }
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -197,6 +228,15 @@ struct ObservatoryEditForm: View {
             elevationMeters = observatory.elevationMeters
             horizonProfile = observatory.horizonProfile
             loadedSnapshot = currentSnapshot
+            // Mark the cache as holding real coordinates, which is what makes offline editing of
+            // this record possible next time.
+            if let profile = localProfile(id: observatoryID) {
+                profile.latitudeDeg = observatory.latitudeDeg
+                profile.longitudeDeg = observatory.longitudeDeg
+                profile.elevationMeters = observatory.elevationMeters
+                profile.detailsFetchedAt = .now
+                try? modelContext.save()
+            }
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }
@@ -209,35 +249,41 @@ struct ObservatoryEditForm: View {
         defer { isSaving = false }
 
         let id = observatoryID ?? IDSlug.make(from: trimmedName)
+        let profile = localProfile(id: id)
+
+        // One fetch of the server's current copy serves two purposes: the drift check, and
+        // recovering `horizonProfile` when this form never loaded it (an edit made offline, then
+        // pushed on reconnect, would otherwise send nil and wipe it).
+        let serverCopy = observatoryID == nil ? nil : try? await telescope.getObservatory(id: id)
+
+        // Drift check. Only meaningful once we've pushed this record before — without a stored
+        // digest there's nothing to compare the server's copy against, and a first push is
+        // legitimately creating or adopting the record.
+        if let lastPushed = profile?.lastPushedDigest,
+           let serverCopy,
+           let serverDigest = PayloadDigest.of(serverCopy),
+           serverDigest != lastPushed {
+            telescope.errorMessage = """
+                \(trimmedName) changed on the server since Navi last pushed it — \
+                your local edits were kept but not sent, so the server copy is untouched.
+                """
+            return
+        }
+
         let observatory = Observatory(
             id: id,
             name: trimmedName,
             latitudeDeg: latitudeDeg,
             longitudeDeg: longitudeDeg,
             elevationMeters: elevationMeters,
-            horizonProfile: horizonProfile
+            // Prefer what this form loaded; fall back to the server's, so a record edited offline
+            // doesn't lose its horizon data on the eventual push.
+            horizonProfile: horizonProfile ?? serverCopy?.horizonProfile
         )
-
         let digest = PayloadDigest.of(observatory)
-        let profile = localProfile(id: id)
 
         // Nothing to send: the server already has exactly this.
         if let digest, digest == profile?.lastPushedDigest { return }
-
-        // Drift check. Only meaningful once we've pushed this record before — without a stored
-        // digest there's nothing to compare the server's copy against, and a first push is
-        // legitimately creating or adopting the record.
-        if observatoryID != nil, let lastPushed = profile?.lastPushedDigest {
-            if let serverCopy = try? await telescope.getObservatory(id: id),
-               let serverDigest = PayloadDigest.of(serverCopy),
-               serverDigest != lastPushed {
-                telescope.errorMessage = """
-                    \(trimmedName) changed on the server since Navi last pushed it — \
-                    your local edits were kept but not sent, so the server copy is untouched.
-                    """
-                return
-            }
-        }
 
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
