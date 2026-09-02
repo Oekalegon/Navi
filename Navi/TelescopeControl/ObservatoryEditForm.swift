@@ -137,7 +137,13 @@ struct ObservatoryEditForm: View {
             upsertLocalCache(with: saved)
             isDirty = false
         } catch {
-            errorMessage = TelescopeSessionManager.describe(error)
+            // `flush()` calls this during teardown, so `errorMessage` — this view's own @State —
+            // is written to a view that's already gone and never rendered. The toolbar's
+            // TelescopeErrorIndicator is the only surface the user can still see, so route there
+            // too. (Kept on `errorMessage` as well for a save triggered while still on screen.)
+            let described = TelescopeSessionManager.describe(error)
+            errorMessage = described
+            telescope.errorMessage = "\(trimmedName): \(described)"
         }
     }
 

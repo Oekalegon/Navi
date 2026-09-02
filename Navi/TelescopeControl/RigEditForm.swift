@@ -411,13 +411,29 @@ struct RigEditForm: View {
     /// (Making Navi the outright source of truth — deferred pushes with drift detection against
     /// another client's edits — is its own piece of work; this just stops offline edits being lost.)
     private func flush() {
-        guard isDirty, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        guard let components = buildComponents() else { return }
-        let saved = persistLocally()
-        onSaved(saved)
-        isDirty = false
-        guard isConnected else { return }
-        Task { await push(components: components, profile: saved) }
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        // Components are computed *before* the decision but used only by the push. `buildComponents`
+        // returning nil is not a reason to skip the local write — see `rigFlushOutcome`.
+        let components = buildComponents()
+        switch rigFlushOutcome(
+            isDirty: isDirty,
+            trimmedName: trimmedName,
+            isConnected: isConnected,
+            canProject: components != nil
+        ) {
+        case .skip:
+            return
+        case .persistOnly:
+            let saved = persistLocally()
+            onSaved(saved)
+            isDirty = false
+        case .persistAndPush:
+            let saved = persistLocally()
+            onSaved(saved)
+            isDirty = false
+            guard let components else { return }
+            Task { await push(components: components, profile: saved) }
+        }
     }
 
     /// Returns `nil` (having set `errorMessage`) if the composition can't be flattened — e.g. the
@@ -436,7 +452,12 @@ struct RigEditForm: View {
                 observatoryControl: observatoryControl
             )
         } catch {
-            errorMessage = (error as? RigProfileTranslationError)?.description ?? "\(error)"
+            // Surfaced app-wide rather than on this view's own @State: `flush()` runs during
+            // teardown, so anything written to `errorMessage` there is never rendered. While the
+            // form is still on screen the same message is shown inline by `validationBanner`.
+            let described = (error as? RigProfileTranslationError)?.description ?? "\(error)"
+            errorMessage = described
+            telescope.errorMessage = "\(name): \(described)"
             return nil
         }
     }
@@ -480,7 +501,11 @@ struct RigEditForm: View {
             profile.lastResyncedAt = .now
             try? modelContext.save()
         } catch {
-            errorMessage = TelescopeSessionManager.describe(error)
+            // Same reasoning as `buildComponents`: this runs after teardown, so the toolbar's
+            // TelescopeErrorIndicator is the only place the user can actually see it.
+            let described = TelescopeSessionManager.describe(error)
+            errorMessage = described
+            telescope.errorMessage = "\(profile.name): \(described)"
         }
     }
 
