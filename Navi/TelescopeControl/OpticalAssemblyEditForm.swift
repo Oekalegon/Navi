@@ -208,7 +208,6 @@ struct OpticalAssemblyEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }
 

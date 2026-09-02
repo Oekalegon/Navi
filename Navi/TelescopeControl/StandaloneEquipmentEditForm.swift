@@ -115,6 +115,5 @@ struct StandaloneEquipmentEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

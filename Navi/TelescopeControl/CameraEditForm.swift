@@ -152,6 +152,5 @@ struct CameraEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

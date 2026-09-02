@@ -69,13 +69,10 @@ struct RigSettingsPane: View {
                     ForEach(rigs) { rig in
                         row(for: rig)
                             .tag(Selection.existing(rig.persistentModelID))
-                            // See `EquipmentSettingsPane.sidebar` — `.listStyle(.plain)` drops the
-                            // `.sidebar` vibrancy background but not macOS's per-row separator
-                            // hairline; that needs `.listRowSeparator(.hidden)` on the row itself.
-                            .listRowSeparator(.hidden)
                     }
                 }
-                .listStyle(.plain)
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
         }
     }

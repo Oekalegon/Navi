@@ -28,8 +28,7 @@ struct RigEditForm: View {
     /// Called with the saved (inserted-or-mutated) rig after a successful Save, so the caller can
     /// adopt it as the current selection right away.
     var onSaved: (RigProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel and after a
-    /// successful Save.
+    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel only.
     var onFinished: () -> Void = {}
 
     @Query(sort: \MountProfile.name) private var mounts: [MountProfile]

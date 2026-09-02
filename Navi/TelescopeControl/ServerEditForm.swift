@@ -100,6 +100,5 @@ struct ServerEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

@@ -114,7 +114,7 @@ struct ImagingTrainEditForm: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task { load() }
+        .onAppear { load() }
     }
 
     private var header: some View {
@@ -217,6 +217,5 @@ struct ImagingTrainEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

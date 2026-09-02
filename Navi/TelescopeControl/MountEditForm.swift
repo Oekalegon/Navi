@@ -18,10 +18,15 @@ struct MountEditForm: View {
     /// Called with the saved (inserted-or-mutated) mount, so the Rig editor can adopt it as this
     /// rig's `mount` relationship right away.
     var onSaved: (MountProfile) -> Void = { _ in }
-    /// Called on Cancel and after a successful Save (NAVI-77) — this form is embedded inline as
-    /// detail content, not presented as a sheet, so there's no `dismiss()` to call; the caller
-    /// (e.g. a master-detail pane, or RigEditForm's drill-in) uses this to navigate back to
-    /// whatever it shows when nothing is being edited.
+    /// Called on **Cancel only** (NAVI-77) — this form is embedded inline as detail content, not
+    /// presented as a sheet, so there's no `dismiss()` to call; the caller (e.g. a master-detail
+    /// pane) uses this to navigate back to whatever it shows when nothing is being edited.
+    ///
+    /// Deliberately *not* called after a successful Save: `onSaved` already hands the caller the
+    /// persisted entity so it can select it, and calling both meant `onFinished` immediately
+    /// clobbered that selection — leaving the user on a placeholder instead of the record they
+    /// just saved, and making `onSaved`'s selection assignment dead code at every call site.
+    /// `RigEditForm` has always called `onSaved` alone; the rest now match it.
     var onFinished: () -> Void = {}
 
     @State private var name = ""
@@ -116,6 +121,5 @@ struct MountEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

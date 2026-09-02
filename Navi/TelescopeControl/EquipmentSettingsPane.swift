@@ -75,6 +75,24 @@ struct EquipmentSettingsPane: View {
             }
         }
 
+        /// Singular form, for the "+" button's tooltip ("Add Mount", not "Add Mounts") — matching
+        /// how every other Settings pane phrases its own `addHelp`.
+        var singularTitle: String {
+            switch self {
+            case .mount: return "Mount"
+            case .opticalAssembly: return "Optical Assembly"
+            case .guideOpticalAssembly: return "Guide Optical Assembly"
+            case .camera: return "Camera"
+            case .filterWheel: return "Filter Wheel"
+            case .rotator: return "Rotator"
+            case .guideCamera: return "Guide Camera"
+            case .powerHub: return "Power Hub"
+            case .flatScreen: return "Flat Screen"
+            case .dewHeater: return "Dew Heater"
+            case .observatoryControl: return "Observatory Control"
+            }
+        }
+
         var icon: String {
             switch self {
             case .mount: return "gyroscope"
@@ -199,7 +217,15 @@ struct EquipmentSettingsPane: View {
     }
 
     private func kindNode(_ kind: EquipmentKind, children: [SidebarNode]) -> SidebarNode {
-        SidebarNode(title: kind.title, icon: kind.icon, selection: .kind(kind), children: children)
+        // `nil`, not `[]`, when a kind owns nothing: `OutlineGroup` treats an empty-but-non-nil
+        // children array as "expandable, currently empty" and draws a disclosure chevron that
+        // reveals nothing — which on a fresh library would be every row.
+        SidebarNode(
+            title: kind.title,
+            icon: kind.icon,
+            selection: .kind(kind),
+            children: children.isEmpty ? nil : children
+        )
     }
 
     private func childNode(name: String, icon: String, selection: Selection, onDelete: @escaping () -> Void) -> SidebarNode {
@@ -237,13 +263,18 @@ struct EquipmentSettingsPane: View {
             OutlineGroup(topLevelNodes, children: \.children) { node in
                 row(for: node).tag(node.selection)
             }
-            // `.listStyle(.plain)` alone doesn't remove macOS's row separator lines — that's a
-            // separate, per-row modifier (`.listRowSeparator(.hidden)`, macOS 13+). Without it,
-            // `.plain` only drops the `.sidebar` vibrancy background; the hairline between every
-            // row remains.
-            .listRowSeparator(.hidden)
         }
-        .listStyle(.plain)
+        // `.sidebar`, not `.plain` — this is what gives rows the native inset *rounded* selection
+        // capsule; `.plain` draws selection as a rectangle spanning the full width, which reads as
+        // a table, not a source list. `.sidebar` also omits row separators on its own, so the
+        // explicit `.listRowSeparator(.hidden)` this used to need is gone.
+        //
+        // `.scrollContentBackground(.hidden)` suppresses only the sidebar *background material*
+        // (designed to sit against a `NavigationSplitView`'s window chrome, which this plain
+        // `HStack` isn't — it renders as an opaque box here) while keeping the row metrics and
+        // selection styling that are the reason for choosing `.sidebar`.
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
@@ -337,15 +368,15 @@ struct EquipmentSettingsPane: View {
     @ViewBuilder
     private func kindOverview(for kind: EquipmentKind) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(kind.title)
-                    .font(.headline)
-                Spacer()
-                Button(action: { selection = newSelection(for: kind) }) {
-                    Label("Add", systemImage: "plus")
-                }
-            }
-            .padding(16)
+            // The shared header, not hand-rolled chrome — keeps this pane's "+" identical in
+            // styling and height to every other Settings pane's (borderless glyph, 12pt vertical
+            // padding); an inline `Label("Add", systemImage:)` in a default-styled Button rendered
+            // as a bordered "+ Add" and made this header taller than its siblings'.
+            SettingsPaneHeader(
+                title: kind.title,
+                addHelp: "Add \(kind.singularTitle)",
+                onAdd: { selection = newSelection(for: kind) }
+            )
             Divider()
             let rows = instanceRows(for: kind)
             if rows.isEmpty {
@@ -359,9 +390,9 @@ struct EquipmentSettingsPane: View {
                         Text(instance.name)
                     }
                     .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
                 }
-                .listStyle(.plain)
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
         }
     }

@@ -109,6 +109,5 @@ struct RotatorEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

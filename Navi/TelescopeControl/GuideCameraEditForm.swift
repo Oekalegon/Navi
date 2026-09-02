@@ -152,6 +152,5 @@ struct GuideCameraEditForm: View {
         }
         try? modelContext.save()
         onSaved(saved)
-        onFinished()
     }
 }

@@ -160,9 +160,14 @@ struct RigProfileTranslatorTests {
             mount: MountProfile(name: "My EQ6-R", deviceName: "EQMod Mount"),
             opticalAssembly: OpticalAssemblyProfile(name: "Esprit 100", purpose: .mainImaging),
             guideOpticalAssembly: OpticalAssemblyProfile(name: "50mm Guide Scope", purpose: .guideScope),
+            // All three imaging-train roles populated — "full" has to mean full, or the rotator
+            // and filter-wheel branches of `makeRigComponents` go unexercised (the rotator branch
+            // had no positive coverage at all until this was filled in).
             imagingTrain: ImagingTrainProfile(
                 name: "ASI2600MM Train",
-                camera: CameraProfile(name: "ASI2600MM Pro", deviceName: "ZWO CCD ASI2600MM Pro")
+                camera: CameraProfile(name: "ASI2600MM Pro", deviceName: "ZWO CCD ASI2600MM Pro"),
+                filterWheel: FilterWheelProfile(name: "EFW", deviceName: "ZWO EFW"),
+                rotator: RotatorProfile(name: "Falcon", deviceName: "Pegasus Falcon")
             ),
             guideCamera: GuideCameraProfile(name: "ASI120MM Mini", deviceName: "ZWO CCD ASI120MM Mini"),
             powerHub: StandaloneEquipmentProfile(name: "Pegasus PPBA", role: .powerHub)
@@ -170,8 +175,30 @@ struct RigProfileTranslatorTests {
 
         let components = try rig.makeComponents()
         let roles = Set(components.map(\.role))
-        #expect(roles == [.mount, .telescope, .guideTelescope, .camera, .guideCamera, .powerHub])
+        #expect(roles == [
+            .mount, .telescope, .guideTelescope, .camera, .filterWheel, .rotator,
+            .guideCamera, .powerHub,
+        ])
         // Every component id must be unique within the rig — `saveRig`'s own requirement.
         #expect(Set(components.map(\.id)).count == components.count)
+    }
+
+    @Test func rotatorMapsToRotatorRoleWithItsDevice() throws {
+        // The rotator branch in isolation: `imagingTrainMapsCameraFilterWheelAndRotatorRolesOnly
+        // WhenPresent` only ever asserts the rotator is *absent*, so without this the branch's
+        // make/model/device mapping is never checked.
+        let train = ImagingTrainProfile(
+            name: "Train",
+            rotator: RotatorProfile(name: "Falcon", make: "Pegasus", model: "Falcon", deviceName: "Pegasus Falcon")
+        )
+        let rig = RigProfile(serverRigID: "rig-rotator", name: "Rotator Rig", imagingTrain: train)
+
+        let components = try rig.makeComponents()
+        #expect(components.count == 1)
+        let rotator = try #require(components.first { $0.role == .rotator })
+        #expect(rotator.id == "rotator")
+        #expect(rotator.make == "Pegasus")
+        #expect(rotator.model == "Falcon")
+        #expect(rotator.device == "Pegasus Falcon")
     }
 }
