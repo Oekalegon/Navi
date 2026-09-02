@@ -23,6 +23,11 @@ import SwiftData
 struct ServerEditForm: View {
     @Bindable var server: ServerProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     @State private var urlString = ""
     @State private var urlError: String?
 
@@ -30,6 +35,7 @@ struct ServerEditForm: View {
         SettingsDetailForm(title: server.name.isEmpty ? "Untitled Server" : server.name) {
             LabeledField("Name") {
                 TextField("Observatory Pi", text: $server.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             LabeledField("URL") {
@@ -47,10 +53,21 @@ struct ServerEditForm: View {
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onAppear { urlString = server.url.absoluteString }
+        .onAppear {
+            if server.name.isEmpty { isNameFocused = true }
+            urlString = server.url.absoluteString
+        }
         .onChange(of: urlString) { commitURL() }
-        .onChange(of: server.name) { server.modifiedAt = .now }
-        .onChange(of: server.notes) { server.modifiedAt = .now }
+        .onChange(of: changeKey) { server.modifiedAt = .now }
+    }
+
+    /// Name and notes only — the URL stamps `modifiedAt` itself in `commitURL()`, since it's
+    /// written to the record only once the typed text parses.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(server.name)
+        parts.append(server.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
     }
 
     private func commitURL() {

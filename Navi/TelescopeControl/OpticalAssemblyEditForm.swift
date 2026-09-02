@@ -19,6 +19,11 @@ import SwiftData
 struct OpticalAssemblyEditForm: View {
     @Bindable var opticalAssembly: OpticalAssemblyProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     /// Mirrors `hasFocuser` but is tracked separately so toggling it off, clearing the fields, and
     /// toggling back on doesn't fight the derived value mid-edit.
     @State private var includesFocuser = false
@@ -27,6 +32,7 @@ struct OpticalAssemblyEditForm: View {
         SettingsDetailForm(title: opticalAssembly.displayName) {
             LabeledField("Name") {
                 TextField("Esprit 100", text: $opticalAssembly.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
@@ -99,19 +105,11 @@ struct OpticalAssemblyEditForm: View {
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onAppear { includesFocuser = opticalAssembly.hasFocuser }
-        .onChange(of: opticalAssembly.name) { touch() }
-        .onChange(of: opticalAssembly.make) { touch() }
-        .onChange(of: opticalAssembly.model) { touch() }
-        .onChange(of: opticalAssembly.apertureMm) { touch() }
-        .onChange(of: opticalAssembly.focalLengthMm) { touch() }
-        .onChange(of: opticalAssembly.opticalDesign) { touch() }
-        .onChange(of: opticalAssembly.focuserMake) { touch() }
-        .onChange(of: opticalAssembly.focuserModel) { touch() }
-        .onChange(of: opticalAssembly.focuserDeviceName) { touch() }
-        .onChange(of: opticalAssembly.focuserMinPosition) { touch() }
-        .onChange(of: opticalAssembly.focuserMaxPosition) { touch() }
-        .onChange(of: opticalAssembly.notes) { touch() }
+        .onAppear {
+            if opticalAssembly.name.isEmpty { isNameFocused = true }
+            includesFocuser = opticalAssembly.hasFocuser
+        }
+        .onChange(of: changeKey) { touch() }
     }
 
     /// "Has Focuser" off clears every focuser field together, matching
@@ -122,6 +120,26 @@ struct OpticalAssemblyEditForm: View {
         opticalAssembly.focuserDeviceName = nil
         opticalAssembly.focuserMinPosition = nil
         opticalAssembly.focuserMaxPosition = nil
+    }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field — see `CameraLikeProfile.editableChangeKey`
+    /// for why the list is kept in one place.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(opticalAssembly.name)
+        parts.append(opticalAssembly.make ?? "")
+        parts.append(opticalAssembly.model ?? "")
+        parts.append(opticalAssembly.apertureMm.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.focalLengthMm.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.opticalDesign?.rawValue ?? "")
+        parts.append(opticalAssembly.focuserMake ?? "")
+        parts.append(opticalAssembly.focuserModel ?? "")
+        parts.append(opticalAssembly.focuserDeviceName ?? "")
+        parts.append(opticalAssembly.focuserMinPosition.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.focuserMaxPosition.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
     }
 
     private func touch() {
@@ -140,4 +158,6 @@ extension OpticalDesign {
         case .other: return "Other"
         }
     }
+
+
 }

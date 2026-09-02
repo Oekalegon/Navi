@@ -43,3 +43,30 @@ protocol CameraLikeProfile: AnyObject, PersistentModel {
 
 extension CameraProfile: CameraLikeProfile {}
 extension GuideCameraProfile: CameraLikeProfile {}
+
+extension CameraLikeProfile {
+    /// Every editable field folded into one comparable value, so the editor can stamp `modifiedAt`
+    /// from a single `.onChange` instead of one per field.
+    ///
+    /// Deliberately here rather than in the form: this is the same field list the protocol above
+    /// declares, so the two drift together and in one file. `modifiedAt` drives
+    /// `RigProfile.hasStaleLibraryReferences`, so a field missing from this key means edits to it
+    /// leave a rig claiming to be in sync when it isn't — the reason this isn't ten separate
+    /// handlers anyone could forget to extend.
+    var editableChangeKey: String {
+        // Built with explicit appends rather than one array literal: a literal mixing String,
+        // String?, Bool?, Int? and Double? blew the type-checker's budget outright.
+        var parts: [String] = []
+        parts.append(name)
+        parts.append(make ?? "")
+        parts.append(model ?? "")
+        parts.append(deviceName ?? "")
+        parts.append(cooled.map { "\($0)" } ?? "")
+        parts.append(pixelsX.map { "\($0)" } ?? "")
+        parts.append(pixelsY.map { "\($0)" } ?? "")
+        parts.append(pixelSizeMicron.map { "\($0)" } ?? "")
+        parts.append(bitDepth.map { "\($0)" } ?? "")
+        parts.append(notes ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
+}

@@ -15,10 +15,16 @@ import SwiftData
 struct MountEditForm: View {
     @Bindable var mount: MountProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     var body: some View {
         SettingsDetailForm(title: mount.displayName) {
             LabeledField("Name") {
                 TextField("EQ6-R Pro", text: $mount.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
@@ -37,10 +43,23 @@ struct MountEditForm: View {
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onChange(of: mount.name) { mount.modifiedAt = .now }
-        .onChange(of: mount.make) { mount.modifiedAt = .now }
-        .onChange(of: mount.model) { mount.modifiedAt = .now }
-        .onChange(of: mount.deviceName) { mount.modifiedAt = .now }
-        .onChange(of: mount.notes) { mount.modifiedAt = .now }
+        .onAppear { if mount.name.isEmpty { isNameFocused = true } }
+        .onChange(of: changeKey) { mount.modifiedAt = .now }
     }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field. `modifiedAt` drives
+    /// `RigProfile.hasStaleLibraryReferences`, so a field missing here means edits to it leave a
+    /// rig claiming to be in sync when it isn't — keeping the list in one place makes that easier
+    /// to spot than ten separate handlers anyone could forget to extend.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(mount.name)
+        parts.append(mount.make ?? "")
+        parts.append(mount.model ?? "")
+        parts.append(mount.deviceName ?? "")
+        parts.append(mount.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
+
 }

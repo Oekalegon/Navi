@@ -59,10 +59,14 @@ struct ServerSettingsPane: View {
     @State private var reachabilityResult: String?
 
     /// A blank server needs a syntactically valid URL to exist at all (`ServerProfile.url` is
-    /// non-optional); the user replaces it immediately in the detail pane.
+    /// non-optional); the user replaces it immediately in the detail pane. Hoisted to a constant so
+    /// the force-unwrap is written once, against a literal that provably can't fail, rather than
+    /// inline where it invites copying somewhere it isn't safe.
+    private static let placeholderServerURL = URL(string: "http://localhost:8000/mcp")!
+
+    /// Inserts a blank server and selects it.
     private func insert() {
-        let placeholder = URL(string: "http://localhost:8000/mcp")!
-        let new = ServerProfile(name: "", url: placeholder)
+        let new = ServerProfile(name: "", url: Self.placeholderServerURL)
         modelContext.insert(new)
         try? modelContext.save()
         selection = .existing(new.persistentModelID)

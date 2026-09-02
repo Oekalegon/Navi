@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import SwiftData
 import INDIMCPKit
 
@@ -306,6 +307,14 @@ struct RigEditForm: View {
         // closing Settings all tear it down. See `ObservatoryEditForm.flush()` for why this is a
         // detached Task and what happens if the push never lands.
         .onDisappear { flush() }
+        // Belt and braces. .onDisappear is dependable for a selection change or a tab switch, but
+        // window close is exactly where SwiftUI is least reliable about tearing a view down — and
+        // that's the case where a missed flush loses the push outright. flush() is dirty-gated and
+        // idempotent, so firing from both is harmless; this notification also covers other windows
+        // closing, which is simply an earlier, equally safe moment to sync.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
+            flush()
+        }
         .task {
             load()
             await refreshObservatories()

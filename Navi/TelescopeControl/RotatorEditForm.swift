@@ -13,10 +13,16 @@ import SwiftData
 struct RotatorEditForm: View {
     @Bindable var rotator: RotatorProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     var body: some View {
         SettingsDetailForm(title: rotator.displayName) {
             LabeledField("Name") {
                 TextField("Falcon Rotator", text: $rotator.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
@@ -35,10 +41,23 @@ struct RotatorEditForm: View {
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onChange(of: rotator.name) { rotator.modifiedAt = .now }
-        .onChange(of: rotator.make) { rotator.modifiedAt = .now }
-        .onChange(of: rotator.model) { rotator.modifiedAt = .now }
-        .onChange(of: rotator.deviceName) { rotator.modifiedAt = .now }
-        .onChange(of: rotator.notes) { rotator.modifiedAt = .now }
+        .onAppear { if rotator.name.isEmpty { isNameFocused = true } }
+        .onChange(of: changeKey) { rotator.modifiedAt = .now }
     }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field. `modifiedAt` drives
+    /// `RigProfile.hasStaleLibraryReferences`, so a field missing here means edits to it leave a
+    /// rig claiming to be in sync when it isn't — keeping the list in one place makes that easier
+    /// to spot than ten separate handlers anyone could forget to extend.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(rotator.name)
+        parts.append(rotator.make ?? "")
+        parts.append(rotator.model ?? "")
+        parts.append(rotator.deviceName ?? "")
+        parts.append(rotator.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
+
 }

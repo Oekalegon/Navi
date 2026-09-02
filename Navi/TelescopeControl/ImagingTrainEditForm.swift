@@ -17,6 +17,11 @@ struct ImagingTrainEditForm: View {
     @Environment(\.selectSettingsTab) private var selectSettingsTab
     @Bindable var imagingTrain: ImagingTrainProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     @Query(sort: \CameraProfile.name) private var cameras: [CameraProfile]
     @Query(sort: \FilterWheelProfile.name) private var filterWheels: [FilterWheelProfile]
     @Query(sort: \RotatorProfile.name) private var rotators: [RotatorProfile]
@@ -31,6 +36,7 @@ struct ImagingTrainEditForm: View {
         SettingsDetailForm(title: imagingTrain.displayName) {
             LabeledField("Imaging Train Name") {
                 TextField("ASI2600MM Train", text: $imagingTrain.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
 
@@ -88,11 +94,11 @@ struct ImagingTrainEditForm: View {
                 }
             )
         }
-        .onAppear { load() }
-        .onChange(of: imagingTrain.name) { touch() }
-        .onChange(of: imagingTrain.camera) { touch() }
-        .onChange(of: imagingTrain.filterWheel) { touch() }
-        .onChange(of: imagingTrain.rotator) { touch() }
+        .onAppear {
+            if imagingTrain.name.isEmpty { isNameFocused = true }
+            load()
+        }
+        .onChange(of: changeKey) { touch() }
     }
 
     private func roleSummary(name: String, deviceName: String?) -> String {
@@ -145,4 +151,18 @@ struct ImagingTrainEditForm: View {
     private func touch() {
         imagingTrain.modifiedAt = .now
     }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field — see `CameraLikeProfile.editableChangeKey`
+    /// for why the list is kept in one place.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(imagingTrain.name)
+        // Composed records identified by id: swapping which camera a train uses is an edit.
+        parts.append(imagingTrain.camera.map { "\($0.persistentModelID)" } ?? "")
+        parts.append(imagingTrain.filterWheel.map { "\($0.persistentModelID)" } ?? "")
+        parts.append(imagingTrain.rotator.map { "\($0.persistentModelID)" } ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
+
 }

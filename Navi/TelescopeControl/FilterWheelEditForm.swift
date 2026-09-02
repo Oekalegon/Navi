@@ -13,10 +13,16 @@ import SwiftData
 struct FilterWheelEditForm: View {
     @Bindable var filterWheel: FilterWheelProfile
 
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     var body: some View {
         SettingsDetailForm(title: filterWheel.displayName) {
             LabeledField("Name") {
                 TextField("EFW", text: $filterWheel.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
@@ -36,11 +42,8 @@ struct FilterWheelEditForm: View {
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onChange(of: filterWheel.name) { touch() }
-        .onChange(of: filterWheel.make) { touch() }
-        .onChange(of: filterWheel.model) { touch() }
-        .onChange(of: filterWheel.deviceName) { touch() }
-        .onChange(of: filterWheel.notes) { touch() }
+        .onAppear { if filterWheel.name.isEmpty { isNameFocused = true } }
+        .onChange(of: changeKey) { touch() }
     }
 
     /// `slots` is a computed property over JSON `Data` (SwiftData can't store an array of custom
@@ -108,4 +111,20 @@ struct FilterWheelEditForm: View {
     private func touch() {
         filterWheel.modifiedAt = .now
     }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field — see `CameraLikeProfile.editableChangeKey`
+    /// for why the list is kept in one place.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(filterWheel.name)
+        parts.append(filterWheel.make ?? "")
+        parts.append(filterWheel.model ?? "")
+        parts.append(filterWheel.deviceName ?? "")
+        parts.append(filterWheel.notes ?? "")
+        // Slot edits go through `touch()` directly (they mutate the array wholesale), so they
+        // are covered without appearing here.
+        return parts.joined(separator: "\u{1F}")
+    }
+
 }

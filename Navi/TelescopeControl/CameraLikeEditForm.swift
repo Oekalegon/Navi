@@ -20,6 +20,11 @@ import SwiftData
 /// freely editable offline.
 struct CameraLikeEditForm<Subject: CameraLikeProfile>: View {
     @Bindable var subject: Subject
+
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
     let namePlaceholder: String
     let makePlaceholder: String
 
@@ -28,6 +33,7 @@ struct CameraLikeEditForm<Subject: CameraLikeProfile>: View {
             LabeledField("Name") {
                 // Optional: blank falls back to make/model for display (see equipmentDisplayName).
                 TextField(namePlaceholder, text: $subject.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
@@ -68,17 +74,10 @@ struct CameraLikeEditForm<Subject: CameraLikeProfile>: View {
             }
         }
         // Any edit counts as a modification for the §4.3 "Resync all" staleness check, which used
-        // to be stamped by the Save button.
-        .onChange(of: subject.name) { touch() }
-        .onChange(of: subject.make) { touch() }
-        .onChange(of: subject.model) { touch() }
-        .onChange(of: subject.deviceName) { touch() }
-        .onChange(of: subject.cooled) { touch() }
-        .onChange(of: subject.pixelsX) { touch() }
-        .onChange(of: subject.pixelsY) { touch() }
-        .onChange(of: subject.pixelSizeMicron) { touch() }
-        .onChange(of: subject.bitDepth) { touch() }
-        .onChange(of: subject.notes) { touch() }
+        // to be stamped by the Save button. One handler over `editableChangeKey` rather than one
+        // per field — see that property for why.
+        .onAppear { if subject.name.isEmpty { isNameFocused = true } }
+        .onChange(of: subject.editableChangeKey) { touch() }
     }
 
     private func touch() {
