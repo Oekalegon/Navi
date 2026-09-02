@@ -7,23 +7,16 @@
 
 import SwiftUI
 
-/// Add/edit form for one `CameraProfile` (§4.3) — the main imaging camera. A thin configuration of
-/// `CameraLikeEditForm`, which it shares with `GuideCameraEditForm`; the two differ only in the
-/// entity they edit and their placeholder text.
+/// Editor for one `CameraProfile` (§4.3) — the main imaging camera. A thin configuration of
+/// `CameraLikeEditForm`, which it shares with `GuideCameraEditForm`.
 struct CameraEditForm: View {
-    let camera: CameraProfile?
-    var onSaved: (CameraProfile) -> Void = { _ in }
-    var onFinished: () -> Void = {}
+    let camera: CameraProfile
 
     var body: some View {
         CameraLikeEditForm(
             subject: camera,
-            noun: "Camera",
             namePlaceholder: "ASI2600MM Pro",
-            makePlaceholder: "ZWO",
-            makeNew: { CameraProfile(name: "") },
-            onSaved: onSaved,
-            onFinished: onFinished
+            makePlaceholder: "ZWO"
         )
     }
 }

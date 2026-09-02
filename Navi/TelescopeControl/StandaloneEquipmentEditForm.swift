@@ -8,103 +8,39 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `StandaloneEquipmentProfile` (§4.3's equipment library) — shared by all
-/// four standalone roles (Power Hub, Flat Screen, Dew Heater, Observatory Control), `role` fixed by
-/// the caller (same pattern as `OpticalAssemblyEditForm`'s `purpose`). `equipment == nil` means
-/// "creating a new one" — saving inserts it; otherwise saving mutates the passed-in record in place.
+/// Editor for one `StandaloneEquipmentProfile` (§4.3) — shared by all four standalone roles (Power
+/// Hub, Flat Screen, Dew Heater, Observatory Control). The role is fixed when the record is created
+/// by the pane's "+", so it isn't editable here. See `MountEditForm` for the no-Save-button
+/// convention.
 struct StandaloneEquipmentEditForm: View {
-    @Environment(\.modelContext) private var modelContext
-    let equipment: StandaloneEquipmentProfile?
-    let role: StandaloneEquipmentRole
-    /// Called with the saved (inserted-or-mutated) entity, so the Equipment pane can adopt it as
-    /// the current selection right away.
-    var onSaved: (StandaloneEquipmentProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
-
-    @State private var name = ""
-    @State private var make = ""
-    @State private var model = ""
-    @State private var deviceName: String?
-    @State private var notes = ""
-    @State private var validationError: String?
+    @Bindable var equipment: StandaloneEquipmentProfile
 
     var body: some View {
-        SettingsDetailForm(title: equipment == nil ? "Add \(role.title)" : "Edit \(role.title)") {
+        SettingsDetailForm(title: equipment.displayName) {
             LabeledField("Name") {
-                TextField("\(role.title) 1", text: $name)
+                TextField("\(equipment.role.title) 1", text: $equipment.name)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
                 LabeledField("Make") {
-                    TextField("Optional", text: $make)
+                    TextField("Optional", text: Binding(nilAsEmpty: $equipment.make))
                         .textFieldStyle(.roundedBorder)
                 }
                 LabeledField("Model") {
-                    TextField("Optional", text: $model)
+                    TextField("Optional", text: Binding(nilAsEmpty: $equipment.model))
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            DevicePickerField(label: "INDI Device", deviceName: $deviceName)
+            DevicePickerField(label: "INDI Device", deviceName: $equipment.deviceName)
             LabeledField("Notes") {
-                TextField("Optional notes", text: $notes)
+                TextField("Optional notes", text: Binding(nilAsEmpty: $equipment.notes))
                     .textFieldStyle(.roundedBorder)
             }
-
-            if let validationError {
-                Text(validationError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-        } actions: {
-            Button("Cancel") { onFinished() }
-                .keyboardShortcut(.cancelAction)
-            Button("Save") { save() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
         }
-        .onAppear {
-            name = equipment?.name ?? ""
-            make = equipment?.make ?? ""
-            model = equipment?.model ?? ""
-            deviceName = equipment?.deviceName
-            notes = equipment?.notes ?? ""
-        }
-    }
-
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
-        }
-        let trimmedMake = make.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let saved: StandaloneEquipmentProfile
-        if let equipment {
-            equipment.name = trimmedName
-            equipment.make = trimmedMake.isEmpty ? nil : trimmedMake
-            equipment.model = trimmedModel.isEmpty ? nil : trimmedModel
-            equipment.deviceName = deviceName
-            equipment.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-            equipment.modifiedAt = .now
-            saved = equipment
-        } else {
-            let created = StandaloneEquipmentProfile(
-                name: trimmedName,
-                role: role,
-                make: trimmedMake.isEmpty ? nil : trimmedMake,
-                model: trimmedModel.isEmpty ? nil : trimmedModel,
-                deviceName: deviceName,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            modelContext.insert(created)
-            saved = created
-        }
-        try? modelContext.save()
-        onSaved(saved)
+        .onChange(of: equipment.name) { equipment.modifiedAt = .now }
+        .onChange(of: equipment.make) { equipment.modifiedAt = .now }
+        .onChange(of: equipment.model) { equipment.modifiedAt = .now }
+        .onChange(of: equipment.deviceName) { equipment.modifiedAt = .now }
+        .onChange(of: equipment.notes) { equipment.modifiedAt = .now }
     }
 }

@@ -36,15 +36,26 @@ struct SettingsDetailForm<Content: View, Actions: View>: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Divider()
-            HStack {
-                Spacer()
-                actions()
+            // No footer at all when there are no actions — most forms have none, since edits commit
+            // as you make them; an empty divider-plus-bar would just be dead chrome.
+            if Actions.self != EmptyView.self {
+                Divider()
+                HStack {
+                    Spacer()
+                    actions()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(nsColor: .windowBackgroundColor))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+extension SettingsDetailForm where Actions == EmptyView {
+    /// The common case: a form whose edits commit as they're made, so it has no action buttons.
+    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: title, content: content) { EmptyView() }
     }
 }

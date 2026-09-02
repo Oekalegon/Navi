@@ -36,6 +36,9 @@ protocol CameraLikeProfile: AnyObject, PersistentModel {
     var bitDepth: Int? { get set }
     var notes: String? { get set }
     var modifiedAt: Date { get set }
+    /// Supplied by each conformer's own extension in `EquipmentDisplayName.swift`, since the
+    /// placeholder text differs ("Untitled Camera" vs "Untitled Guide Camera").
+    var displayName: String { get }
 }
 
 extension CameraProfile: CameraLikeProfile {}

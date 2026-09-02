@@ -28,6 +28,14 @@ struct RigSettingsPane: View {
     @State private var selection: Selection?
     @State private var rigPendingDeletion: RigProfile?
 
+    private var selectedRigID: PersistentIdentifier? {
+        if case .existing(let id) = selection { return id }
+        return nil
+    }
+    private var selectedRig: RigProfile? {
+        selectedRigID.flatMap { id in rigs.first { $0.persistentModelID == id } }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -59,7 +67,10 @@ struct RigSettingsPane: View {
             SettingsPaneHeader(
                 title: "Rigs",
                 addHelp: "Add Rig",
-                onAdd: { selection = .new }
+                onAdd: { selection = .new },
+                isRemoveDisabled: selectedRigID == nil,
+                removeHelp: "Remove the selected rig",
+                onRemove: { if let rig = selectedRig { rigPendingDeletion = rig } }
             )
             Divider()
             if rigs.isEmpty {
@@ -132,12 +143,6 @@ struct RigSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(action: { rigPendingDeletion = rig }) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Delete Rig")
         }
     }
 

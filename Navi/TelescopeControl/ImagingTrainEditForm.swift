@@ -8,42 +8,29 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `ImagingTrainProfile` — pure composition, mirroring `RigEditForm`'s own
-/// shape: for each role (Camera, Filter Wheel, Rotator), just *pick* which already-defined
-/// `EquipmentSettingsPane` library entity this train uses. No inline creation/editing here — an
-/// empty role's library points at the Equipment tab instead (`selectSettingsTab` in the
-/// environment). Unlike `RigProfile`, an `ImagingTrainProfile` is purely local (no server push), so
-/// saving here is a plain, synchronous SwiftData save — no connection required.
+/// Editor for one `ImagingTrainProfile` — pure composition, mirroring `RigEditForm`'s shape: for
+/// each role (Camera, Filter Wheel, Rotator), just *pick* which already-defined
+/// `EquipmentSettingsPane` library entity this train uses. No inline creation here — an empty role's
+/// library points at the Equipment tab instead. See `MountEditForm` for the no-Save-button
+/// convention; an `ImagingTrainProfile` is purely local, so edits need no connection.
 struct ImagingTrainEditForm: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.selectSettingsTab) private var selectSettingsTab
-    let imagingTrain: ImagingTrainProfile?
-    /// Called with the saved (inserted-or-mutated) train after a successful Save, so the caller can
-    /// adopt it as the current selection right away.
-    var onSaved: (ImagingTrainProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
+    @Bindable var imagingTrain: ImagingTrainProfile
 
     @Query(sort: \CameraProfile.name) private var cameras: [CameraProfile]
     @Query(sort: \FilterWheelProfile.name) private var filterWheels: [FilterWheelProfile]
     @Query(sort: \RotatorProfile.name) private var rotators: [RotatorProfile]
 
-    @State private var name = ""
-    @State private var camera: CameraProfile?
-    @State private var filterWheel: FilterWheelProfile?
-    @State private var rotator: RotatorProfile?
-    // See `RigEditForm`'s identical `isMountIncluded`-style state for why this is tracked
-    // separately from `camera != nil` — an empty library must not silently snap the toggle back
-    // off before the user can even reach a picker.
+    // Tracked separately from `camera != nil` so an empty library doesn't snap the toggle back off
+    // before the user can reach a picker (the NAVI-62 precedent).
     @State private var isCameraIncluded = false
     @State private var isFilterWheelIncluded = false
     @State private var isRotatorIncluded = false
-    @State private var validationError: String?
 
     var body: some View {
-        SettingsDetailForm(title: imagingTrain == nil ? "Add Imaging Train" : "Edit Imaging Train") {
+        SettingsDetailForm(title: imagingTrain.displayName) {
             LabeledField("Imaging Train Name") {
-                TextField("ASI2600MM Train", text: $name)
+                TextField("ASI2600MM Train", text: $imagingTrain.name)
                     .textFieldStyle(.roundedBorder)
             }
 
@@ -52,13 +39,14 @@ struct ImagingTrainEditForm: View {
                 isIncluded: isCameraIncluded,
                 onToggle: { included in
                     isCameraIncluded = included
-                    camera = included ? (camera ?? cameras.first) : nil
+                    imagingTrain.camera = included ? (imagingTrain.camera ?? cameras.first) : nil
+                    touch()
                 },
-                summary: camera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                summary: imagingTrain.camera.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
                 picker: {
-                    Picker("Camera", selection: $camera) {
+                    Picker("Camera", selection: $imagingTrain.camera) {
                         Text("None").tag(CameraProfile?.none)
-                        ForEach(cameras) { Text($0.name).tag(CameraProfile?.some($0)) }
+                        ForEach(cameras) { Text($0.displayName).tag(CameraProfile?.some($0)) }
                     }
                     .labelsHidden()
                 }
@@ -69,13 +57,14 @@ struct ImagingTrainEditForm: View {
                 isIncluded: isFilterWheelIncluded,
                 onToggle: { included in
                     isFilterWheelIncluded = included
-                    filterWheel = included ? (filterWheel ?? filterWheels.first) : nil
+                    imagingTrain.filterWheel = included ? (imagingTrain.filterWheel ?? filterWheels.first) : nil
+                    touch()
                 },
-                summary: filterWheel.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                summary: imagingTrain.filterWheel.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
                 picker: {
-                    Picker("Filter Wheel", selection: $filterWheel) {
+                    Picker("Filter Wheel", selection: $imagingTrain.filterWheel) {
                         Text("None").tag(FilterWheelProfile?.none)
-                        ForEach(filterWheels) { Text($0.name).tag(FilterWheelProfile?.some($0)) }
+                        ForEach(filterWheels) { Text($0.displayName).tag(FilterWheelProfile?.some($0)) }
                     }
                     .labelsHidden()
                 }
@@ -86,32 +75,24 @@ struct ImagingTrainEditForm: View {
                 isIncluded: isRotatorIncluded,
                 onToggle: { included in
                     isRotatorIncluded = included
-                    rotator = included ? (rotator ?? rotators.first) : nil
+                    imagingTrain.rotator = included ? (imagingTrain.rotator ?? rotators.first) : nil
+                    touch()
                 },
-                summary: rotator.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                summary: imagingTrain.rotator.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
                 picker: {
-                    Picker("Rotator", selection: $rotator) {
+                    Picker("Rotator", selection: $imagingTrain.rotator) {
                         Text("None").tag(RotatorProfile?.none)
-                        ForEach(rotators) { Text($0.name).tag(RotatorProfile?.some($0)) }
+                        ForEach(rotators) { Text($0.displayName).tag(RotatorProfile?.some($0)) }
                     }
                     .labelsHidden()
                 }
             )
-
-            if let validationError {
-                Text(validationError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        } actions: {
-            Button("Cancel") { onFinished() }
-                .keyboardShortcut(.cancelAction)
-            Button("Save") { save() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .onAppear { load() }
+        .onChange(of: imagingTrain.name) { touch() }
+        .onChange(of: imagingTrain.camera) { touch() }
+        .onChange(of: imagingTrain.filterWheel) { touch() }
+        .onChange(of: imagingTrain.rotator) { touch() }
     }
 
     private func roleSummary(name: String, deviceName: String?) -> String {
@@ -121,9 +102,8 @@ struct ImagingTrainEditForm: View {
         return "\(name) · Device: blank"
     }
 
-    /// See `RigEditForm.roleSection`'s doc comment — identical pattern, duplicated rather than
-    /// shared since it's the only piece these two otherwise-unrelated composition forms have in
-    /// common.
+    /// See `RigEditForm.roleSection` — identical pattern, duplicated rather than shared since it's
+    /// the only piece these two otherwise-unrelated composition forms have in common.
     @ViewBuilder
     private func roleSection(
         title: String,
@@ -157,36 +137,12 @@ struct ImagingTrainEditForm: View {
     }
 
     private func load() {
-        name = imagingTrain?.name ?? ""
-        camera = imagingTrain?.camera
-        isCameraIncluded = camera != nil
-        filterWheel = imagingTrain?.filterWheel
-        isFilterWheelIncluded = filterWheel != nil
-        rotator = imagingTrain?.rotator
-        isRotatorIncluded = rotator != nil
+        isCameraIncluded = imagingTrain.camera != nil
+        isFilterWheelIncluded = imagingTrain.filterWheel != nil
+        isRotatorIncluded = imagingTrain.rotator != nil
     }
 
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
-        }
-
-        let saved: ImagingTrainProfile
-        if let imagingTrain {
-            imagingTrain.name = trimmedName
-            imagingTrain.camera = camera
-            imagingTrain.filterWheel = filterWheel
-            imagingTrain.rotator = rotator
-            imagingTrain.modifiedAt = .now
-            saved = imagingTrain
-        } else {
-            let created = ImagingTrainProfile(name: trimmedName, camera: camera, filterWheel: filterWheel, rotator: rotator)
-            modelContext.insert(created)
-            saved = created
-        }
-        try? modelContext.save()
-        onSaved(saved)
+    private func touch() {
+        imagingTrain.modifiedAt = .now
     }
 }

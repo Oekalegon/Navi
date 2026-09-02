@@ -19,12 +19,13 @@ struct ImagingTrainSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ImagingTrainProfile.name) private var imagingTrains: [ImagingTrainProfile]
 
+    /// No `.new` case: "+" inserts a blank train and selects it (the macOS Settings convention),
+    /// so there's no unsaved draft state to model.
     private enum Selection: Hashable {
         case existing(PersistentIdentifier)
-        case new
     }
     @State private var selection: Selection?
-    @State private var pendingDeletion: ImagingTrainProfile?
+    @State private var pendingDeletion: (name: String, action: () -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -43,7 +44,7 @@ struct ImagingTrainSettingsPane: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let train = pendingDeletion { delete(train) }
+                pendingDeletion?.action()
                 pendingDeletion = nil
             }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }
@@ -57,7 +58,10 @@ struct ImagingTrainSettingsPane: View {
             SettingsPaneHeader(
                 title: "Imaging Trains",
                 addHelp: "Add Imaging Train",
-                onAdd: { selection = .new }
+                onAdd: { insert() },
+                isRemoveDisabled: selection == nil,
+                removeHelp: "Remove the selected imaging train",
+                onRemove: { if case .existing(let id) = selection { confirmDelete(id) } }
             )
             Divider()
             if imagingTrains.isEmpty {
@@ -80,13 +84,11 @@ struct ImagingTrainSettingsPane: View {
         switch selection {
         case .existing(let id):
             if let train = imagingTrains.first(where: { $0.persistentModelID == id }) {
-                ImagingTrainEditForm(imagingTrain: train, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
+                ImagingTrainEditForm(imagingTrain: train)
                     .id(id)
             } else {
                 placeholder
             }
-        case .new:
-            ImagingTrainEditForm(imagingTrain: nil, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
         case nil:
             placeholder
         }
@@ -116,19 +118,13 @@ struct ImagingTrainSettingsPane: View {
     private func row(for train: ImagingTrainProfile) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(train.name)
+                Text(train.displayName)
                     .font(.body)
                 Text(componentSummary(for: train))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(action: { pendingDeletion = train }) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Delete Imaging Train")
         }
     }
 
@@ -140,12 +136,21 @@ struct ImagingTrainSettingsPane: View {
         return parts.isEmpty ? "No components yet" : parts.joined(separator: " · ")
     }
 
-    private func delete(_ train: ImagingTrainProfile) {
-        // Local-library-only removal, matching `RigSettingsPane.delete(_:)`.
-        if selection == .existing(train.persistentModelID) {
-            selection = nil
-        }
-        modelContext.delete(train)
+    /// Inserts a blank train and selects it — edits commit as they're made, so there's no
+    /// separate "new, unsaved" state.
+    private func insert() {
+        let new = ImagingTrainProfile(name: "")
+        modelContext.insert(new)
         try? modelContext.save()
+        selection = .existing(new.persistentModelID)
+    }
+
+    private func confirmDelete(_ id: PersistentIdentifier) {
+        guard let train = imagingTrains.first(where: { $0.persistentModelID == id }) else { return }
+        pendingDeletion = (train.displayName, {
+            if selection == .existing(id) { selection = nil }
+            modelContext.delete(train)
+            try? modelContext.save()
+        })
     }
 }

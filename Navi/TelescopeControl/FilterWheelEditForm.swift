@@ -8,88 +8,86 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `FilterWheelProfile` (§4.3). `deviceName` is picker-only while connected
-/// (§4.2), via `DevicePickerField`.
+/// Editor for one `FilterWheelProfile` (§4.3). See `MountEditForm`'s doc comment for the
+/// bind-directly-to-the-record, no-Save-button convention.
 struct FilterWheelEditForm: View {
-    @Environment(\.modelContext) private var modelContext
-    let filterWheel: FilterWheelProfile?
-    var onSaved: (FilterWheelProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
-
-    @State private var name = ""
-    @State private var make = ""
-    @State private var model = ""
-    @State private var deviceName: String?
-    @State private var slots: [FilterSlotEntry] = []
-    @State private var notes = ""
-    @State private var validationError: String?
+    @Bindable var filterWheel: FilterWheelProfile
 
     var body: some View {
-        SettingsDetailForm(title: filterWheel == nil ? "Add Filter Wheel" : "Edit Filter Wheel") {
+        SettingsDetailForm(title: filterWheel.displayName) {
             LabeledField("Name") {
-                TextField("EFW", text: $name)
+                TextField("EFW", text: $filterWheel.name)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
                 LabeledField("Make") {
-                    TextField("ZWO", text: $make)
+                    TextField("ZWO", text: Binding(nilAsEmpty: $filterWheel.make))
                         .textFieldStyle(.roundedBorder)
                 }
                 LabeledField("Model") {
-                    TextField("EFW", text: $model)
+                    TextField("EFW", text: Binding(nilAsEmpty: $filterWheel.model))
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            DevicePickerField(label: "INDI Device", deviceName: $deviceName)
+            DevicePickerField(label: "INDI Device", deviceName: $filterWheel.deviceName)
             slotsEditor
             LabeledField("Notes") {
-                TextField("Optional notes", text: $notes)
+                TextField("Optional notes", text: Binding(nilAsEmpty: $filterWheel.notes))
                     .textFieldStyle(.roundedBorder)
             }
-            if let validationError {
-                Text(validationError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        } actions: {
-            Button("Cancel") { onFinished() }
-                .keyboardShortcut(.cancelAction)
-            Button("Save") { save() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
         }
-        .onAppear {
-            name = filterWheel?.name ?? ""
-            make = filterWheel?.make ?? ""
-            model = filterWheel?.model ?? ""
-            deviceName = filterWheel?.deviceName
-            slots = filterWheel?.slots ?? []
-            notes = filterWheel?.notes ?? ""
-        }
+        .onChange(of: filterWheel.name) { touch() }
+        .onChange(of: filterWheel.make) { touch() }
+        .onChange(of: filterWheel.model) { touch() }
+        .onChange(of: filterWheel.deviceName) { touch() }
+        .onChange(of: filterWheel.notes) { touch() }
     }
 
+    /// `slots` is a computed property over JSON `Data` (SwiftData can't store an array of custom
+    /// Codable structs directly), so it can't be `@Bindable`-bound per element — edits go through
+    /// read-modify-write on the whole array instead.
     private var slotsEditor: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Filter Slots")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            ForEach(slots.indices, id: \.self) { index in
+            let slots = filterWheel.slots ?? []
+            ForEach(Array(slots.enumerated()), id: \.offset) { index, slot in
                 HStack {
-                    TextField("Slot", value: $slots[index].slot, format: .number)
+                    TextField("Slot", value: Binding(
+                        get: { slot.slot },
+                        set: { updateSlot(at: index) { $0.slot = $1 } ($0) }
+                    ), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 50)
-                    TextField("Filter name", text: $slots[index].name)
+                    TextField("Filter name", text: Binding(
+                        get: { slot.name },
+                        set: { newName in
+                            var updated = filterWheel.slots ?? []
+                            guard updated.indices.contains(index) else { return }
+                            updated[index].name = newName
+                            filterWheel.slots = updated
+                            touch()
+                        }
+                    ))
                         .textFieldStyle(.roundedBorder)
-                    Button(action: { slots.remove(at: index) }) {
+                    Button(action: {
+                        var updated = filterWheel.slots ?? []
+                        guard updated.indices.contains(index) else { return }
+                        updated.remove(at: index)
+                        filterWheel.slots = updated.isEmpty ? nil : updated
+                        touch()
+                    }) {
                         Image(systemName: "minus.circle")
                     }
                     .buttonStyle(.plain)
                 }
             }
             Button(action: {
-                let nextSlot = (slots.map(\.slot).max() ?? 0) + 1
-                slots.append(FilterSlotEntry(slot: nextSlot, name: ""))
+                var updated = filterWheel.slots ?? []
+                updated.append(FilterSlotEntry(slot: (updated.map(\.slot).max() ?? 0) + 1, name: ""))
+                filterWheel.slots = updated
+                touch()
             }) {
                 Label("Add Slot", systemImage: "plus")
             }
@@ -97,40 +95,17 @@ struct FilterWheelEditForm: View {
         }
     }
 
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
+    private func updateSlot(at index: Int, _ apply: @escaping (inout FilterSlotEntry, Int) -> Void) -> (Int) -> Void {
+        { newValue in
+            var updated = filterWheel.slots ?? []
+            guard updated.indices.contains(index) else { return }
+            apply(&updated[index], newValue)
+            filterWheel.slots = updated
+            touch()
         }
-        let trimmedMake = make.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedSlots = slots.isEmpty ? nil : slots
+    }
 
-        let saved: FilterWheelProfile
-        if let filterWheel {
-            filterWheel.name = trimmedName
-            filterWheel.make = trimmedMake.isEmpty ? nil : trimmedMake
-            filterWheel.model = trimmedModel.isEmpty ? nil : trimmedModel
-            filterWheel.deviceName = deviceName
-            filterWheel.slots = resolvedSlots
-            filterWheel.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-            filterWheel.modifiedAt = .now
-            saved = filterWheel
-        } else {
-            let created = FilterWheelProfile(
-                name: trimmedName,
-                make: trimmedMake.isEmpty ? nil : trimmedMake,
-                model: trimmedModel.isEmpty ? nil : trimmedModel,
-                deviceName: deviceName,
-                slots: resolvedSlots,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            modelContext.insert(created)
-            saved = created
-        }
-        try? modelContext.save()
-        onSaved(saved)
+    private func touch() {
+        filterWheel.modifiedAt = .now
     }
 }

@@ -7,23 +7,17 @@
 
 import SwiftUI
 
-/// Add/edit form for one `GuideCameraProfile` (§4.3) — the guiding camera, which attaches either to
-/// a guide scope or as an off-axis guider (see `RigProfile`'s doc comment). A thin configuration of
+/// Editor for one `GuideCameraProfile` (§4.3) — the guiding camera, which attaches either to a
+/// guide scope or as an off-axis guider (see `RigProfile`'s doc comment). A thin configuration of
 /// `CameraLikeEditForm`, shared with `CameraEditForm`.
 struct GuideCameraEditForm: View {
-    let guideCamera: GuideCameraProfile?
-    var onSaved: (GuideCameraProfile) -> Void = { _ in }
-    var onFinished: () -> Void = {}
+    let guideCamera: GuideCameraProfile
 
     var body: some View {
         CameraLikeEditForm(
             subject: guideCamera,
-            noun: "Guide Camera",
             namePlaceholder: "ASI120MM Mini",
-            makePlaceholder: "ZWO",
-            makeNew: { GuideCameraProfile(name: "") },
-            onSaved: onSaved,
-            onFinished: onFinished
+            makePlaceholder: "ZWO"
         )
     }
 }

@@ -48,6 +48,11 @@ struct ServerSettingsPane: View {
     }
     @State private var selection: Selection?
     @State private var serverPendingDeletion: ServerProfile?
+
+    private var selectedServer: ServerProfile? {
+        guard case .existing(let id) = selection else { return nil }
+        return servers.first { $0.persistentModelID == id }
+    }
     @State private var unreachableWarning: String?
 
     var body: some View {
@@ -92,7 +97,10 @@ struct ServerSettingsPane: View {
             SettingsPaneHeader(
                 title: "Telescope Servers",
                 addHelp: "Add Server",
-                onAdd: { selection = .new }
+                onAdd: { selection = .new },
+                isRemoveDisabled: selectedServer == nil,
+                removeHelp: "Remove the selected server",
+                onRemove: { if let server = selectedServer { serverPendingDeletion = server } }
             )
             Divider()
             if servers.isEmpty {
@@ -178,16 +186,9 @@ struct ServerSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            // Connect/disconnect stays per-row (it's a property of *that* server, not of the
+            // selection); deletion moved to the header's "−", following macOS Settings.
             connectionButton(for: server, state: connectionState)
-            // Explicit buttons, not a gesture/swipe: macOS's List(selection:)+.onDelete idiom
-            // (the iOS edit-mode/swipe convention) has no reachable UI path here without a
-            // selection binding — plain buttons are the reliable, discoverable macOS pattern.
-            Button(action: { serverPendingDeletion = server }) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Delete Server")
         }
     }
 

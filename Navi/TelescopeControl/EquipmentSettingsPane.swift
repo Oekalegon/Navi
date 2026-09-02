@@ -121,122 +121,91 @@ struct EquipmentSettingsPane: View {
         }
     }
 
+    /// Just "a kind" or "one owned record" — the per-type `.existingCamera`/`.newCamera` cases are
+    /// gone. `PersistentIdentifier` is unique across model types, so one case covers every kind, and
+    /// "new" no longer needs representing at all: "+" inserts a blank record immediately and selects
+    /// it (the macOS Settings convention), so there is no unsaved draft state to model.
     private enum Selection: Hashable {
         case kind(EquipmentKind)
-        case existingMount(PersistentIdentifier)
-        case newMount
-        case existingOpticalAssembly(PersistentIdentifier)
-        case newOpticalAssembly(OpticalAssemblyPurpose)
-        case existingCamera(PersistentIdentifier)
-        case newCamera
-        case existingFilterWheel(PersistentIdentifier)
-        case newFilterWheel
-        case existingRotator(PersistentIdentifier)
-        case newRotator
-        case existingGuideCamera(PersistentIdentifier)
-        case newGuideCamera
-        case existingStandalone(PersistentIdentifier)
-        case newStandalone(StandaloneEquipmentRole)
+        case existing(PersistentIdentifier)
     }
     @State private var selection: Selection?
     @State private var pendingDeletion: (name: String, action: () -> Void)?
 
-    /// One row in the sidebar tree — a kind's own row (`instanceSelection == nil`) or one of its
-    /// owned instances (`instanceSelection` is that instance's own selection, driving the delete
-    /// button). Identity/equality driven entirely by `selection`, matching the same pattern used
-    /// for the Rig sidebar's `SidebarNode`.
+    /// One row in the sidebar tree — a kind's own row, or one of its owned records. Identity and
+    /// equality are driven entirely by `selection`.
     private struct SidebarNode: Identifiable, Hashable {
         let title: String
         let icon: String
         let selection: Selection
         var children: [SidebarNode]?
-        var onDelete: (() -> Void)?
 
         var id: Selection { selection }
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.selection == rhs.selection }
         func hash(into hasher: inout Hasher) { hasher.combine(selection) }
     }
 
-    /// One row's worth of data for a single owned entity, independent of where it's rendered —
-    /// the sidebar's child rows and the type overview's list are two views of the same thing, and
-    /// deriving both from `instances(for:)` is what keeps them from drifting. `delete` closes over
-    /// the entity so the seven near-identical `delete(_:)` overloads this replaced aren't needed.
+    /// One owned record's row data, independent of where it's rendered — the sidebar's children and
+    /// the type overview's list are two views of the same array, which is what keeps them in step.
     private struct Instance {
         let id: PersistentIdentifier
         let name: String
-        let selection: Selection
-        let delete: () -> Void
     }
 
-    /// The single per-kind lookup. Adding a new equipment kind means adding one case here (plus
-    /// its `EquipmentKind`/`Selection` cases and its detail branch) rather than touching three
-    /// parallel switches and a delete overload, which is what this file used to require.
+    /// The single per-kind lookup. A new equipment kind means one case here (plus its
+    /// `EquipmentKind` case and a branch in `editor(for:)` and `insert(into:)`).
     private func instances(for kind: EquipmentKind) -> [Instance] {
         switch kind {
         case .mount:
-            return mounts.map { instance($0, name: $0.name, kind: kind, selection: .existingMount($0.persistentModelID)) }
+            return mounts.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .opticalAssembly:
-            return mainOpticalAssemblies.map { instance($0, name: $0.name, kind: kind, selection: .existingOpticalAssembly($0.persistentModelID)) }
+            return mainOpticalAssemblies.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .guideOpticalAssembly:
-            return guideOpticalAssemblies.map { instance($0, name: $0.name, kind: kind, selection: .existingOpticalAssembly($0.persistentModelID)) }
+            return guideOpticalAssemblies.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .camera:
-            return cameras.map { instance($0, name: $0.name, kind: kind, selection: .existingCamera($0.persistentModelID)) }
+            return cameras.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .filterWheel:
-            return filterWheels.map { instance($0, name: $0.name, kind: kind, selection: .existingFilterWheel($0.persistentModelID)) }
+            return filterWheels.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .rotator:
-            return rotators.map { instance($0, name: $0.name, kind: kind, selection: .existingRotator($0.persistentModelID)) }
+            return rotators.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .guideCamera:
-            return guideCameras.map { instance($0, name: $0.name, kind: kind, selection: .existingGuideCamera($0.persistentModelID)) }
+            return guideCameras.map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
             guard let role = kind.standaloneRole else { return [] }
-            return standaloneEquipment(for: role).map { instance($0, name: $0.name, kind: kind, selection: .existingStandalone($0.persistentModelID)) }
+            return standaloneEquipment(for: role).map { Instance(id: $0.persistentModelID, name: $0.displayName) }
         }
-    }
-
-    /// Builds one `Instance`, including the confirm-then-delete closure. Deleting the currently
-    /// selected entity resets selection to its kind's overview rather than leaving a dangling
-    /// selection pointing at a deleted `PersistentIdentifier`.
-    private func instance<T: PersistentModel>(
-        _ entity: T,
-        name: String,
-        kind: EquipmentKind,
-        selection rowSelection: Selection
-    ) -> Instance {
-        Instance(
-            id: entity.persistentModelID,
-            name: name,
-            selection: rowSelection,
-            delete: {
-                pendingDeletion = (name, {
-                    if selection == rowSelection { selection = .kind(kind) }
-                    modelContext.delete(entity)
-                    try? modelContext.save()
-                })
-            }
-        )
     }
 
     private var topLevelNodes: [SidebarNode] {
         EquipmentKind.allCases.map { kind in
-            kindNode(kind, children: instances(for: kind).map { row in
-                childNode(name: row.name, icon: kind.icon, selection: row.selection, onDelete: row.delete)
-            })
+            // Always a non-nil children array, even when empty. `OutlineGroup` only insets a row for
+            // the disclosure chevron when that row is expandable, and there's no API to reserve the
+            // space otherwise — so passing `nil` for empty kinds (which does correctly suppress a
+            // chevron revealing nothing) makes every *other* kind's title sit at a different x, and
+            // the list visibly shifts the moment the first record of any kind is added.
+            SidebarNode(
+                title: kind.title,
+                icon: kind.icon,
+                selection: .kind(kind),
+                children: instances(for: kind).map {
+                    SidebarNode(title: $0.name, icon: kind.icon, selection: .existing($0.id), children: nil)
+                }
+            )
         }
     }
-    private func kindNode(_ kind: EquipmentKind, children: [SidebarNode]) -> SidebarNode {
-        // `nil`, not `[]`, when a kind owns nothing: `OutlineGroup` treats an empty-but-non-nil
-        // children array as "expandable, currently empty" and draws a disclosure chevron that
-        // reveals nothing — which on a fresh library would be every row.
-        SidebarNode(
-            title: kind.title,
-            icon: kind.icon,
-            selection: .kind(kind),
-            children: children.isEmpty ? nil : children
-        )
+
+    /// Which kind the "+" would add to: the selected kind, or the kind owning the selected record.
+    private var activeKind: EquipmentKind? {
+        switch selection {
+        case .kind(let kind): return kind
+        case .existing(let id): return EquipmentKind.allCases.first { instances(for: $0).contains { $0.id == id } }
+        case nil: return nil
+        }
     }
 
-    private func childNode(name: String, icon: String, selection: Selection, onDelete: @escaping () -> Void) -> SidebarNode {
-        SidebarNode(title: name, icon: icon, selection: selection, children: nil, onDelete: onDelete)
+    private var selectedInstanceID: PersistentIdentifier? {
+        if case .existing(let id) = selection { return id }
+        return nil
     }
 
     var body: some View {
@@ -248,7 +217,7 @@ struct EquipmentSettingsPane: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .confirmationDialog(
-            "Delete “\(pendingDeletion?.name ?? "")”?",
+            "Delete \u{201C}\(pendingDeletion?.name ?? "")\u{201D}?",
             isPresented: Binding(
                 get: { pendingDeletion != nil },
                 set: { if !$0 { pendingDeletion = nil } }
@@ -266,38 +235,38 @@ struct EquipmentSettingsPane: View {
     }
 
     private var sidebar: some View {
-        List(selection: $selection) {
-            OutlineGroup(topLevelNodes, children: \.children) { node in
-                row(for: node).tag(node.selection)
+        VStack(spacing: 0) {
+            SettingsPaneHeader(
+                title: "Equipment",
+                isAddDisabled: activeKind == nil,
+                addHelp: activeKind.map { "Add \($0.singularTitle)" } ?? "Select a category first",
+                onAdd: { if let activeKind { insert(into: activeKind) } },
+                isRemoveDisabled: selectedInstanceID == nil,
+                removeHelp: "Remove the selected item",
+                onRemove: { if let selectedInstanceID { confirmDelete(selectedInstanceID) } }
+            )
+            Divider()
+            List(selection: $selection) {
+                OutlineGroup(topLevelNodes, children: \.children) { node in
+                    row(for: node).tag(node.selection)
+                }
             }
+            // `.sidebar`, not `.plain` — this is what gives rows the native inset *rounded*
+            // selection capsule; `.plain` draws selection as a full-width rectangle, and also draws
+            // a separator hairline between rows. `.scrollContentBackground(.hidden)` suppresses only
+            // the sidebar background material (designed to sit against `NavigationSplitView` window
+            // chrome, which this plain `HStack` isn't).
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        // `.sidebar`, not `.plain` — this is what gives rows the native inset *rounded* selection
-        // capsule; `.plain` draws selection as a rectangle spanning the full width, which reads as
-        // a table, not a source list. `.sidebar` also omits row separators on its own, so the
-        // explicit `.listRowSeparator(.hidden)` this used to need is gone.
-        //
-        // `.scrollContentBackground(.hidden)` suppresses only the sidebar *background material*
-        // (designed to sit against a `NavigationSplitView`'s window chrome, which this plain
-        // `HStack` isn't — it renders as an opaque box here) while keeping the row metrics and
-        // selection styling that are the reason for choosing `.sidebar`.
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
     private func row(for node: SidebarNode) -> some View {
-        if let onDelete = node.onDelete {
-            HStack {
-                Text(node.title)
-                Spacer()
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-        } else {
+        if case .kind = node.selection {
             Label(node.title, systemImage: node.icon)
+        } else {
+            Text(node.title)
         }
     }
 
@@ -306,83 +275,45 @@ struct EquipmentSettingsPane: View {
         switch selection {
         case .kind(let kind):
             kindOverview(for: kind)
-        case .existingMount(let id):
-            if let mount = mounts.first(where: { $0.persistentModelID == id }) {
-                MountEditForm(mount: mount, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
-                    .id(id)
-            } else { placeholder }
-        case .newMount:
-            MountEditForm(mount: nil, onSaved: { selection = .existingMount($0.persistentModelID) }, onFinished: { selection = .kind(.mount) })
-        case .existingOpticalAssembly(let id):
-            if let assembly = opticalAssemblies.first(where: { $0.persistentModelID == id }) {
-                OpticalAssemblyEditForm(opticalAssembly: assembly, purpose: assembly.purpose, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(assembly.purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
-                    .id(id)
-            } else { placeholder }
-        case .newOpticalAssembly(let purpose):
-            OpticalAssemblyEditForm(opticalAssembly: nil, purpose: purpose, onSaved: { selection = .existingOpticalAssembly($0.persistentModelID) }, onFinished: { selection = .kind(purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly) })
-        case .existingCamera(let id):
-            if let camera = cameras.first(where: { $0.persistentModelID == id }) {
-                CameraEditForm(camera: camera, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
-                    .id(id)
-            } else { placeholder }
-        case .newCamera:
-            CameraEditForm(camera: nil, onSaved: { selection = .existingCamera($0.persistentModelID) }, onFinished: { selection = .kind(.camera) })
-        case .existingFilterWheel(let id):
-            if let filterWheel = filterWheels.first(where: { $0.persistentModelID == id }) {
-                FilterWheelEditForm(filterWheel: filterWheel, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
-                    .id(id)
-            } else { placeholder }
-        case .newFilterWheel:
-            FilterWheelEditForm(filterWheel: nil, onSaved: { selection = .existingFilterWheel($0.persistentModelID) }, onFinished: { selection = .kind(.filterWheel) })
-        case .existingRotator(let id):
-            if let rotator = rotators.first(where: { $0.persistentModelID == id }) {
-                RotatorEditForm(rotator: rotator, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
-                    .id(id)
-            } else { placeholder }
-        case .newRotator:
-            RotatorEditForm(rotator: nil, onSaved: { selection = .existingRotator($0.persistentModelID) }, onFinished: { selection = .kind(.rotator) })
-        case .existingGuideCamera(let id):
-            if let camera = guideCameras.first(where: { $0.persistentModelID == id }) {
-                GuideCameraEditForm(guideCamera: camera, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
-                    .id(id)
-            } else { placeholder }
-        case .newGuideCamera:
-            GuideCameraEditForm(guideCamera: nil, onSaved: { selection = .existingGuideCamera($0.persistentModelID) }, onFinished: { selection = .kind(.guideCamera) })
-        case .existingStandalone(let id):
-            if let equipment = standaloneEquipment.first(where: { $0.persistentModelID == id }) {
-                StandaloneEquipmentEditForm(equipment: equipment, role: equipment.role, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: equipment.role)) })
-                    .id(id)
-            } else { placeholder }
-        case .newStandalone(let role):
-            StandaloneEquipmentEditForm(equipment: nil, role: role, onSaved: { selection = .existingStandalone($0.persistentModelID) }, onFinished: { selection = .kind(kind(for: role)) })
+        case .existing(let id):
+            editor(for: id)
         case nil:
             placeholder
         }
     }
 
-    private func kind(for role: StandaloneEquipmentRole) -> EquipmentKind {
-        switch role {
-        case .powerHub: return .powerHub
-        case .flatScreen: return .flatScreen
-        case .dewHeater: return .dewHeater
-        case .observatoryControl: return .observatoryControl
+    /// Resolves a selected id to whichever kind of record owns it. `.id(id)` on each editor forces a
+    /// fresh view when the selection moves between records of the same type.
+    @ViewBuilder
+    private func editor(for id: PersistentIdentifier) -> some View {
+        if let mount = mounts.first(where: { $0.persistentModelID == id }) {
+            MountEditForm(mount: mount).id(id)
+        } else if let assembly = opticalAssemblies.first(where: { $0.persistentModelID == id }) {
+            OpticalAssemblyEditForm(opticalAssembly: assembly).id(id)
+        } else if let camera = cameras.first(where: { $0.persistentModelID == id }) {
+            CameraEditForm(camera: camera).id(id)
+        } else if let filterWheel = filterWheels.first(where: { $0.persistentModelID == id }) {
+            FilterWheelEditForm(filterWheel: filterWheel).id(id)
+        } else if let rotator = rotators.first(where: { $0.persistentModelID == id }) {
+            RotatorEditForm(rotator: rotator).id(id)
+        } else if let guideCamera = guideCameras.first(where: { $0.persistentModelID == id }) {
+            GuideCameraEditForm(guideCamera: guideCamera).id(id)
+        } else if let equipment = standaloneEquipment.first(where: { $0.persistentModelID == id }) {
+            StandaloneEquipmentEditForm(equipment: equipment).id(id)
+        } else {
+            placeholder
         }
     }
 
-    /// The "select Cameras, see a list of cameras you own with a plus button" panel — reachable
-    /// either from here or by expanding the sidebar's own children, both converging on the same
-    /// `Selection` cases.
+    /// The "select Cameras, see a list of what you own" panel. Its "+" adds to this kind, matching
+    /// the sidebar header's.
     @ViewBuilder
     private func kindOverview(for kind: EquipmentKind) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The shared header, not hand-rolled chrome — keeps this pane's "+" identical in
-            // styling and height to every other Settings pane's (borderless glyph, 12pt vertical
-            // padding); an inline `Label("Add", systemImage:)` in a default-styled Button rendered
-            // as a bordered "+ Add" and made this header taller than its siblings'.
             SettingsPaneHeader(
                 title: kind.title,
                 addHelp: "Add \(kind.singularTitle)",
-                onAdd: { selection = newSelection(for: kind) }
+                onAdd: { insert(into: kind) }
             )
             Divider()
             let rows = instances(for: kind)
@@ -393,7 +324,7 @@ struct EquipmentSettingsPane: View {
                 Spacer()
             } else {
                 List(rows, id: \.id) { instance in
-                    Button(action: { selection = instance.selection }) {
+                    Button(action: { selection = .existing(instance.id) }) {
                         Text(instance.name)
                     }
                     .buttonStyle(.plain)
@@ -404,23 +335,67 @@ struct EquipmentSettingsPane: View {
         }
     }
 
-    private func newSelection(for kind: EquipmentKind) -> Selection {
-        switch kind {
-        case .mount: return .newMount
-        case .opticalAssembly: return .newOpticalAssembly(.mainImaging)
-        case .guideOpticalAssembly: return .newOpticalAssembly(.guideScope)
-        case .camera: return .newCamera
-        case .filterWheel: return .newFilterWheel
-        case .rotator: return .newRotator
-        case .guideCamera: return .newGuideCamera
-        case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
-            return .newStandalone(kind.standaloneRole!)
-        }
-    }
-
     private var placeholder: some View {
         Text("Select a piece of equipment, or add a new one.")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Inserts a blank record and selects it, so the detail pane becomes its editor immediately —
+    /// there is no separate "new, unsaved" state. A blank record is valid: `displayName` falls back
+    /// to make/model and then to a placeholder, so nothing forces the user to name it first.
+    private func insert(into kind: EquipmentKind) {
+        let inserted: any PersistentModel
+        switch kind {
+        case .mount:
+            let new = MountProfile(name: ""); modelContext.insert(new); inserted = new
+        case .opticalAssembly:
+            let new = OpticalAssemblyProfile(name: "", purpose: .mainImaging); modelContext.insert(new); inserted = new
+        case .guideOpticalAssembly:
+            let new = OpticalAssemblyProfile(name: "", purpose: .guideScope); modelContext.insert(new); inserted = new
+        case .camera:
+            let new = CameraProfile(name: ""); modelContext.insert(new); inserted = new
+        case .filterWheel:
+            let new = FilterWheelProfile(name: ""); modelContext.insert(new); inserted = new
+        case .rotator:
+            let new = RotatorProfile(name: ""); modelContext.insert(new); inserted = new
+        case .guideCamera:
+            let new = GuideCameraProfile(name: ""); modelContext.insert(new); inserted = new
+        case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
+            guard let role = kind.standaloneRole else { return }
+            let new = StandaloneEquipmentProfile(name: "", role: role); modelContext.insert(new); inserted = new
+        }
+        try? modelContext.save()
+        selection = .existing(inserted.persistentModelID)
+    }
+
+    private func confirmDelete(_ id: PersistentIdentifier) {
+        let owningKind = activeKind
+        let name = owningKind.flatMap { kind in instances(for: kind).first { $0.id == id }?.name } ?? "this item"
+        pendingDeletion = (name, {
+            deleteRecord(id)
+            selection = owningKind.map { Selection.kind($0) }
+        })
+    }
+
+    /// Resolved against the concrete `@Query` arrays rather than `ModelContext.registeredModel(for:)`,
+    /// whose `any PersistentModel` result can't be passed to `delete(_:)`.
+    private func deleteRecord(_ id: PersistentIdentifier) {
+        if let mount = mounts.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(mount)
+        } else if let assembly = opticalAssemblies.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(assembly)
+        } else if let camera = cameras.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(camera)
+        } else if let filterWheel = filterWheels.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(filterWheel)
+        } else if let rotator = rotators.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(rotator)
+        } else if let guideCamera = guideCameras.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(guideCamera)
+        } else if let equipment = standaloneEquipment.first(where: { $0.persistentModelID == id }) {
+            modelContext.delete(equipment)
+        }
+        try? modelContext.save()
     }
 }
