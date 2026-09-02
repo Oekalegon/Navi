@@ -54,6 +54,9 @@ struct ServerSettingsPane: View {
         return servers.first { $0.persistentModelID == id }
     }
     @State private var unreachableWarning: String?
+    /// Result of a stateless reachability check, shown inline in the detail pane. Only reachable
+    /// while another server/rig owns the session, where connecting outright isn't an option.
+    @State private var reachabilityResult: String?
 
     /// A blank server needs a syntactically valid URL to exist at all (`ServerProfile.url` is
     /// non-optional); the user replaces it immediately in the detail pane.
@@ -147,6 +150,9 @@ struct ServerSettingsPane: View {
         VStack(spacing: 0) {
             ServerEditForm(server: server)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            connectionSection(for: server)
+                .onChange(of: server.persistentModelID) { reachabilityResult = nil }
             if telescope.state == .connected, telescope.currentServer?.persistentModelID == server.persistentModelID {
                 Divider()
                 DriverManagementSheet(serverName: server.name)
@@ -176,7 +182,7 @@ struct ServerSettingsPane: View {
     }
 
     private func row(for server: ServerProfile) -> some View {
-        let connectionState = rowConnectionState(for: server)
+        let connectionState = connectionState(for: server)
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name)
@@ -186,9 +192,21 @@ struct ServerSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            // Connect/disconnect stays per-row (it's a property of *that* server, not of the
-            // selection); deletion moved to the header's "−", following macOS Settings.
-            connectionButton(for: server, state: connectionState)
+            // Status only — the Connect/Disconnect *action* lives in the detail pane, so the row
+            // stays a plain list row (matching how deletion moved to the header's "−"). A passive
+            // dot is still worth keeping: it's the only way to see which server is live without
+            // selecting each one in turn.
+            switch connectionState {
+            case .connected:
+                Image(systemName: "circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .help("Connected")
+            case .connecting:
+                ProgressView().controlSize(.small).frame(width: 12, height: 12)
+            case .disconnected, .unavailable:
+                EmptyView()
+            }
         }
     }
 
@@ -201,7 +219,7 @@ struct ServerSettingsPane: View {
         case unavailable
     }
 
-    private func rowConnectionState(for server: ServerProfile) -> RowConnectionState {
+    private func connectionState(for server: ServerProfile) -> RowConnectionState {
         if telescope.state == .connecting, telescope.connectingServer?.persistentModelID == server.persistentModelID {
             return .connecting
         }
@@ -211,43 +229,83 @@ struct ServerSettingsPane: View {
         return telescope.state == .disconnected ? .disconnected : .unavailable
     }
 
+    /// The Connect/Disconnect control, in the detail pane rather than on each row. Previously a
+    /// successful Save connected automatically; with edits now committing continuously there's no
+    /// equivalent moment to hang that off (a half-typed host would trigger it), so connecting is an
+    /// explicit action on the server you're looking at.
     @ViewBuilder
-    private func connectionButton(for server: ServerProfile, state: RowConnectionState) -> some View {
-        switch state {
-        case .connected:
-            Button(action: { Task { await telescope.disconnect() } }) {
+    private func connectionSection(for server: ServerProfile) -> some View {
+        let state = connectionState(for: server)
+        HStack(spacing: 10) {
+            switch state {
+            case .connected:
                 Image(systemName: "circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                Text("Connected")
+                    .font(.callout)
+            case .connecting:
+                ProgressView().controlSize(.small)
+                Text("Connecting\u{2026}")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            case .unavailable:
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Another server or rig is connected")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    if let reachabilityResult {
+                        Text(reachabilityResult)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            case .disconnected:
+                Text("Not connected")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.green)
-            .help("Connected — click to disconnect")
-        case .connecting:
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 16, height: 16)
-        case .unavailable:
-            Button(action: {}) {
-                Image(systemName: "circle")
+
+            Spacer()
+
+            switch state {
+            case .connected:
+                Button("Disconnect") { Task { await telescope.disconnect() } }
+            case .connecting:
+                Button("Connect") {}
+                    .disabled(true)
+            case .unavailable:
+                // Connecting would steal the live session, so offer the stateless reachability
+                // check instead — the same one the old connect-on-save path fell back to when
+                // something else was already connected (NAVI-63).
+                Button("Test Connection") { test(server) }
+                    .help("Check this server is reachable without disturbing the current session")
+            case .disconnected:
+                Button("Connect") { connect(server) }
+                    .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary.opacity(0.4))
-            .disabled(true)
-            .help("Disconnect from the current server or rig first")
-        case .disconnected:
-            Button(action: { connect(server) }) {
-                Image(systemName: "circle")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Connect")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func connect(_ server: ServerProfile) {
         Task { await connectAndReportFailure(server) }
     }
 
-    // Shared by the row button and connectAfterSave.
+    private func test(_ server: ServerProfile) {
+        reachabilityResult = "Checking\u{2026}"
+        Task {
+            if let error = await TelescopeConnectivityTester.testConnection(to: server.url) {
+                reachabilityResult = "Not reachable — \(error)"
+            } else {
+                reachabilityResult = "Reachable"
+            }
+        }
+    }
+
+    // Shared by the detail pane's Connect button and NAVI-67's auto-upgrade path.
     private func connectAndReportFailure(_ server: ServerProfile) async {
         await telescope.connect(server: server)
         if let error = telescope.errorMessage {
@@ -261,18 +319,6 @@ struct ServerSettingsPane: View {
         }
     }
 
-    // NAVI-63: if nothing else is connected, a newly saved/edited server should end up actually
-    // connected, not just tested-and-dropped — this is the same connect(server:) the row button
-    // uses, so a manual reconnect later behaves identically. If some other server/rig is already
-    // live, don't steal that session — fall back to a stateless reachability check
-    // (TelescopeConnectivityTester) so the user still gets feedback without disrupting it.
-    private func connectAfterSave(_ server: ServerProfile) async {
-        if telescope.state == .disconnected {
-            await connectAndReportFailure(server)
-        } else if let error = await TelescopeConnectivityTester.testConnection(to: server.url) {
-            unreachableWarning = "\(server.name): \(error)"
-        }
-    }
 
     private func delete(_ server: ServerProfile) {
         // Deleting a server that some RigProfile.defaultServer points to nullifies that
