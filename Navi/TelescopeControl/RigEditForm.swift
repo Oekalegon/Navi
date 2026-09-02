@@ -87,11 +87,11 @@ struct RigEditForm: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if !isConnected {
                         Label(
-                            "Connect to a telescope server to edit rigs — a rig's definition lives server-side.",
-                            systemImage: "exclamationmark.triangle"
+                            "Not connected — changes are saved in Navi and pushed to the server next time you edit this rig while connected.",
+                            systemImage: "icloud.slash"
                         )
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.secondary)
                     }
 
                     LabeledField("Rig Name") {
@@ -290,10 +290,6 @@ struct RigEditForm: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // Editing needs a live session: a rig's identity comes from the server (`saveRig` returns
-        // the id the local record is keyed on), so there's nothing meaningful to write locally
-        // while disconnected. Disabling beats letting edits be made and then dropped.
-        .disabled(!isConnected)
         .onChange(of: name) { isDirty = true }
         .onChange(of: mount) { isDirty = true }
         .onChange(of: opticalAssembly) { isDirty = true }
@@ -406,25 +402,29 @@ struct RigEditForm: View {
         liveObservatories = (try? await telescope.listObservatories()) ?? []
     }
 
+    /// Local persistence and the server push are deliberately separate. Navi is the richer record
+    /// — `RigProfile` names *which library entity* fills each role, while the server only ever sees
+    /// the flattened `Component` list `makeRigComponents` produces, and the id is generated here by
+    /// `IDSlug` and merely echoed back by `saveRig`. So the composition is always written locally,
+    /// connected or not, and the push is a separate sync step that simply waits for a connection.
+    ///
+    /// (Making Navi the outright source of truth — deferred pushes with drift detection against
+    /// another client's edits — is its own piece of work; this just stops offline edits being lost.)
     private func flush() {
-        guard isDirty, isConnected, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        Task { await save() }
+        guard isDirty, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard let components = buildComponents() else { return }
+        let saved = persistLocally()
+        onSaved(saved)
+        isDirty = false
+        guard isConnected else { return }
+        Task { await push(components: components, profile: saved) }
     }
 
-    private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
-        errorMessage = nil
-
-        let serverRigID = rig?.serverRigID ?? IDSlug.make(from: trimmedName)
-
-        // Build the flattened component list first — surfaces `RigProfileTranslationError`
-        // (e.g. the guide-optical-assembly/optical-assembly focuser collision) before touching
-        // SwiftData or the network at all. Computed directly from this form's own @State, not a
-        // throwaway RigProfile — none of these picks are persisted yet while composing a new rig.
-        let components: [Component]
+    /// Returns `nil` (having set `errorMessage`) if the composition can't be flattened — e.g. the
+    /// optical-assembly/guide-optical-assembly focuser collision. Checked before writing anything.
+    private func buildComponents() -> [Component]? {
         do {
-            components = try makeRigComponents(
+            return try makeRigComponents(
                 mount: mount,
                 opticalAssembly: opticalAssembly,
                 guideOpticalAssembly: guideOpticalAssembly,
@@ -437,31 +437,19 @@ struct RigEditForm: View {
             )
         } catch {
             errorMessage = (error as? RigProfileTranslationError)?.description ?? "\(error)"
-            return
-        }
-
-        isSaving = true
-        defer { isSaving = false }
-        do {
-            let saved = try await telescope.saveRig(
-                Rig(id: serverRigID, name: trimmedName, components: components),
-                overwrite: rig != nil
-            )
-            onSaved(upsertLocalRig(with: saved))
-            isDirty = false
-        } catch {
-            errorMessage = TelescopeSessionManager.describe(error)
+            return nil
         }
     }
 
     @discardableResult
-    private func upsertLocalRig(with savedRig: Rig) -> RigProfile {
+    private func persistLocally() -> RigProfile {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let target = rig ?? {
-            let created = RigProfile(serverRigID: savedRig.id, name: savedRig.name)
+            let created = RigProfile(serverRigID: IDSlug.make(from: trimmedName), name: trimmedName)
             modelContext.insert(created)
             return created
         }()
-        target.name = savedRig.name
+        target.name = trimmedName
         target.mount = mount
         target.opticalAssembly = opticalAssembly
         target.guideOpticalAssembly = guideOpticalAssembly
@@ -473,8 +461,28 @@ struct RigEditForm: View {
         target.observatoryControl = observatoryControl
         target.defaultObservatoryID = defaultObservatoryID
         target.defaultServer = defaultServer
-        target.lastResyncedAt = .now
         try? modelContext.save()
         return target
     }
+
+    private func push(components: [Component], profile: RigProfile) async {
+        errorMessage = nil
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            _ = try await telescope.saveRig(
+                Rig(id: profile.serverRigID, name: profile.name, components: components),
+                overwrite: true
+            )
+            // Only now is the server in step with the local record, which is what
+            // `hasStaleLibraryReferences` compares against — so a rig edited offline correctly
+            // shows as stale until the push actually lands.
+            profile.lastResyncedAt = .now
+            try? modelContext.save()
+        } catch {
+            errorMessage = TelescopeSessionManager.describe(error)
+        }
+    }
+
+
 }
