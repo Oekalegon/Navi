@@ -36,9 +36,31 @@ struct ObservatoryEditForm: View {
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var errorMessage: String?
-    /// Set by any field edit, cleared by a successful push. Gates the flush so simply *viewing* an
-    /// observatory never writes to the server.
-    @State private var isDirty = false
+    /// The field values as last loaded from (or pushed to) the server. `isDirty` is derived by
+    /// comparing against it rather than being latched by per-field `.onChange` handlers, because
+    /// `load()` assigns to exactly those fields — so merely *opening* an observatory latched the
+    /// flag and closing pushed it straight back, defeating the "viewing never writes to the server"
+    /// guarantee the flag exists for. Comparing is also order-independent (no race with when
+    /// `.onChange` fires relative to `load()` finishing) and correctly goes clean again if an edit
+    /// is undone by hand.
+    ///
+    /// `nil` until the first load completes, so nothing is considered an edit before there's
+    /// anything to compare against.
+    @State private var loadedSnapshot: String?
+
+    private var currentSnapshot: String {
+        var parts: [String] = []
+        parts.append(name)
+        parts.append("\(latitudeDeg)")
+        parts.append("\(longitudeDeg)")
+        parts.append("\(elevationMeters)")
+        return parts.joined(separator: "\u{1F}")
+    }
+
+    private var isDirty: Bool {
+        guard let loadedSnapshot else { return false }
+        return currentSnapshot != loadedSnapshot
+    }
 
     private var isConnected: Bool { telescope.state == .connected }
 
@@ -83,10 +105,6 @@ struct ObservatoryEditForm: View {
         }
         .disabled(!isConnected)
         .task { await load() }
-        .onChange(of: name) { isDirty = true }
-        .onChange(of: latitudeDeg) { isDirty = true }
-        .onChange(of: longitudeDeg) { isDirty = true }
-        .onChange(of: elevationMeters) { isDirty = true }
         // Unlike the local equipment editors, an Observatory only exists server-side, so edits
         // can't just be written as they're typed — that would be one `saveObservatory` per
         // keystroke. They're held here and pushed once, when this form goes away: selecting a
@@ -113,7 +131,13 @@ struct ObservatoryEditForm: View {
     }
 
     private func load() async {
-        guard let observatoryID, isConnected else { return }
+        guard let observatoryID else {
+            // Creating a new one: nothing to fetch, but the baseline has to exist or the first
+            // keystroke wouldn't register as an edit.
+            loadedSnapshot = currentSnapshot
+            return
+        }
+        guard isConnected else { return }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -122,6 +146,7 @@ struct ObservatoryEditForm: View {
             latitudeDeg = observatory.latitudeDeg
             longitudeDeg = observatory.longitudeDeg
             elevationMeters = observatory.elevationMeters
+            loadedSnapshot = currentSnapshot
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }
@@ -144,7 +169,7 @@ struct ObservatoryEditForm: View {
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
             upsertLocalCache(with: saved)
-            isDirty = false
+            loadedSnapshot = currentSnapshot
         } catch {
             // `flush()` calls this during teardown, so `errorMessage` — this view's own @State —
             // is written to a view that's already gone and never rendered. The toolbar's
