@@ -93,13 +93,13 @@ struct RigSettingsPane: View {
         switch selection {
         case .existing(let id):
             if let rig = rigs.first(where: { $0.persistentModelID == id }) {
-                RigEditForm(rig: rig, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
+                RigEditForm(rig: rig, onSaved: { selection = .existing($0.persistentModelID) })
                     .id(id)
             } else {
                 placeholder
             }
         case .new:
-            RigEditForm(rig: nil, onSaved: { selection = .existing($0.persistentModelID) }, onFinished: { selection = nil })
+            RigEditForm(rig: nil, onSaved: { selection = .existing($0.persistentModelID) })
         case nil:
             placeholder
         }

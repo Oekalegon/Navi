@@ -28,8 +28,6 @@ struct RigEditForm: View {
     /// Called with the saved (inserted-or-mutated) rig after a successful Save, so the caller can
     /// adopt it as the current selection right away.
     var onSaved: (RigProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77) — called on Cancel only.
-    var onFinished: () -> Void = {}
 
     @Query(sort: \MountProfile.name) private var mounts: [MountProfile]
     @Query(sort: \OpticalAssemblyProfile.name) private var opticalAssemblies: [OpticalAssemblyProfile]
@@ -70,6 +68,9 @@ struct RigEditForm: View {
     @State private var liveObservatories: [ObservatorySummary] = []
     @State private var isSaving = false
     @State private var errorMessage: String?
+    /// Set by any edit, cleared by a successful push. Gates the flush so merely *viewing* a rig
+    /// never re-pushes it to the server.
+    @State private var isDirty = false
 
     private var isConnected: Bool { telescope.state == .connected }
     private var mainOpticalAssemblies: [OpticalAssemblyProfile] { opticalAssemblies.filter { $0.purpose == .mainImaging } }
@@ -84,6 +85,15 @@ struct RigEditForm: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if !isConnected {
+                        Label(
+                            "Connect to a telescope server to edit rigs — a rig's definition lives server-side.",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    }
+
                     LabeledField("Rig Name") {
                         TextField("Backyard EQ6-R Rig", text: $name)
                             .textFieldStyle(.roundedBorder)
@@ -278,10 +288,28 @@ struct RigEditForm: View {
                 }
                 .padding(16)
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Editing needs a live session: a rig's identity comes from the server (`saveRig` returns
+        // the id the local record is keyed on), so there's nothing meaningful to write locally
+        // while disconnected. Disabling beats letting edits be made and then dropped.
+        .disabled(!isConnected)
+        .onChange(of: name) { isDirty = true }
+        .onChange(of: mount) { isDirty = true }
+        .onChange(of: opticalAssembly) { isDirty = true }
+        .onChange(of: guideOpticalAssembly) { isDirty = true }
+        .onChange(of: imagingTrain) { isDirty = true }
+        .onChange(of: guideCamera) { isDirty = true }
+        .onChange(of: powerHub) { isDirty = true }
+        .onChange(of: flatScreen) { isDirty = true }
+        .onChange(of: dewHeater) { isDirty = true }
+        .onChange(of: observatoryControl) { isDirty = true }
+        .onChange(of: defaultObservatoryID) { isDirty = true }
+        .onChange(of: defaultServer) { isDirty = true }
+        // Pushed once, when this form goes away — selecting a different rig, switching tab, or
+        // closing Settings all tear it down. See `ObservatoryEditForm.flush()` for why this is a
+        // detached Task and what happens if the push never lands.
+        .onDisappear { flush() }
         .task {
             load()
             await refreshObservatories()
@@ -300,25 +328,6 @@ struct RigEditForm: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if !isConnected {
-                Text("Connect to save this rig to the server")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Cancel") { onFinished() }
-                .keyboardShortcut(.cancelAction)
-            Button("Save") { Task { await save() } }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .disabled(!isConnected || name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
 
     private var observatoryOptions: [ObservatorySummary] {
         if !liveObservatories.isEmpty { return liveObservatories }
@@ -397,6 +406,11 @@ struct RigEditForm: View {
         liveObservatories = (try? await telescope.listObservatories()) ?? []
     }
 
+    private func flush() {
+        guard isDirty, isConnected, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        Task { await save() }
+    }
+
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
@@ -434,6 +448,7 @@ struct RigEditForm: View {
                 overwrite: rig != nil
             )
             onSaved(upsertLocalRig(with: saved))
+            isDirty = false
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }

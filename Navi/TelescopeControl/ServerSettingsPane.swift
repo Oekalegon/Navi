@@ -42,9 +42,9 @@ struct ServerSettingsPane: View {
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @State private var telescope = TelescopeSessionManager.shared
 
+    /// No `.new` case: "+" inserts a blank server and selects it, so there's no draft state.
     private enum Selection: Hashable {
         case existing(PersistentIdentifier)
-        case new
     }
     @State private var selection: Selection?
     @State private var serverPendingDeletion: ServerProfile?
@@ -54,6 +54,16 @@ struct ServerSettingsPane: View {
         return servers.first { $0.persistentModelID == id }
     }
     @State private var unreachableWarning: String?
+
+    /// A blank server needs a syntactically valid URL to exist at all (`ServerProfile.url` is
+    /// non-optional); the user replaces it immediately in the detail pane.
+    private func insert() {
+        let placeholder = URL(string: "http://localhost:8000/mcp")!
+        let new = ServerProfile(name: "", url: placeholder)
+        modelContext.insert(new)
+        try? modelContext.save()
+        selection = .existing(new.persistentModelID)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -97,7 +107,7 @@ struct ServerSettingsPane: View {
             SettingsPaneHeader(
                 title: "Telescope Servers",
                 addHelp: "Add Server",
-                onAdd: { selection = .new },
+                onAdd: { insert() },
                 isRemoveDisabled: selectedServer == nil,
                 removeHelp: "Remove the selected server",
                 onRemove: { if let server = selectedServer { serverPendingDeletion = server } }
@@ -128,12 +138,6 @@ struct ServerSettingsPane: View {
             } else {
                 placeholder
             }
-        case .new:
-            ServerEditForm(
-                server: nil,
-                onSaved: { saved in Task { await connectAfterSave(saved) } },
-                onFinished: { selection = nil }
-            )
         case nil:
             placeholder
         }
@@ -141,12 +145,8 @@ struct ServerSettingsPane: View {
 
     private func serverDetail(for server: ServerProfile) -> some View {
         VStack(spacing: 0) {
-            ServerEditForm(
-                server: server,
-                onSaved: { saved in Task { await connectAfterSave(saved) } },
-                onFinished: { selection = nil }
-            )
-            .fixedSize(horizontal: false, vertical: true)
+            ServerEditForm(server: server)
+                .fixedSize(horizontal: false, vertical: true)
             if telescope.state == .connected, telescope.currentServer?.persistentModelID == server.persistentModelID {
                 Divider()
                 DriverManagementSheet(serverName: server.name)

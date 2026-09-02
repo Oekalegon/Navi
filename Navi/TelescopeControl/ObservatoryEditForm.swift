@@ -27,8 +27,6 @@ struct ObservatoryEditForm: View {
     @Environment(\.modelContext) private var modelContext
     @State private var telescope = TelescopeSessionManager.shared
     let observatoryID: String?
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
 
     @State private var name = ""
     @State private var latitudeDeg: Double = 0
@@ -37,11 +35,14 @@ struct ObservatoryEditForm: View {
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    /// Set by any field edit, cleared by a successful push. Gates the flush so simply *viewing* an
+    /// observatory never writes to the server.
+    @State private var isDirty = false
 
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
-        SettingsDetailForm(title: observatoryID == nil ? "Add Observatory" : "Edit Observatory") {
+        SettingsDetailForm(title: name.isEmpty ? "Untitled Observatory" : name) {
             if !isConnected {
                 Label("Connect to a telescope server to edit observatories.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -78,19 +79,28 @@ struct ObservatoryEditForm: View {
             if isLoading || isSaving {
                 ProgressView().controlSize(.small)
             }
-            Button("Cancel") { onFinished() }
-                .keyboardShortcut(.cancelAction)
-                // Always reachable, overriding the form-wide .disabled(!isConnected) below —
-                // navigating away isn't a server action, and the user must never get stuck in
-                // this pane if the connection drops while it's open.
-                .disabled(false)
-            Button("Save") { Task { await save() } }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .disabled(!isConnected || name.trimmingCharacters(in: .whitespaces).isEmpty || isLoading || isSaving)
         }
         .disabled(!isConnected)
         .task { await load() }
+        .onChange(of: name) { isDirty = true }
+        .onChange(of: latitudeDeg) { isDirty = true }
+        .onChange(of: longitudeDeg) { isDirty = true }
+        .onChange(of: elevationMeters) { isDirty = true }
+        // Unlike the local equipment editors, an Observatory only exists server-side, so edits
+        // can't just be written as they're typed — that would be one `saveObservatory` per
+        // keystroke. They're held here and pushed once, when this form goes away: selecting a
+        // different observatory, switching tab, or closing Settings all tear this view down.
+        //
+        // A detached `Task` deliberately, not `.task`: the push has to outlive the view that
+        // started it. If it never lands (connection dropped as the window closed), nothing is
+        // silently corrupted — the server simply keeps its previous definition, and the local
+        // cache still shows what the server last confirmed.
+        .onDisappear { flush() }
+    }
+
+    private func flush() {
+        guard isDirty, isConnected, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        Task { await save() }
     }
 
     private func load() async {
@@ -125,7 +135,7 @@ struct ObservatoryEditForm: View {
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
             upsertLocalCache(with: saved)
-            onFinished()
+            isDirty = false
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
         }

@@ -84,13 +84,13 @@ struct ObservatorySettingsPane: View {
         switch selection {
         case .existing(let id):
             if observatories.contains(where: { $0.serverObservatoryID == id }) {
-                ObservatoryEditForm(observatoryID: id, onFinished: { selection = nil })
+                ObservatoryEditForm(observatoryID: id)
                     .id(id)
             } else {
                 placeholder
             }
         case .new:
-            ObservatoryEditForm(observatoryID: nil, onFinished: { selection = nil })
+            ObservatoryEditForm(observatoryID: nil)
         case nil:
             placeholder
         }
