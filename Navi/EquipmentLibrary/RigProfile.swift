@@ -72,6 +72,12 @@ final class RigProfile {
     /// than this.
     var lastResyncedAt: Date
 
+    /// Fingerprint of the `Rig` payload as the server last accepted it (NAVI-86). Serves two jobs
+    /// from one field: this rig needs pushing when its current digest differs from this, and
+    /// someone else changed it underneath us when the *server's* current digest differs from this.
+    /// `nil` means never pushed from this install.
+    var lastPushedDigest: String?
+
     init(
         serverRigID: String,
         name: String,
@@ -86,7 +92,8 @@ final class RigProfile {
         observatoryControl: StandaloneEquipmentProfile? = nil,
         defaultObservatoryID: String? = nil,
         defaultServer: ServerProfile? = nil,
-        lastResyncedAt: Date = .now
+        lastResyncedAt: Date = .now,
+        lastPushedDigest: String? = nil
     ) {
         self.serverRigID = serverRigID
         self.name = name
@@ -102,6 +109,7 @@ final class RigProfile {
         self.defaultObservatoryID = defaultObservatoryID
         self.defaultServer = defaultServer
         self.lastResyncedAt = lastResyncedAt
+        self.lastPushedDigest = lastPushedDigest
     }
 
     /// Whether any referenced library entity has changed since this rig was last resynced —

@@ -8,6 +8,30 @@
 import Foundation
 import SwiftData
 
+// MARK: - Freezing convention (read before adding a version)
+//
+// A `VersionedSchema` computes its checksum from the Swift types its `models` list names, and that
+// checksum includes the *type identity*, not just the field shape. Freezing a model — moving from
+// `MountProfile.self` to a nested snapshot of the same name and shape — therefore CHANGES that
+// version's checksum, even though nothing about the data changed.
+//
+// The consequence, learned the hard way twice: **a version must be frozen in the same commit that
+// creates it, before any store is written at that version.** Freezing retroactively orphans every
+// store already stamped under the un-frozen version — SwiftData reports "Cannot use staged
+// migration with an unknown model version" and the store can only be discarded. That is what
+// happened to V3 during NAVI-85 and to V5 during NAVI-86; both cost a local store reset, and after
+// release it would cost a user's data.
+//
+// So: when adding V(n+1), the *same commit* freezes every model V(n) references live, whether or
+// not it is about to change. Snapshots keep the live class's exact name — SwiftData derives entity
+// (table) names from the class name, so a suffixed snapshot would describe a table no store ever
+// had (verified against the on-disk SQLite schema).
+//
+// Note the migration tests cannot catch a violation of this. They build their fixture store from
+// the version's own frozen types, so they are self-consistent by construction and pass even when a
+// real store — written under the live types — cannot migrate. Catching it properly needs a store
+// fixture committed to the repo, generated at each shipped version.
+
 /// Version 1 of the equipment-library schema — Navi's first structured local data store
 /// (previously just `UserDefaults`/Keychain and security-scoped bookmarks, per §4.3).
 ///
@@ -868,6 +892,108 @@ enum EquipmentLibrarySchemaV5: VersionedSchema {
             RotatorProfile.self,
         ]
     }
+
+    /// `RigProfile` and `ObservatoryProfile` are frozen here (NAVI-86): V6 gives both a
+    /// `lastPushedDigest`, and `ObservatoryProfile` a `detailsFetchedAt`. The other nine models
+    /// don't change in V6, so V5 keeps referencing them live — the same reasoning `V3` uses for its
+    /// own unchanged models. Snapshots keep the live class's exact name (see
+    /// `EquipmentLibrarySchemaV3`'s doc comment for why that matters).
+
+    @Model
+    final class RigProfile {
+        @Attribute(.unique) var serverRigID: String
+        var name: String
+        @Relationship(deleteRule: .nullify) var mount: MountProfile?
+        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
+        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
+        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfile?
+        var defaultObservatoryID: String?
+        @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
+        var lastResyncedAt: Date
+
+        init(
+            serverRigID: String, name: String, mount: MountProfile? = nil,
+            opticalAssembly: OpticalAssemblyProfile? = nil,
+            guideOpticalAssembly: OpticalAssemblyProfile? = nil,
+            imagingTrain: ImagingTrainProfile? = nil, guideCamera: GuideCameraProfile? = nil,
+            powerHub: StandaloneEquipmentProfile? = nil, flatScreen: StandaloneEquipmentProfile? = nil,
+            dewHeater: StandaloneEquipmentProfile? = nil,
+            observatoryControl: StandaloneEquipmentProfile? = nil, defaultObservatoryID: String? = nil,
+            defaultServer: ServerProfile? = nil, lastResyncedAt: Date = .now
+        ) {
+            self.serverRigID = serverRigID
+            self.name = name
+            self.mount = mount
+            self.opticalAssembly = opticalAssembly
+            self.guideOpticalAssembly = guideOpticalAssembly
+            self.imagingTrain = imagingTrain
+            self.guideCamera = guideCamera
+            self.powerHub = powerHub
+            self.flatScreen = flatScreen
+            self.dewHeater = dewHeater
+            self.observatoryControl = observatoryControl
+            self.defaultObservatoryID = defaultObservatoryID
+            self.defaultServer = defaultServer
+            self.lastResyncedAt = lastResyncedAt
+        }
+    }
+
+    @Model
+    final class ObservatoryProfile {
+        @Attribute(.unique) var serverObservatoryID: String
+        var name: String
+        var latitudeDeg: Double
+        var longitudeDeg: Double
+        var elevationMeters: Double
+        var cachedAt: Date
+
+        init(
+            serverObservatoryID: String, name: String, latitudeDeg: Double = 0,
+            longitudeDeg: Double = 0, elevationMeters: Double = 0, cachedAt: Date = .now
+        ) {
+            self.serverObservatoryID = serverObservatoryID
+            self.name = name
+            self.latitudeDeg = latitudeDeg
+            self.longitudeDeg = longitudeDeg
+            self.elevationMeters = elevationMeters
+            self.cachedAt = cachedAt
+        }
+    }
+}
+
+/// Version 6 (NAVI-86) — the source-of-truth inversion. Both records Navi pushes to the server gain
+/// `lastPushedDigest`: a fingerprint of the payload as it was last accepted. One field serves two
+/// jobs — "does this need pushing" is *current digest != lastPushedDigest*, and "did someone else
+/// change it underneath us" is *the server's current digest != lastPushedDigest* — which is why
+/// this isn't a plain `needsPush` flag.
+///
+/// `ObservatoryProfile.detailsFetchedAt` marks whether a cache entry holds real coordinates.
+/// `listObservatories` returns summaries, so a record seeded from it has id and name only with
+/// latitude/longitude/elevation left at 0; without a way to tell that apart from a genuinely-zeroed
+/// observatory, editing one offline and pushing it would replace the real location with 0/0/0.
+enum EquipmentLibrarySchemaV6: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            MountProfile.self,
+            OpticalAssemblyProfile.self,
+            ImagingTrainProfile.self,
+            GuideCameraProfile.self,
+            ServerProfile.self,
+            RigProfile.self,
+            ObservatoryProfile.self,
+            StandaloneEquipmentProfile.self,
+            CameraProfile.self,
+            FilterWheelProfile.self,
+            RotatorProfile.self,
+        ]
+    }
 }
 
 enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
@@ -875,6 +1001,7 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
         [
             EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self,
             EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self,
+            EquipmentLibrarySchemaV6.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -893,6 +1020,11 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
             // Dropping `preferredDriverLabel` is a pure field removal — lightweight migration
             // handles this without any value loss elsewhere.
             .lightweight(fromVersion: EquipmentLibrarySchemaV4.self, toVersion: EquipmentLibrarySchemaV5.self),
+            // Pure additions (both new fields are optional), so nothing is lost. An existing record
+            // migrates with lastPushedDigest == nil, which correctly reads as "never pushed from
+            // this install" — conservative, since it makes the first push look like a fresh one
+            // rather than claiming the server is in step.
+            .lightweight(fromVersion: EquipmentLibrarySchemaV5.self, toVersion: EquipmentLibrarySchemaV6.self),
         ]
     }
 }
@@ -901,5 +1033,5 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
 /// tests build their `Schema`/`ModelConfiguration` from, without every call site needing to know
 /// which `VersionedSchema` is current.
 enum EquipmentLibrarySchema {
-    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV5.models }
+    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV6.models }
 }

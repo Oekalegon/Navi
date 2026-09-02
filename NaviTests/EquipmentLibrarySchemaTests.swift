@@ -107,6 +107,54 @@ struct EquipmentLibrarySchemaTests {
         #expect(rig.mount?.deviceName == "EQMod Mount")
     }
 
+    /// The V5 -> V6 hop specifically, on top of the existing V3 walk: V6 freezes RigProfile and
+    /// ObservatoryProfile in V5 and adds `lastPushedDigest` (plus `detailsFetchedAt`), and a store
+    /// stamped at V5 has to carry its rows across that.
+    @Test func aStoreStampedAtV5MigratesForwardToTheCurrentSchema() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EquipmentLibraryV5Migration-\(UUID().uuidString)")
+            .appendingPathExtension("store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        do {
+            let v5 = Schema(versionedSchema: EquipmentLibrarySchemaV5.self)
+            let container = try ModelContainer(
+                for: v5,
+                configurations: [ModelConfiguration(schema: v5, url: storeURL)]
+            )
+            let context = ModelContext(container)
+            context.insert(EquipmentLibrarySchemaV5.RigProfile(serverRigID: "rig-v5", name: "V5 Rig"))
+            context.insert(EquipmentLibrarySchemaV5.ObservatoryProfile(
+                serverObservatoryID: "obs-v5", name: "V5 Observatory",
+                latitudeDeg: 52.1, longitudeDeg: 4.3, elevationMeters: 12
+            ))
+            try context.save()
+        }
+
+        let current = Schema(EquipmentLibrarySchema.models)
+        let migrated = try ModelContainer(
+            for: current,
+            migrationPlan: EquipmentLibraryMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: current, url: storeURL)]
+        )
+        let context = ModelContext(migrated)
+
+        let rig = try #require(try context.fetch(FetchDescriptor<RigProfile>()).first)
+        #expect(rig.serverRigID == "rig-v5")
+        // Both new fields are additions, so an existing row arrives with them unset — which reads
+        // as "never pushed from this install" and "coordinates never fetched", the conservative
+        // interpretation in both cases.
+        #expect(rig.lastPushedDigest == nil)
+
+        let observatory = try #require(try context.fetch(FetchDescriptor<ObservatoryProfile>()).first)
+        #expect(observatory.name == "V5 Observatory")
+        // Values that predate the migration must survive it.
+        #expect(observatory.latitudeDeg == 52.1)
+        #expect(observatory.elevationMeters == 12)
+        #expect(observatory.lastPushedDigest == nil)
+        #expect(observatory.detailsFetchedAt == nil)
+    }
+
     @Test func schemaBuildsAndPersistsARig() throws {
         let container = try makeInMemoryContainer()
         let context = ModelContext(container)
