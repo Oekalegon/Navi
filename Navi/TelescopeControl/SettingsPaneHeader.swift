@@ -12,8 +12,12 @@ import SwiftUI
 struct SettingsPaneHeader<TrailingContent: View>: View {
     let title: String
     var isAddDisabled: Bool = false
-    let addHelp: String
-    let onAdd: () -> Void
+    /// `nil` on a *detail* header (an edit form's title bar), where there's nothing to add — the
+    /// "+" is simply omitted. Sharing one component between sidebar and detail headers rather than
+    /// hand-rolling the latter is what keeps their height and padding identical; they sit directly
+    /// across a divider from each other, so any drift between them is immediately visible.
+    var addHelp: String? = nil
+    var onAdd: (() -> Void)? = nil
     @ViewBuilder var trailingContent: () -> TrailingContent
 
     var body: some View {
@@ -22,12 +26,14 @@ struct SettingsPaneHeader<TrailingContent: View>: View {
                 .font(.headline)
             Spacer()
             trailingContent()
-            Button(action: onAdd) {
-                Image(systemName: "plus")
+            if let onAdd {
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.plain)
+                .disabled(isAddDisabled)
+                .help(addHelp ?? "Add")
             }
-            .buttonStyle(.plain)
-            .disabled(isAddDisabled)
-            .help(addHelp)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -36,8 +42,16 @@ struct SettingsPaneHeader<TrailingContent: View>: View {
 }
 
 extension SettingsPaneHeader where TrailingContent == EmptyView {
+    /// Sidebar header — title plus a trailing "+".
     init(title: String, isAddDisabled: Bool = false, addHelp: String, onAdd: @escaping () -> Void) {
         self.init(title: title, isAddDisabled: isAddDisabled, addHelp: addHelp, onAdd: onAdd) {
+            EmptyView()
+        }
+    }
+
+    /// Detail header — title only, for an edit form's title bar.
+    init(title: String) {
+        self.init(title: title, isAddDisabled: false, addHelp: nil, onAdd: nil) {
             EmptyView()
         }
     }

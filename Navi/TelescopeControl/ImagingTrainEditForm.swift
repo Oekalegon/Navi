@@ -41,96 +41,69 @@ struct ImagingTrainEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    LabeledField("Imaging Train Name") {
-                        TextField("ASI2600MM Train", text: $name)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    roleSection(
-                        title: "Camera",
-                        isIncluded: isCameraIncluded,
-                        onToggle: { included in
-                            isCameraIncluded = included
-                            camera = included ? (camera ?? cameras.first) : nil
-                        },
-                        summary: camera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Camera", selection: $camera) {
-                                Text("None").tag(CameraProfile?.none)
-                                ForEach(cameras) { Text($0.name).tag(CameraProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
-                    )
-
-                    roleSection(
-                        title: "Filter Wheel",
-                        isIncluded: isFilterWheelIncluded,
-                        onToggle: { included in
-                            isFilterWheelIncluded = included
-                            filterWheel = included ? (filterWheel ?? filterWheels.first) : nil
-                        },
-                        summary: filterWheel.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Filter Wheel", selection: $filterWheel) {
-                                Text("None").tag(FilterWheelProfile?.none)
-                                ForEach(filterWheels) { Text($0.name).tag(FilterWheelProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
-                    )
-
-                    roleSection(
-                        title: "Rotator",
-                        isIncluded: isRotatorIncluded,
-                        onToggle: { included in
-                            isRotatorIncluded = included
-                            rotator = included ? (rotator ?? rotators.first) : nil
-                        },
-                        summary: rotator.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Rotator", selection: $rotator) {
-                                Text("None").tag(RotatorProfile?.none)
-                                ForEach(rotators) { Text($0.name).tag(RotatorProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
-                    )
-
-                    if let validationError {
-                        Text(validationError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
-                .padding(16)
+        SettingsDetailForm(title: imagingTrain == nil ? "Add Imaging Train" : "Edit Imaging Train") {
+            LabeledField("Imaging Train Name") {
+                TextField("ASI2600MM Train", text: $name)
+                    .textFieldStyle(.roundedBorder)
             }
-            Divider()
-            footer
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { load() }
-    }
 
-    private var header: some View {
-        HStack {
-            Text(imagingTrain == nil ? "Add Imaging Train" : "Edit Imaging Train")
-                .font(.headline)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
+            roleSection(
+                title: "Camera",
+                isIncluded: isCameraIncluded,
+                onToggle: { included in
+                    isCameraIncluded = included
+                    camera = included ? (camera ?? cameras.first) : nil
+                },
+                summary: camera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Camera", selection: $camera) {
+                        Text("None").tag(CameraProfile?.none)
+                        ForEach(cameras) { Text($0.name).tag(CameraProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                }
+            )
 
-    private var footer: some View {
-        HStack {
-            Spacer()
+            roleSection(
+                title: "Filter Wheel",
+                isIncluded: isFilterWheelIncluded,
+                onToggle: { included in
+                    isFilterWheelIncluded = included
+                    filterWheel = included ? (filterWheel ?? filterWheels.first) : nil
+                },
+                summary: filterWheel.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Filter Wheel", selection: $filterWheel) {
+                        Text("None").tag(FilterWheelProfile?.none)
+                        ForEach(filterWheels) { Text($0.name).tag(FilterWheelProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                }
+            )
+
+            roleSection(
+                title: "Rotator",
+                isIncluded: isRotatorIncluded,
+                onToggle: { included in
+                    isRotatorIncluded = included
+                    rotator = included ? (rotator ?? rotators.first) : nil
+                },
+                summary: rotator.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Rotator", selection: $rotator) {
+                        Text("None").tag(RotatorProfile?.none)
+                        ForEach(rotators) { Text($0.name).tag(RotatorProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                }
+            )
+
+            if let validationError {
+                Text(validationError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } actions: {
             Button("Cancel") { onFinished() }
                 .keyboardShortcut(.cancelAction)
             Button("Save") { save() }
@@ -138,9 +111,7 @@ struct ImagingTrainEditForm: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { load() }
     }
 
     private func roleSummary(name: String, deviceName: String?) -> String {

@@ -37,10 +37,7 @@ struct MountEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(mount == nil ? "Add Mount" : "Edit Mount")
-                .font(.headline)
-
+        SettingsDetailForm(title: mount == nil ? "Add Mount" : "Edit Mount") {
             LabeledField("Name") {
                 TextField("EQ6-R Pro", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -67,19 +64,13 @@ struct MountEditForm: View {
                     .foregroundStyle(.red)
             }
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = mount?.name ?? ""
             make = mount?.make ?? ""

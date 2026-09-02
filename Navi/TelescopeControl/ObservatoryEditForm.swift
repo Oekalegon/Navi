@@ -41,10 +41,7 @@ struct ObservatoryEditForm: View {
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(observatoryID == nil ? "Add Observatory" : "Edit Observatory")
-                .font(.headline)
-
+        SettingsDetailForm(title: observatoryID == nil ? "Add Observatory" : "Edit Observatory") {
             if !isConnected {
                 Label("Connect to a telescope server to edit observatories.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -77,27 +74,21 @@ struct ObservatoryEditForm: View {
                     .foregroundStyle(.red)
             }
 
-            Spacer()
-
-            HStack {
-                if isLoading || isSaving {
-                    ProgressView().controlSize(.small)
-                }
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                    // Always reachable, overriding the form-wide .disabled(!isConnected) below —
-                    // navigating away isn't a server action, and the user must never get stuck in
-                    // this pane if the connection drops while it's open.
-                    .disabled(false)
-                Button("Save") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isConnected || name.trimmingCharacters(in: .whitespaces).isEmpty || isLoading || isSaving)
+        } actions: {
+            if isLoading || isSaving {
+                ProgressView().controlSize(.small)
             }
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+                // Always reachable, overriding the form-wide .disabled(!isConnected) below —
+                // navigating away isn't a server action, and the user must never get stuck in
+                // this pane if the connection drops while it's open.
+                .disabled(false)
+            Button("Save") { Task { await save() } }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!isConnected || name.trimmingCharacters(in: .whitespaces).isEmpty || isLoading || isSaving)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .disabled(!isConnected)
         .task { await load() }
     }

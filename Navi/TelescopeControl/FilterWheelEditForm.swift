@@ -26,52 +26,39 @@ struct FilterWheelEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(filterWheel == nil ? "Add Filter Wheel" : "Edit Filter Wheel")
-                .font(.headline)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledField("Name") {
-                        TextField("EFW", text: $name)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    HStack(spacing: 12) {
-                        LabeledField("Make") {
-                            TextField("ZWO", text: $make)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Model") {
-                            TextField("EFW", text: $model)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-                    slotsEditor
-                    LabeledField("Notes") {
-                        TextField("Optional notes", text: $notes)
-                            .textFieldStyle(.roundedBorder)
-                    }
+        SettingsDetailForm(title: filterWheel == nil ? "Add Filter Wheel" : "Edit Filter Wheel") {
+            LabeledField("Name") {
+                TextField("EFW", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: 12) {
+                LabeledField("Make") {
+                    TextField("ZWO", text: $make)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Model") {
+                    TextField("EFW", text: $model)
+                        .textFieldStyle(.roundedBorder)
                 }
             }
-
+            DevicePickerField(label: "INDI Device", deviceName: $deviceName)
+            slotsEditor
+            LabeledField("Notes") {
+                TextField("Optional notes", text: $notes)
+                    .textFieldStyle(.roundedBorder)
+            }
             if let validationError {
                 Text(validationError)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = filterWheel?.name ?? ""
             make = filterWheel?.make ?? ""

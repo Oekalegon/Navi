@@ -41,72 +41,59 @@ struct CameraLikeEditForm<Subject: CameraLikeProfile>: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(subject == nil ? "Add \(noun)" : "Edit \(noun)")
-                .font(.headline)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledField("Name") {
-                        TextField(namePlaceholder, text: $name)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    HStack(spacing: 12) {
-                        LabeledField("Make") {
-                            TextField(makePlaceholder, text: $make)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Model") {
-                            TextField(namePlaceholder, text: $model)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    DevicePickerField(label: "INDI Device", deviceName: $deviceName)
-                    Toggle("Cooled", isOn: $cooled)
-                    HStack(spacing: 12) {
-                        LabeledField("Pixels X") {
-                            TextField("0", value: $pixelsX, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Pixels Y") {
-                            TextField("0", value: $pixelsY, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        LabeledField("Pixel Size (µm)") {
-                            TextField("0", value: $pixelSizeMicron, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Bit Depth") {
-                            TextField("0", value: $bitDepth, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    LabeledField("Notes") {
-                        TextField("Optional notes", text: $notes)
-                            .textFieldStyle(.roundedBorder)
-                    }
+        SettingsDetailForm(title: subject == nil ? "Add \(noun)" : "Edit \(noun)") {
+            LabeledField("Name") {
+                TextField(namePlaceholder, text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: 12) {
+                LabeledField("Make") {
+                    TextField(makePlaceholder, text: $make)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Model") {
+                    TextField(namePlaceholder, text: $model)
+                        .textFieldStyle(.roundedBorder)
                 }
             }
-
+            DevicePickerField(label: "INDI Device", deviceName: $deviceName)
+            Toggle("Cooled", isOn: $cooled)
+            HStack(spacing: 12) {
+                LabeledField("Pixels X") {
+                    TextField("0", value: $pixelsX, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Pixels Y") {
+                    TextField("0", value: $pixelsY, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(spacing: 12) {
+                LabeledField("Pixel Size (µm)") {
+                    TextField("0", value: $pixelSizeMicron, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Bit Depth") {
+                    TextField("0", value: $bitDepth, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            LabeledField("Notes") {
+                TextField("Optional notes", text: $notes)
+                    .textFieldStyle(.roundedBorder)
+            }
             if let validationError {
                 Text(validationError)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = subject?.name ?? ""
             make = subject?.make ?? ""

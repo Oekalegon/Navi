@@ -30,10 +30,7 @@ struct StandaloneEquipmentEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(equipment == nil ? "Add \(role.title)" : "Edit \(role.title)")
-                .font(.headline)
-
+        SettingsDetailForm(title: equipment == nil ? "Add \(role.title)" : "Edit \(role.title)") {
             LabeledField("Name") {
                 TextField("\(role.title) 1", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -60,19 +57,13 @@ struct StandaloneEquipmentEditForm: View {
                     .foregroundStyle(.red)
             }
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = equipment?.name ?? ""
             make = equipment?.make ?? ""

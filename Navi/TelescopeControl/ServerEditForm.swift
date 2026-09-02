@@ -30,10 +30,7 @@ struct ServerEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(server == nil ? "Add Server" : "Edit Server")
-                .font(.headline)
-
+        SettingsDetailForm(title: server == nil ? "Add Server" : "Edit Server") {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Name")
                     .font(.caption)
@@ -57,19 +54,13 @@ struct ServerEditForm: View {
                     .foregroundStyle(.red)
             }
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = server?.name ?? ""
             urlString = server?.url.absoluteString ?? ""

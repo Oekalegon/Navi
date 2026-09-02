@@ -25,10 +25,7 @@ struct RotatorEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(rotator == nil ? "Add Rotator" : "Edit Rotator")
-                .font(.headline)
-
+        SettingsDetailForm(title: rotator == nil ? "Add Rotator" : "Edit Rotator") {
             LabeledField("Name") {
                 TextField("Falcon Rotator", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -55,19 +52,13 @@ struct RotatorEditForm: View {
                     .foregroundStyle(.red)
             }
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = rotator?.name ?? ""
             make = rotator?.make ?? ""

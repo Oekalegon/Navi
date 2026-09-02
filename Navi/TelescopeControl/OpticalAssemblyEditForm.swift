@@ -41,98 +41,85 @@ struct OpticalAssemblyEditForm: View {
     @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(opticalAssembly == nil ? "Add Optical Assembly" : "Edit Optical Assembly")
-                .font(.headline)
+        SettingsDetailForm(title: opticalAssembly == nil ? "Add Optical Assembly" : "Edit Optical Assembly") {
+            LabeledField("Name") {
+                TextField("Esprit 100", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: 12) {
+                LabeledField("Make") {
+                    TextField("Sky-Watcher", text: $make)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Model") {
+                    TextField("Esprit 100", text: $model)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(spacing: 12) {
+                LabeledField("Aperture (mm)") {
+                    TextField("0", value: $apertureMm, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Focal Length (mm)") {
+                    TextField("0", value: $focalLengthMm, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            LabeledField("Optical Design") {
+                Picker("Optical Design", selection: $opticalDesign) {
+                    Text("Unspecified").tag(OpticalDesign?.none)
+                    ForEach(OpticalDesign.allCases, id: \.self) { design in
+                        Text(design.displayName).tag(OpticalDesign?.some(design))
+                    }
+                }
+                .labelsHidden()
+            }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledField("Name") {
-                        TextField("Esprit 100", text: $name)
+            Divider()
+
+            Toggle("Has Focuser", isOn: $includesFocuser)
+
+            if includesFocuser {
+                HStack(spacing: 12) {
+                    LabeledField("Focuser Make") {
+                        TextField("ZWO", text: $focuserMake)
                             .textFieldStyle(.roundedBorder)
                     }
-                    HStack(spacing: 12) {
-                        LabeledField("Make") {
-                            TextField("Sky-Watcher", text: $make)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Model") {
-                            TextField("Esprit 100", text: $model)
-                                .textFieldStyle(.roundedBorder)
-                        }
+                    LabeledField("Focuser Model") {
+                        TextField("EAF", text: $focuserModel)
+                            .textFieldStyle(.roundedBorder)
                     }
-                    HStack(spacing: 12) {
-                        LabeledField("Aperture (mm)") {
-                            TextField("0", value: $apertureMm, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Focal Length (mm)") {
-                            TextField("0", value: $focalLengthMm, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
+                }
+                DevicePickerField(label: "Focuser INDI Device", deviceName: $focuserDeviceName)
+                HStack(spacing: 12) {
+                    LabeledField("Min Position") {
+                        TextField("0", value: $focuserMinPosition, format: .number)
+                            .textFieldStyle(.roundedBorder)
                     }
-                    LabeledField("Optical Design") {
-                        Picker("Optical Design", selection: $opticalDesign) {
-                            Text("Unspecified").tag(OpticalDesign?.none)
-                            ForEach(OpticalDesign.allCases, id: \.self) { design in
-                                Text(design.displayName).tag(OpticalDesign?.some(design))
-                            }
-                        }
-                        .labelsHidden()
-                    }
-
-                    Divider()
-
-                    Toggle("Has Focuser", isOn: $includesFocuser)
-
-                    if includesFocuser {
-                        HStack(spacing: 12) {
-                            LabeledField("Focuser Make") {
-                                TextField("ZWO", text: $focuserMake)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Focuser Model") {
-                                TextField("EAF", text: $focuserModel)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                        DevicePickerField(label: "Focuser INDI Device", deviceName: $focuserDeviceName)
-                        HStack(spacing: 12) {
-                            LabeledField("Min Position") {
-                                TextField("0", value: $focuserMinPosition, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Max Position") {
-                                TextField("0", value: $focuserMaxPosition, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                    }
-
-                    LabeledField("Notes") {
-                        TextField("Optional notes", text: $notes)
+                    LabeledField("Max Position") {
+                        TextField("0", value: $focuserMaxPosition, format: .number)
                             .textFieldStyle(.roundedBorder)
                     }
                 }
             }
 
+            LabeledField("Notes") {
+                TextField("Optional notes", text: $notes)
+                    .textFieldStyle(.roundedBorder)
+            }
             if let validationError {
                 Text(validationError)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+        } actions: {
+            Button("Cancel") { onFinished() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             name = opticalAssembly?.name ?? ""
             make = opticalAssembly?.make ?? ""

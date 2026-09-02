@@ -288,18 +288,16 @@ struct RigEditForm: View {
         }
     }
 
+    /// The shared header, not hand-rolled chrome — this form keeps its own body/footer layout (its
+    /// footer carries a leading "Connect to save" hint that `SettingsDetailForm`'s doesn't model),
+    /// but the title bar itself goes through `SettingsPaneHeader` like every other pane's so the
+    /// heights can't drift apart. `trailingContent` carries the in-flight spinner.
     private var header: some View {
-        HStack {
-            Text(rig == nil ? "Add Rig" : "Edit Rig")
-                .font(.headline)
-            Spacer()
+        SettingsPaneHeader(title: rig == nil ? "Add Rig" : "Edit Rig") {
             if isSaving {
                 ProgressView().controlSize(.small)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var footer: some View {
