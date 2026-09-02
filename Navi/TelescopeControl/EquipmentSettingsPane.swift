@@ -21,13 +21,15 @@ import SwiftData
 /// Deliberately a plain `HStack`, not `NavigationSplitView` — see `ServerSettingsPane`'s doc
 /// comment for why (the same window-toolbar-chrome conflict with the enclosing `TabView`).
 ///
-/// The sidebar is an `OutlineGroup` (the same pattern built for the Rig sidebar earlier this
-/// session): each equipment *kind* is itself a selectable row (no per-row "+"), showing a "list of
-/// what you own + Add" overview on the right when selected; its owned instances render as indented,
-/// selectable children (name + delete only). `.listStyle(.plain)`, not `.sidebar` — the `.sidebar`
-/// vibrancy background is designed for `NavigationSplitView`, not this plain `HStack` sidebar, and
-/// renders as an unwanted opaque box outside that context; `.plain` is also what removes the row
-/// separator line between items.
+/// The sidebar is an `OutlineGroup`: each equipment *kind* is itself a selectable row (no per-row
+/// "+"), showing a "list of what you own + Add" overview on the right when selected; its owned
+/// instances render as indented, selectable children (name + delete only). `OutlineGroup` rather
+/// than `DisclosureGroup` (whose header isn't independently selectable — it conflates expand with
+/// select) or `Section` (whose headers aren't part of the selection model at all).
+///
+/// Both the sidebar's child rows and the type overview's list derive from `instances(for:)`, so
+/// the two paths into the same `Selection` can't drift apart. See `sidebar` for the list-style
+/// choice.
 ///
 /// Optical Assembly is split into two fixed-purpose kinds (matching `RigEditForm`'s existing
 /// `mainOpticalAssemblies`/`guideOpticalAssemblies` split) rather than exposing a raw `purpose`
@@ -155,67 +157,72 @@ struct EquipmentSettingsPane: View {
         func hash(into hasher: inout Hasher) { hasher.combine(selection) }
     }
 
-    private var topLevelNodes: [SidebarNode] {
-        var mountChildren: [SidebarNode] = []
-        for mount in mounts {
-            mountChildren.append(childNode(name: mount.name, icon: EquipmentKind.mount.icon, selection: .existingMount(mount.persistentModelID), onDelete: { self.delete(mount) }))
-        }
-        var opticalAssemblyChildren: [SidebarNode] = []
-        for assembly in mainOpticalAssemblies {
-            opticalAssemblyChildren.append(childNode(name: assembly.name, icon: EquipmentKind.opticalAssembly.icon, selection: .existingOpticalAssembly(assembly.persistentModelID), onDelete: { self.delete(assembly) }))
-        }
-        var guideOpticalAssemblyChildren: [SidebarNode] = []
-        for assembly in guideOpticalAssemblies {
-            guideOpticalAssemblyChildren.append(childNode(name: assembly.name, icon: EquipmentKind.guideOpticalAssembly.icon, selection: .existingOpticalAssembly(assembly.persistentModelID), onDelete: { self.delete(assembly) }))
-        }
-        var cameraChildren: [SidebarNode] = []
-        for camera in cameras {
-            cameraChildren.append(childNode(name: camera.name, icon: EquipmentKind.camera.icon, selection: .existingCamera(camera.persistentModelID), onDelete: { self.delete(camera) }))
-        }
-        var filterWheelChildren: [SidebarNode] = []
-        for filterWheel in filterWheels {
-            filterWheelChildren.append(childNode(name: filterWheel.name, icon: EquipmentKind.filterWheel.icon, selection: .existingFilterWheel(filterWheel.persistentModelID), onDelete: { self.delete(filterWheel) }))
-        }
-        var rotatorChildren: [SidebarNode] = []
-        for rotator in rotators {
-            rotatorChildren.append(childNode(name: rotator.name, icon: EquipmentKind.rotator.icon, selection: .existingRotator(rotator.persistentModelID), onDelete: { self.delete(rotator) }))
-        }
-        var guideCameraChildren: [SidebarNode] = []
-        for camera in guideCameras {
-            guideCameraChildren.append(childNode(name: camera.name, icon: EquipmentKind.guideCamera.icon, selection: .existingGuideCamera(camera.persistentModelID), onDelete: { self.delete(camera) }))
-        }
-        var powerHubChildren: [SidebarNode] = []
-        for equipment in standaloneEquipment(for: .powerHub) {
-            powerHubChildren.append(childNode(name: equipment.name, icon: EquipmentKind.powerHub.icon, selection: .existingStandalone(equipment.persistentModelID), onDelete: { self.delete(equipment) }))
-        }
-        var flatScreenChildren: [SidebarNode] = []
-        for equipment in standaloneEquipment(for: .flatScreen) {
-            flatScreenChildren.append(childNode(name: equipment.name, icon: EquipmentKind.flatScreen.icon, selection: .existingStandalone(equipment.persistentModelID), onDelete: { self.delete(equipment) }))
-        }
-        var dewHeaterChildren: [SidebarNode] = []
-        for equipment in standaloneEquipment(for: .dewHeater) {
-            dewHeaterChildren.append(childNode(name: equipment.name, icon: EquipmentKind.dewHeater.icon, selection: .existingStandalone(equipment.persistentModelID), onDelete: { self.delete(equipment) }))
-        }
-        var observatoryControlChildren: [SidebarNode] = []
-        for equipment in standaloneEquipment(for: .observatoryControl) {
-            observatoryControlChildren.append(childNode(name: equipment.name, icon: EquipmentKind.observatoryControl.icon, selection: .existingStandalone(equipment.persistentModelID), onDelete: { self.delete(equipment) }))
-        }
-
-        return [
-            kindNode(.mount, children: mountChildren),
-            kindNode(.opticalAssembly, children: opticalAssemblyChildren),
-            kindNode(.guideOpticalAssembly, children: guideOpticalAssemblyChildren),
-            kindNode(.camera, children: cameraChildren),
-            kindNode(.filterWheel, children: filterWheelChildren),
-            kindNode(.rotator, children: rotatorChildren),
-            kindNode(.guideCamera, children: guideCameraChildren),
-            kindNode(.powerHub, children: powerHubChildren),
-            kindNode(.flatScreen, children: flatScreenChildren),
-            kindNode(.dewHeater, children: dewHeaterChildren),
-            kindNode(.observatoryControl, children: observatoryControlChildren),
-        ]
+    /// One row's worth of data for a single owned entity, independent of where it's rendered —
+    /// the sidebar's child rows and the type overview's list are two views of the same thing, and
+    /// deriving both from `instances(for:)` is what keeps them from drifting. `delete` closes over
+    /// the entity so the seven near-identical `delete(_:)` overloads this replaced aren't needed.
+    private struct Instance {
+        let id: PersistentIdentifier
+        let name: String
+        let selection: Selection
+        let delete: () -> Void
     }
 
+    /// The single per-kind lookup. Adding a new equipment kind means adding one case here (plus
+    /// its `EquipmentKind`/`Selection` cases and its detail branch) rather than touching three
+    /// parallel switches and a delete overload, which is what this file used to require.
+    private func instances(for kind: EquipmentKind) -> [Instance] {
+        switch kind {
+        case .mount:
+            return mounts.map { instance($0, name: $0.name, kind: kind, selection: .existingMount($0.persistentModelID)) }
+        case .opticalAssembly:
+            return mainOpticalAssemblies.map { instance($0, name: $0.name, kind: kind, selection: .existingOpticalAssembly($0.persistentModelID)) }
+        case .guideOpticalAssembly:
+            return guideOpticalAssemblies.map { instance($0, name: $0.name, kind: kind, selection: .existingOpticalAssembly($0.persistentModelID)) }
+        case .camera:
+            return cameras.map { instance($0, name: $0.name, kind: kind, selection: .existingCamera($0.persistentModelID)) }
+        case .filterWheel:
+            return filterWheels.map { instance($0, name: $0.name, kind: kind, selection: .existingFilterWheel($0.persistentModelID)) }
+        case .rotator:
+            return rotators.map { instance($0, name: $0.name, kind: kind, selection: .existingRotator($0.persistentModelID)) }
+        case .guideCamera:
+            return guideCameras.map { instance($0, name: $0.name, kind: kind, selection: .existingGuideCamera($0.persistentModelID)) }
+        case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
+            guard let role = kind.standaloneRole else { return [] }
+            return standaloneEquipment(for: role).map { instance($0, name: $0.name, kind: kind, selection: .existingStandalone($0.persistentModelID)) }
+        }
+    }
+
+    /// Builds one `Instance`, including the confirm-then-delete closure. Deleting the currently
+    /// selected entity resets selection to its kind's overview rather than leaving a dangling
+    /// selection pointing at a deleted `PersistentIdentifier`.
+    private func instance<T: PersistentModel>(
+        _ entity: T,
+        name: String,
+        kind: EquipmentKind,
+        selection rowSelection: Selection
+    ) -> Instance {
+        Instance(
+            id: entity.persistentModelID,
+            name: name,
+            selection: rowSelection,
+            delete: {
+                pendingDeletion = (name, {
+                    if selection == rowSelection { selection = .kind(kind) }
+                    modelContext.delete(entity)
+                    try? modelContext.save()
+                })
+            }
+        )
+    }
+
+    private var topLevelNodes: [SidebarNode] {
+        EquipmentKind.allCases.map { kind in
+            kindNode(kind, children: instances(for: kind).map { row in
+                childNode(name: row.name, icon: kind.icon, selection: row.selection, onDelete: row.delete)
+            })
+        }
+    }
     private func kindNode(_ kind: EquipmentKind, children: [SidebarNode]) -> SidebarNode {
         // `nil`, not `[]`, when a kind owns nothing: `OutlineGroup` treats an empty-but-non-nil
         // children array as "expandable, currently empty" and draws a disclosure chevron that
@@ -378,7 +385,7 @@ struct EquipmentSettingsPane: View {
                 onAdd: { selection = newSelection(for: kind) }
             )
             Divider()
-            let rows = instanceRows(for: kind)
+            let rows = instances(for: kind)
             if rows.isEmpty {
                 Text("None defined yet.")
                     .foregroundStyle(.secondary)
@@ -411,88 +418,9 @@ struct EquipmentSettingsPane: View {
         }
     }
 
-    private func instanceRows(for kind: EquipmentKind) -> [(id: PersistentIdentifier, name: String, selection: Selection)] {
-        switch kind {
-        case .mount:
-            return mounts.map { ($0.persistentModelID, $0.name, .existingMount($0.persistentModelID)) }
-        case .opticalAssembly:
-            return mainOpticalAssemblies.map { ($0.persistentModelID, $0.name, .existingOpticalAssembly($0.persistentModelID)) }
-        case .guideOpticalAssembly:
-            return guideOpticalAssemblies.map { ($0.persistentModelID, $0.name, .existingOpticalAssembly($0.persistentModelID)) }
-        case .camera:
-            return cameras.map { ($0.persistentModelID, $0.name, .existingCamera($0.persistentModelID)) }
-        case .filterWheel:
-            return filterWheels.map { ($0.persistentModelID, $0.name, .existingFilterWheel($0.persistentModelID)) }
-        case .rotator:
-            return rotators.map { ($0.persistentModelID, $0.name, .existingRotator($0.persistentModelID)) }
-        case .guideCamera:
-            return guideCameras.map { ($0.persistentModelID, $0.name, .existingGuideCamera($0.persistentModelID)) }
-        case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
-            return standaloneEquipment(for: kind.standaloneRole!).map { ($0.persistentModelID, $0.name, .existingStandalone($0.persistentModelID)) }
-        }
-    }
-
     private var placeholder: some View {
         Text("Select a piece of equipment, or add a new one.")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func delete(_ mount: MountProfile) {
-        pendingDeletion = (mount.name, {
-            if selection == .existingMount(mount.persistentModelID) { selection = .kind(.mount) }
-            modelContext.delete(mount)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ assembly: OpticalAssemblyProfile) {
-        let kind: EquipmentKind = assembly.purpose == .mainImaging ? .opticalAssembly : .guideOpticalAssembly
-        pendingDeletion = (assembly.name, {
-            if selection == .existingOpticalAssembly(assembly.persistentModelID) { selection = .kind(kind) }
-            modelContext.delete(assembly)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ camera: CameraProfile) {
-        pendingDeletion = (camera.name, {
-            if selection == .existingCamera(camera.persistentModelID) { selection = .kind(.camera) }
-            modelContext.delete(camera)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ filterWheel: FilterWheelProfile) {
-        pendingDeletion = (filterWheel.name, {
-            if selection == .existingFilterWheel(filterWheel.persistentModelID) { selection = .kind(.filterWheel) }
-            modelContext.delete(filterWheel)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ rotator: RotatorProfile) {
-        pendingDeletion = (rotator.name, {
-            if selection == .existingRotator(rotator.persistentModelID) { selection = .kind(.rotator) }
-            modelContext.delete(rotator)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ camera: GuideCameraProfile) {
-        pendingDeletion = (camera.name, {
-            if selection == .existingGuideCamera(camera.persistentModelID) { selection = .kind(.guideCamera) }
-            modelContext.delete(camera)
-            try? modelContext.save()
-        })
-    }
-
-    private func delete(_ equipment: StandaloneEquipmentProfile) {
-        let kind = kind(for: equipment.role)
-        pendingDeletion = (equipment.name, {
-            if selection == .existingStandalone(equipment.persistentModelID) { selection = .kind(kind) }
-            modelContext.delete(equipment)
-            try? modelContext.save()
-        })
     }
 }

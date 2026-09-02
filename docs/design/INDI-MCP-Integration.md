@@ -124,6 +124,12 @@ current setup" rather than two independent, easy-to-mismatch controls.
   (`docs/ObservatorySchema.md`, `parse_hzn_profile`), but that parser is server-side Python only, not exposed as
   an MCP tool. Navi needs its own small client-side `.hzn` parser (trivial: split lines, `azimuth,altitude` pairs)
   feeding directly into `Observatory.horizonProfile` on save — no server/kit changes required.
+- **Equipment pane** — the library itself (§4.3): every reusable equipment entity, browsable by kind (Mounts,
+  Optical Assemblies, Guide Optical Assemblies, Cameras, Filter Wheels, Rotators, Guide Cameras, and the four
+  standalone roles), each kind a selectable sidebar row whose owned items appear as children. This is the only
+  place equipment is created or edited; the Rig and Imaging Train panes only *pick* from what's defined here.
+- **Imaging Train pane** — composes a Camera + optional Filter Wheel + optional Rotator into a named train, the
+  same pick-only pattern the Rig pane uses for its own roles.
 - **Rig pane** — full CRUD editor, built on the equipment library (§4.3). Every device-bearing field (Mount,
   Camera, Guide Camera, Focuser, Filter Wheel — every role that binds to an INDI device, no exceptions) is
   **selection-only from the live device list, never free text** — a component's non-device fields (aperture, make/
@@ -168,7 +174,14 @@ itself, which only ever sees the *flattened* `Component` list a Rig gets transla
   input; an OTA has no INDI device of its own), plus its Focuser (device-linkable). Combined rather than modeled
   as two separately-reusable things, since a focuser is normally semi-permanently mounted to one tube — an actual
   focuser swap is rare enough to just edit the existing record when it happens.
-- **Imaging Train** (Camera + Filter Wheel + Rotator) — the equipment that sits behind an Optical Assembly.
+- **Camera**, **Filter Wheel**, **Rotator** — each independently owned and separately reusable, since the same
+  physical camera or wheel may move between imaging trains over time. Each is device-linkable.
+- **Imaging Train** (Camera + Filter Wheel + Rotator) — the equipment that sits behind an Optical Assembly. A
+  *composition* of the three entities above, not a record with its own camera/filter-wheel/rotator fields: all
+  three roles optional, same "blank is valid" convention as a Rig's own roles. Like a Rig, it composes equipment
+  without being equipment itself, so it gets its own Settings tab rather than a row in the Equipment pane.
+- **Power Hub**, **Flat Screen**, **Dew Heater**, **Observatory Control** — the four device-bearing roles with no
+  richer equipment concept of their own. One shared record type distinguished by role.
 - **Guide Camera** — independent of Imaging Train (not nested inside it), because it needs to attach in two
   different places depending on setup: paired with a Guide-Scope-typed Optical Assembly (traditional piggyback
   guide scope — itself just another Optical Assembly record, typically without a focuser), or inserted directly
