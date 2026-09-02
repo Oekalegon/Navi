@@ -253,26 +253,26 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
 /// `OpticalAssemblyProfile`/`ImagingTrainProfile`/`GuideCameraProfile` each gain an optional
 /// preferred-driver field (or three, for `ImagingTrainProfile`'s three device-bearing sub-roles),
 /// and `RigProfile` drops its `standaloneComponentsData` JSON blob in favor of four real
-/// relationships to the new `StandaloneEquipmentProfile` — see each type's own doc comment. This is
-/// the first version to actually diverge in shape from `EquipmentLibrarySchemaV1`'s frozen
-/// snapshots, so it's the first to need its own real migration stage (see
-/// `EquipmentLibraryMigrationPlan.stages`) rather than reusing V1's types.
+/// relationships to the new `StandaloneEquipmentProfile` — see each type's own doc comment.
 ///
-/// `ImagingTrainProfileV3` and `RigProfileV3` are frozen nested snapshots here (NAVI-85 follow-up),
-/// matching `EquipmentLibrarySchemaV1`'s established pattern: V4 changes `ImagingTrainProfile`'s
-/// live shape from flat camera/filter-wheel/rotator fields to a composition of relationships, and
-/// `RigProfile`'s `imagingTrain` relationship targets that now-different type — a relationship's
-/// target type is part of what a version's checksum covers, so `RigProfile` needs freezing here
-/// too, even though none of `RigProfile`'s own attributes change. `Mount`/`OpticalAssembly`/
-/// `GuideCamera`/`ServerProfile`/`ObservatoryProfile`/`StandaloneEquipmentProfile` don't change in
-/// V4, so they keep referencing the live types, same reasoning `V2` already uses for its own
-/// unchanged models. (The frozen types are named with an explicit `V3` suffix, not bare
-/// `ImagingTrainProfile`/`RigProfile` as `EquipmentLibrarySchemaV1`'s snapshots are, purely to keep
-/// them visually distinct at the call site — during debugging, a "Duplicate version checksums
-/// detected" crash here turned out to be caused by a stale on-disk store left over from a prior
-/// schema version, not by any name or shape collision between declared schemas; deleting the local
-/// store file resolved it. Kept the more explicit naming anyway since it reads better at each
-/// nested type's use site.)
+/// **Naming convention for frozen snapshots (read before adding a version).** A nested snapshot
+/// keeps the *exact class name* of the live type it photographs — `MountProfile`, not
+/// `MountProfileV3`. SwiftData derives an entity (table) name from the class name, so a suffixed
+/// snapshot would describe a `ZMOUNTPROFILEV3` table that no store ever had, while the real store
+/// writes `ZMOUNTPROFILE` (verified by inspecting the on-disk SQLite schema). Same-named nested
+/// types are unambiguous because Swift lexical scoping resolves an unqualified reference inside a
+/// version's own body to that version's sibling snapshot, shadowing the global — which is why the
+/// `models` list below reads as bare `MountProfile.self` yet refers to *this* enum's copy, and why
+/// `V2` must qualify explicitly (`EquipmentLibrarySchemaV1.MountProfile.self`) to reach V1's.
+///
+/// **When to freeze.** Freeze a model into a version at the moment you are about to change that
+/// model's live shape — and freeze *every* prior version that still references it live, in the same
+/// commit. A version's checksum is computed by reflecting over whatever the referenced types look
+/// like *right now*, so a version pointing at a live type silently rewrites its own history the
+/// next time that type changes. All eight models below are frozen: V4 changes `ImagingTrainProfile`
+/// (flat fields to a composition) and therefore `RigProfile`'s `imagingTrain` relationship target,
+/// and V5 removes `preferredDriverLabel` from the rest. `ServerProfile`/`ObservatoryProfile` stay
+/// live because neither has changed since V3.
 enum EquipmentLibrarySchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(3, 0, 0)
 
@@ -280,17 +280,148 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
         [
             MountProfile.self,
             OpticalAssemblyProfile.self,
-            ImagingTrainProfileV3.self,
+            ImagingTrainProfile.self,
             GuideCameraProfile.self,
             ServerProfile.self,
-            RigProfileV3.self,
+            RigProfile.self,
             ObservatoryProfile.self,
             StandaloneEquipmentProfile.self,
         ]
     }
 
     @Model
-    final class ImagingTrainProfileV3 {
+    final class MountProfile {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class OpticalAssemblyProfile {
+        var name: String
+        var make: String?
+        var model: String?
+        var apertureMm: Double?
+        var focalLengthMm: Double?
+        var opticalDesign: OpticalDesign?
+        var purpose: OpticalAssemblyPurpose
+        var focuserMake: String?
+        var focuserModel: String?
+        var focuserDeviceName: String?
+        var focuserPreferredDriverLabel: String?
+        var focuserMinPosition: Int?
+        var focuserMaxPosition: Int?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, apertureMm: Double? = nil,
+            focalLengthMm: Double? = nil, opticalDesign: OpticalDesign? = nil,
+            purpose: OpticalAssemblyPurpose = .mainImaging, focuserMake: String? = nil,
+            focuserModel: String? = nil, focuserDeviceName: String? = nil,
+            focuserPreferredDriverLabel: String? = nil, focuserMinPosition: Int? = nil,
+            focuserMaxPosition: Int? = nil, notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.apertureMm = apertureMm
+            self.focalLengthMm = focalLengthMm
+            self.opticalDesign = opticalDesign
+            self.purpose = purpose
+            self.focuserMake = focuserMake
+            self.focuserModel = focuserModel
+            self.focuserDeviceName = focuserDeviceName
+            self.focuserPreferredDriverLabel = focuserPreferredDriverLabel
+            self.focuserMinPosition = focuserMinPosition
+            self.focuserMaxPosition = focuserMaxPosition
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class GuideCameraProfile {
+        var name: String
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var cooled: Bool?
+        var pixelsX: Int?
+        var pixelsY: Int?
+        var pixelSizeMicron: Double?
+        var bitDepth: Int?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, make: String? = nil, model: String? = nil, deviceName: String? = nil,
+            preferredDriverLabel: String? = nil, cooled: Bool? = nil, pixelsX: Int? = nil,
+            pixelsY: Int? = nil, pixelSizeMicron: Double? = nil, bitDepth: Int? = nil,
+            notes: String? = nil, modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.cooled = cooled
+            self.pixelsX = pixelsX
+            self.pixelsY = pixelsY
+            self.pixelSizeMicron = pixelSizeMicron
+            self.bitDepth = bitDepth
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class StandaloneEquipmentProfile {
+        var name: String
+        var role: StandaloneEquipmentRole
+        var make: String?
+        var model: String?
+        var deviceName: String?
+        var preferredDriverLabel: String?
+        var notes: String?
+        var modifiedAt: Date
+
+        init(
+            name: String, role: StandaloneEquipmentRole, make: String? = nil, model: String? = nil,
+            deviceName: String? = nil, preferredDriverLabel: String? = nil, notes: String? = nil,
+            modifiedAt: Date = .now
+        ) {
+            self.name = name
+            self.role = role
+            self.make = make
+            self.model = model
+            self.deviceName = deviceName
+            self.preferredDriverLabel = preferredDriverLabel
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    @Model
+    final class ImagingTrainProfile {
         var name: String
         var cameraMake: String?
         var cameraModel: String?
@@ -350,13 +481,13 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
     }
 
     @Model
-    final class RigProfileV3 {
+    final class RigProfile {
         @Attribute(.unique) var serverRigID: String
         var name: String
         @Relationship(deleteRule: .nullify) var mount: MountProfile?
         @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
         @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
-        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfileV3?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
         @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
         @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
         @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
@@ -370,7 +501,7 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
             serverRigID: String, name: String, mount: MountProfile? = nil,
             opticalAssembly: OpticalAssemblyProfile? = nil,
             guideOpticalAssembly: OpticalAssemblyProfile? = nil,
-            imagingTrain: ImagingTrainProfileV3? = nil, guideCamera: GuideCameraProfile? = nil,
+            imagingTrain: ImagingTrainProfile? = nil, guideCamera: GuideCameraProfile? = nil,
             powerHub: StandaloneEquipmentProfile? = nil, flatScreen: StandaloneEquipmentProfile? = nil,
             dewHeater: StandaloneEquipmentProfile? = nil,
             observatoryControl: StandaloneEquipmentProfile? = nil, defaultObservatoryID: String? = nil,
@@ -400,35 +531,31 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
 /// a pure composition of relationships to them, the same shape `RigProfile` already uses for its
 /// own roles. See each type's own doc comment.
 ///
-/// Every model here except `ServerProfile`/`ObservatoryProfile` is frozen as a nested `V4`-suffixed
-/// snapshot (NAVI-85 second follow-up): V5 drops `preferredDriverLabel` from every equipment type
-/// (the "Preferred Driver" picker was removed — starting/stopping a driver is `DriverManagement
-/// Sheet`'s job in the Server pane, not a per-equipment-item choice, and picking one from the full
-/// driver catalog per piece of equipment was an unusably long list). `ImagingTrainProfile` and
-/// `RigProfile` don't lose any field of their own, but both hold relationships whose *target* types
-/// change shape in V5 — per this file's established lesson, a relationship's target type is part of
-/// what a version's checksum covers, so both need freezing here too.
+/// Every model is frozen here (see `EquipmentLibrarySchemaV3`'s doc comment for the naming
+/// convention and the rule about *when* to freeze): V5 removes `preferredDriverLabel` from all of
+/// them, and the three new types plus `ImagingTrainProfile`/`RigProfile` are only this shape as of
+/// V4. `ServerProfile`/`ObservatoryProfile` stay live — neither has changed since V2.
 enum EquipmentLibrarySchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
-            MountProfileV4.self,
-            OpticalAssemblyProfileV4.self,
-            ImagingTrainProfileV4.self,
-            GuideCameraProfileV4.self,
+            MountProfile.self,
+            OpticalAssemblyProfile.self,
+            ImagingTrainProfile.self,
+            GuideCameraProfile.self,
             ServerProfile.self,
-            RigProfileV4.self,
+            RigProfile.self,
             ObservatoryProfile.self,
-            StandaloneEquipmentProfileV4.self,
-            CameraProfileV4.self,
-            FilterWheelProfileV4.self,
-            RotatorProfileV4.self,
+            StandaloneEquipmentProfile.self,
+            CameraProfile.self,
+            FilterWheelProfile.self,
+            RotatorProfile.self,
         ]
     }
 
     @Model
-    final class MountProfileV4 {
+    final class MountProfile {
         var name: String
         var make: String?
         var model: String?
@@ -452,7 +579,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class OpticalAssemblyProfileV4 {
+    final class OpticalAssemblyProfile {
         var name: String
         var make: String?
         var model: String?
@@ -496,7 +623,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class CameraProfileV4 {
+    final class CameraProfile {
         var name: String
         var make: String?
         var model: String?
@@ -532,7 +659,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class FilterWheelProfileV4 {
+    final class FilterWheelProfile {
         var name: String
         var make: String?
         var model: String?
@@ -564,7 +691,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class RotatorProfileV4 {
+    final class RotatorProfile {
         var name: String
         var make: String?
         var model: String?
@@ -588,7 +715,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class GuideCameraProfileV4 {
+    final class GuideCameraProfile {
         var name: String
         var make: String?
         var model: String?
@@ -624,7 +751,7 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class StandaloneEquipmentProfileV4 {
+    final class StandaloneEquipmentProfile {
         var name: String
         var role: StandaloneEquipmentRole
         var make: String?
@@ -651,17 +778,17 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class ImagingTrainProfileV4 {
+    final class ImagingTrainProfile {
         var name: String
-        @Relationship(deleteRule: .nullify) var camera: CameraProfileV4?
-        @Relationship(deleteRule: .nullify) var filterWheel: FilterWheelProfileV4?
-        @Relationship(deleteRule: .nullify) var rotator: RotatorProfileV4?
+        @Relationship(deleteRule: .nullify) var camera: CameraProfile?
+        @Relationship(deleteRule: .nullify) var filterWheel: FilterWheelProfile?
+        @Relationship(deleteRule: .nullify) var rotator: RotatorProfile?
         var notes: String?
         var modifiedAt: Date
 
         init(
-            name: String, camera: CameraProfileV4? = nil, filterWheel: FilterWheelProfileV4? = nil,
-            rotator: RotatorProfileV4? = nil, notes: String? = nil, modifiedAt: Date = .now
+            name: String, camera: CameraProfile? = nil, filterWheel: FilterWheelProfile? = nil,
+            rotator: RotatorProfile? = nil, notes: String? = nil, modifiedAt: Date = .now
         ) {
             self.name = name
             self.camera = camera
@@ -673,30 +800,30 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
     }
 
     @Model
-    final class RigProfileV4 {
+    final class RigProfile {
         @Attribute(.unique) var serverRigID: String
         var name: String
-        @Relationship(deleteRule: .nullify) var mount: MountProfileV4?
-        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfileV4?
-        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfileV4?
-        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfileV4?
-        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfileV4?
-        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfileV4?
-        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfileV4?
-        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfileV4?
-        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfileV4?
+        @Relationship(deleteRule: .nullify) var mount: MountProfile?
+        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
+        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
+        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfile?
         var defaultObservatoryID: String?
         @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
         var lastResyncedAt: Date
 
         init(
-            serverRigID: String, name: String, mount: MountProfileV4? = nil,
-            opticalAssembly: OpticalAssemblyProfileV4? = nil,
-            guideOpticalAssembly: OpticalAssemblyProfileV4? = nil,
-            imagingTrain: ImagingTrainProfileV4? = nil, guideCamera: GuideCameraProfileV4? = nil,
-            powerHub: StandaloneEquipmentProfileV4? = nil, flatScreen: StandaloneEquipmentProfileV4? = nil,
-            dewHeater: StandaloneEquipmentProfileV4? = nil,
-            observatoryControl: StandaloneEquipmentProfileV4? = nil, defaultObservatoryID: String? = nil,
+            serverRigID: String, name: String, mount: MountProfile? = nil,
+            opticalAssembly: OpticalAssemblyProfile? = nil,
+            guideOpticalAssembly: OpticalAssemblyProfile? = nil,
+            imagingTrain: ImagingTrainProfile? = nil, guideCamera: GuideCameraProfile? = nil,
+            powerHub: StandaloneEquipmentProfile? = nil, flatScreen: StandaloneEquipmentProfile? = nil,
+            dewHeater: StandaloneEquipmentProfile? = nil,
+            observatoryControl: StandaloneEquipmentProfile? = nil, defaultObservatoryID: String? = nil,
             defaultServer: ServerProfile? = nil, lastResyncedAt: Date = .now
         ) {
             self.serverRigID = serverRigID

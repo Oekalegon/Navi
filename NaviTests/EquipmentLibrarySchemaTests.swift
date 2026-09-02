@@ -45,6 +45,62 @@ struct EquipmentLibrarySchemaTests {
         _ = ModelContext(container)
     }
 
+    // Walks a real, file-backed store stamped at an *older* version forward through every
+    // migration stage — the gap that let a "Duplicate version checksums"/"unknown model version"
+    // crash reach a running binary during NAVI-85 rather than being caught here.
+    // `migrationPlanBuildsWithoutDuplicateVersionChecksums` above only validates that the plan's
+    // *declarations* are self-consistent; it builds against a URL that never existed, so it never
+    // exercises the staged-migration path that actually broke.
+    //
+    // This also guards the freezing convention itself: constructing the fixture through
+    // `EquipmentLibrarySchemaV3`'s own nested snapshot only compiles while V3 still describes the
+    // shape V3 shipped with (`preferredDriverLabel` included, removed from the live types in V5).
+    // If someone later repoints a frozen version at a live type, this stops compiling.
+    @Test func aStoreStampedAtV3MigratesForwardToTheCurrentSchema() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EquipmentLibraryMigration-\(UUID().uuidString)")
+            .appendingPathExtension("store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        // Write rows under V3's schema, then close it.
+        do {
+            let v3 = Schema(versionedSchema: EquipmentLibrarySchemaV3.self)
+            let container = try ModelContainer(
+                for: v3,
+                configurations: [ModelConfiguration(schema: v3, url: storeURL)]
+            )
+            let context = ModelContext(container)
+            let mount = EquipmentLibrarySchemaV3.MountProfile(
+                name: "EQ6-R",
+                deviceName: "EQMod Mount",
+                preferredDriverLabel: "EQMod Mount"
+            )
+            context.insert(EquipmentLibrarySchemaV3.RigProfile(
+                serverRigID: "rig-v3",
+                name: "V3 Rig",
+                mount: mount
+            ))
+            try context.save()
+        }
+
+        // Reopen the same file under the full plan — V3 -> V4 -> V5.
+        let current = Schema(EquipmentLibrarySchema.models)
+        let migrated = try ModelContainer(
+            for: current,
+            migrationPlan: EquipmentLibraryMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: current, url: storeURL)]
+        )
+        let context = ModelContext(migrated)
+
+        let rigs = try context.fetch(FetchDescriptor<RigProfile>())
+        #expect(rigs.count == 1)
+        let rig = try #require(rigs.first)
+        #expect(rig.serverRigID == "rig-v3")
+        // Fields that outlive the migration must survive it; only preferredDriverLabel is dropped.
+        #expect(rig.mount?.name == "EQ6-R")
+        #expect(rig.mount?.deviceName == "EQMod Mount")
+    }
+
     @Test func schemaBuildsAndPersistsARig() throws {
         let container = try makeInMemoryContainer()
         let context = ModelContext(container)
