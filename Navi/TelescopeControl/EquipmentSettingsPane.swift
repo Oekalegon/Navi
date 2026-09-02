@@ -132,28 +132,22 @@ struct EquipmentSettingsPane: View {
     @State private var selection: Selection?
     @State private var pendingDeletion: (name: String, action: () -> Void)?
 
-    /// One row in the sidebar tree — a kind's own row, or one of its owned records. Identity and
-    /// equality are driven entirely by `selection`.
-    private struct SidebarNode: Identifiable, Hashable {
-        let title: String
-        let icon: String
-        let selection: Selection
-        var children: [SidebarNode]?
+    /// Which kinds are showing their records. All of them by default — the point of the tree is
+    /// seeing what you own.
+    @State private var expandedKinds: Set<EquipmentKind> = Set(EquipmentKind.allCases)
+    /// Selection *within* the type-overview list, independent of the sidebar's — it drives that
+    /// list's own "−" so a record can be removed without leaving the overview.
+    @State private var overviewSelection: PersistentIdentifier?
 
-        var id: Selection { selection }
-        static func == (lhs: Self, rhs: Self) -> Bool { lhs.selection == rhs.selection }
-        func hash(into hasher: inout Hasher) { hasher.combine(selection) }
-    }
-
-    /// One owned record's row data, independent of where it's rendered — the sidebar's children and
-    /// the type overview's list are two views of the same array, which is what keeps them in step.
+    /// One owned record's row data, independent of where it's rendered — the sidebar's children
+    /// and the type overview's list are two views of the same array, which keeps them in step.
     private struct Instance {
         let id: PersistentIdentifier
         let name: String
     }
 
     /// The single per-kind lookup. A new equipment kind means one case here (plus its
-    /// `EquipmentKind` case and a branch in `editor(for:)` and `insert(into:)`).
+    /// `EquipmentKind` case and a branch in `editor(for:)`, `insert(into:)` and `deleteRecord(_:)`).
     private func instances(for kind: EquipmentKind) -> [Instance] {
         switch kind {
         case .mount:
@@ -173,24 +167,6 @@ struct EquipmentSettingsPane: View {
         case .powerHub, .flatScreen, .dewHeater, .observatoryControl:
             guard let role = kind.standaloneRole else { return [] }
             return standaloneEquipment(for: role).map { Instance(id: $0.persistentModelID, name: $0.displayName) }
-        }
-    }
-
-    private var topLevelNodes: [SidebarNode] {
-        EquipmentKind.allCases.map { kind in
-            // Always a non-nil children array, even when empty. `OutlineGroup` only insets a row for
-            // the disclosure chevron when that row is expandable, and there's no API to reserve the
-            // space otherwise — so passing `nil` for empty kinds (which does correctly suppress a
-            // chevron revealing nothing) makes every *other* kind's title sit at a different x, and
-            // the list visibly shifts the moment the first record of any kind is added.
-            SidebarNode(
-                title: kind.title,
-                icon: kind.icon,
-                selection: .kind(kind),
-                children: instances(for: kind).map {
-                    SidebarNode(title: $0.name, icon: kind.icon, selection: .existing($0.id), children: nil)
-                }
-            )
         }
     }
 
@@ -246,9 +222,21 @@ struct EquipmentSettingsPane: View {
                 onRemove: { if let selectedInstanceID { confirmDelete(selectedInstanceID) } }
             )
             Divider()
+            // Built explicitly rather than with `OutlineGroup`. Two reasons: `OutlineGroup`
+            // swallowed the first click on a parent row (selecting a kind while a record of that
+            // kind was selected took two clicks, because the row's own disclosure handling consumed
+            // one), and it only insets rows it considers expandable, so an empty kind sat at a
+            // different indent from a populated one and the list shifted the moment the first
+            // record was added. Owning the layout fixes both: the chevron's width is always
+            // reserved, and a plain tagged row selects on a single click like any other List row.
             List(selection: $selection) {
-                OutlineGroup(topLevelNodes, children: \.children) { node in
-                    row(for: node).tag(node.selection)
+                ForEach(EquipmentKind.allCases, id: \.self) { kind in
+                    kindRow(for: kind)
+                    if expandedKinds.contains(kind) {
+                        ForEach(instances(for: kind), id: \.id) { instance in
+                            instanceRow(for: instance)
+                        }
+                    }
                 }
             }
             // `.sidebar`, not `.plain` — this is what gives rows the native inset *rounded*
@@ -261,13 +249,42 @@ struct EquipmentSettingsPane: View {
         }
     }
 
-    @ViewBuilder
-    private func row(for node: SidebarNode) -> some View {
-        if case .kind = node.selection {
-            Label(node.title, systemImage: node.icon)
-        } else {
-            Text(node.title)
+    private func kindRow(for kind: EquipmentKind) -> some View {
+        let hasRecords = !instances(for: kind).isEmpty
+        return HStack(spacing: 4) {
+            Button {
+                if expandedKinds.contains(kind) {
+                    expandedKinds.remove(kind)
+                } else {
+                    expandedKinds.insert(kind)
+                }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(expandedKinds.contains(kind) ? 90 : 0))
+            }
+            .buttonStyle(.plain)
+            // Width is reserved whether or not there's a chevron to draw, so every kind's title
+            // lines up and nothing shifts when a kind gains its first record.
+            .frame(width: 12)
+            .opacity(hasRecords ? 1 : 0)
+            .disabled(!hasRecords)
+
+            Label(kind.title, systemImage: kind.icon)
+            Spacer()
         }
+        .tag(Selection.kind(kind))
+    }
+
+    private func instanceRow(for instance: Instance) -> some View {
+        HStack {
+            Text(instance.name)
+                // Indented past the chevron column to sit under its kind's title.
+                .padding(.leading, 20)
+            Spacer()
+        }
+        .tag(Selection.existing(instance.id))
     }
 
     @ViewBuilder
@@ -305,34 +322,46 @@ struct EquipmentSettingsPane: View {
         }
     }
 
-    /// The "select Cameras, see a list of what you own" panel. Its "+" adds to this kind, matching
-    /// the sidebar header's.
+    /// The "select Cameras, see a list of what you own" panel. Its "+"/"−" pair manages that
+    /// kind's records in place: "−" acts on `overviewSelection`, this list's *own* selection, so a
+    /// record can be removed without first navigating to it in the sidebar. Double-clicking a row
+    /// opens it for editing (single click just selects, the macOS list convention).
     @ViewBuilder
     private func kindOverview(for kind: EquipmentKind) -> some View {
+        let rows = instances(for: kind)
         VStack(alignment: .leading, spacing: 0) {
             SettingsPaneHeader(
                 title: kind.title,
                 addHelp: "Add \(kind.singularTitle)",
-                onAdd: { insert(into: kind) }
+                onAdd: { insert(into: kind) },
+                isRemoveDisabled: overviewSelection == nil,
+                removeHelp: "Remove the selected \(kind.singularTitle.lowercased())",
+                onRemove: { if let overviewSelection { confirmDelete(overviewSelection) } }
             )
             Divider()
-            let rows = instances(for: kind)
             if rows.isEmpty {
                 Text("None defined yet.")
                     .foregroundStyle(.secondary)
                     .padding(16)
                 Spacer()
             } else {
-                List(rows, id: \.id) { instance in
-                    Button(action: { selection = .existing(instance.id) }) {
-                        Text(instance.name)
-                    }
-                    .buttonStyle(.plain)
+                List(rows, id: \.id, selection: $overviewSelection) { instance in
+                    Text(instance.name)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // `simultaneousGesture`, not `onTapGesture`, so the List's own single-click
+                        // selection still runs — a plain tap gesture would swallow it.
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            selection = .existing(instance.id)
+                        })
+                        .tag(instance.id)
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
             }
         }
+        // Selecting a different kind starts that kind's list with nothing selected, rather than
+        // carrying a stale id belonging to another kind into its "−".
+        .onChange(of: kind) { overviewSelection = nil }
     }
 
     private var placeholder: some View {
