@@ -29,6 +29,11 @@ struct ObservatorySettingsPane: View {
     }
     @State private var selection: Selection?
 
+    private var selectedObservatory: ObservatoryProfile? {
+        guard case .existing(let id) = selection else { return nil }
+        return observatories.first { $0.serverObservatoryID == id }
+    }
+
     private var isConnected: Bool { telescope.state == .connected }
 
     var body: some View {
@@ -47,7 +52,10 @@ struct ObservatorySettingsPane: View {
                 title: "Observatories",
                 isAddDisabled: !isConnected,
                 addHelp: isConnected ? "Add Observatory" : "Connect to a telescope server first",
-                onAdd: { selection = .new }
+                onAdd: { selection = .new },
+                isRemoveDisabled: selectedObservatory == nil,
+                removeHelp: "Remove from this local list",
+                onRemove: { if let observatory = selectedObservatory { remove(observatory) } }
             ) {
                 if !isConnected {
                     Text("Connect to add or edit")
@@ -65,6 +73,8 @@ struct ObservatorySettingsPane: View {
                             .tag(Selection.existing(observatory.serverObservatoryID))
                     }
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -74,13 +84,13 @@ struct ObservatorySettingsPane: View {
         switch selection {
         case .existing(let id):
             if observatories.contains(where: { $0.serverObservatoryID == id }) {
-                ObservatoryEditForm(observatoryID: id, onFinished: { selection = nil })
+                ObservatoryEditForm(observatoryID: id)
                     .id(id)
             } else {
                 placeholder
             }
         case .new:
-            ObservatoryEditForm(observatoryID: nil, onFinished: { selection = nil })
+            ObservatoryEditForm(observatoryID: nil)
         case nil:
             placeholder
         }
@@ -119,12 +129,6 @@ struct ObservatorySettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(action: { remove(observatory) }) {
-                Image(systemName: "minus.circle")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Remove from this local list — stays saved on the server")
         }
     }
 

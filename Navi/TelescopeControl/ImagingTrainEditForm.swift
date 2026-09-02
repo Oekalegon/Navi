@@ -8,271 +8,161 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `ImagingTrainProfile` (§4.3) — the camera, filter wheel, and rotator
-/// behind an optical assembly. The camera is always present; filter wheel and rotator are each
-/// optional groups of fields (`hasFilterWheel`/`hasRotator`), matching a Rig `Component`'s
-/// "selected but no device" vs. "role not present at all" distinction. Every `...DeviceName`
-/// field is picker-only while connected (§4.2), via `DevicePickerField`.
+/// Editor for one `ImagingTrainProfile` — pure composition, mirroring `RigEditForm`'s shape: for
+/// each role (Camera, Filter Wheel, Rotator), just *pick* which already-defined
+/// `EquipmentSettingsPane` library entity this train uses. No inline creation here — an empty role's
+/// library points at the Equipment tab instead. See `MountEditForm` for the no-Save-button
+/// convention; an `ImagingTrainProfile` is purely local, so edits need no connection.
 struct ImagingTrainEditForm: View {
-    @Environment(\.modelContext) private var modelContext
-    let imagingTrain: ImagingTrainProfile?
-    var onSaved: (ImagingTrainProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
+    @Environment(\.selectSettingsTab) private var selectSettingsTab
+    @Bindable var imagingTrain: ImagingTrainProfile
 
-    @State private var name = ""
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
 
-    @State private var cameraMake = ""
-    @State private var cameraModel = ""
-    @State private var cameraDeviceName: String?
-    @State private var cameraCooled = false
-    @State private var cameraPixelsX: Int?
-    @State private var cameraPixelsY: Int?
-    @State private var cameraPixelSizeMicron: Double?
-    @State private var cameraBitDepth: Int?
+    @Query(sort: \CameraProfile.name) private var cameras: [CameraProfile]
+    @Query(sort: \FilterWheelProfile.name) private var filterWheels: [FilterWheelProfile]
+    @Query(sort: \RotatorProfile.name) private var rotators: [RotatorProfile]
 
-    @State private var includesFilterWheel = false
-    @State private var filterWheelMake = ""
-    @State private var filterWheelModel = ""
-    @State private var filterWheelDeviceName: String?
-    @State private var filterWheelSlots: [FilterSlotEntry] = []
-
-    @State private var includesRotator = false
-    @State private var rotatorMake = ""
-    @State private var rotatorModel = ""
-    @State private var rotatorDeviceName: String?
-
-    @State private var notes = ""
-    @State private var validationError: String?
+    // Tracked separately from `camera != nil` so an empty library doesn't snap the toggle back off
+    // before the user can reach a picker (the NAVI-62 precedent).
+    @State private var isCameraIncluded = false
+    @State private var isFilterWheelIncluded = false
+    @State private var isRotatorIncluded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(imagingTrain == nil ? "Add Imaging Train" : "Edit Imaging Train")
-                .font(.headline)
+        SettingsDetailForm(title: imagingTrain.displayName) {
+            LabeledField("Imaging Train Name") {
+                TextField("ASI2600MM Train", text: $imagingTrain.name)
+                        .focused($isNameFocused)
+                    .textFieldStyle(.roundedBorder)
+            }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledField("Name") {
-                        TextField("ASI2600MM Train", text: $name)
-                            .textFieldStyle(.roundedBorder)
+            roleSection(
+                title: "Camera",
+                isIncluded: isCameraIncluded,
+                onToggle: { included in
+                    isCameraIncluded = included
+                    imagingTrain.camera = included ? (imagingTrain.camera ?? cameras.first) : nil
+                    touch()
+                },
+                summary: imagingTrain.camera.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Camera", selection: $imagingTrain.camera) {
+                        Text("None").tag(CameraProfile?.none)
+                        ForEach(cameras) { Text($0.displayName).tag(CameraProfile?.some($0)) }
                     }
-
-                    Text("Camera").font(.subheadline).fontWeight(.semibold)
-                    HStack(spacing: 12) {
-                        LabeledField("Make") {
-                            TextField("ZWO", text: $cameraMake)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Model") {
-                            TextField("ASI2600MM Pro", text: $cameraModel)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    DevicePickerField(label: "Camera INDI Device", deviceName: $cameraDeviceName)
-                    Toggle("Cooled", isOn: $cameraCooled)
-                    HStack(spacing: 12) {
-                        LabeledField("Pixels X") {
-                            TextField("0", value: $cameraPixelsX, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Pixels Y") {
-                            TextField("0", value: $cameraPixelsY, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        LabeledField("Pixel Size (µm)") {
-                            TextField("0", value: $cameraPixelSizeMicron, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Bit Depth") {
-                            TextField("0", value: $cameraBitDepth, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-
-                    Divider()
-                    Toggle("Has Filter Wheel", isOn: $includesFilterWheel)
-                    if includesFilterWheel {
-                        HStack(spacing: 12) {
-                            LabeledField("Make") {
-                                TextField("ZWO", text: $filterWheelMake)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Model") {
-                                TextField("EFW", text: $filterWheelModel)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                        DevicePickerField(label: "Filter Wheel INDI Device", deviceName: $filterWheelDeviceName)
-                        filterSlotsEditor
-                    }
-
-                    Divider()
-                    Toggle("Has Rotator", isOn: $includesRotator)
-                    if includesRotator {
-                        HStack(spacing: 12) {
-                            LabeledField("Make") {
-                                TextField("Pegasus", text: $rotatorMake)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Model") {
-                                TextField("Falcon Rotator", text: $rotatorModel)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                        DevicePickerField(label: "Rotator INDI Device", deviceName: $rotatorDeviceName)
-                    }
-
-                    LabeledField("Notes") {
-                        TextField("Optional notes", text: $notes)
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    .labelsHidden()
                 }
-            }
+            )
 
-            if let validationError {
-                Text(validationError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
+            roleSection(
+                title: "Filter Wheel",
+                isIncluded: isFilterWheelIncluded,
+                onToggle: { included in
+                    isFilterWheelIncluded = included
+                    imagingTrain.filterWheel = included ? (imagingTrain.filterWheel ?? filterWheels.first) : nil
+                    touch()
+                },
+                summary: imagingTrain.filterWheel.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Filter Wheel", selection: $imagingTrain.filterWheel) {
+                        Text("None").tag(FilterWheelProfile?.none)
+                        ForEach(filterWheels) { Text($0.displayName).tag(FilterWheelProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                }
+            )
 
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            }
+            roleSection(
+                title: "Rotator",
+                isIncluded: isRotatorIncluded,
+                onToggle: { included in
+                    isRotatorIncluded = included
+                    imagingTrain.rotator = included ? (imagingTrain.rotator ?? rotators.first) : nil
+                    touch()
+                },
+                summary: imagingTrain.rotator.map { roleSummary(name: $0.displayName, deviceName: $0.deviceName) },
+                picker: {
+                    Picker("Rotator", selection: $imagingTrain.rotator) {
+                        Text("None").tag(RotatorProfile?.none)
+                        ForEach(rotators) { Text($0.displayName).tag(RotatorProfile?.some($0)) }
+                    }
+                    .labelsHidden()
+                }
+            )
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear(perform: load)
+        .onAppear {
+            if imagingTrain.name.isEmpty { isNameFocused = true }
+            load()
+        }
+        .onChange(of: changeKey) { touch() }
     }
 
-    private var filterSlotsEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Filter Slots")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            ForEach(filterWheelSlots.indices, id: \.self) { index in
-                HStack {
-                    TextField("Slot", value: $filterWheelSlots[index].slot, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 50)
-                    TextField("Filter name", text: $filterWheelSlots[index].name)
-                        .textFieldStyle(.roundedBorder)
-                    Button(action: { filterWheelSlots.remove(at: index) }) {
-                        Image(systemName: "minus.circle")
+    private func roleSummary(name: String, deviceName: String?) -> String {
+        if let deviceName {
+            return "\(name) · Device: \(deviceName)"
+        }
+        return "\(name) · Device: blank"
+    }
+
+    /// See `RigEditForm.roleSection` — identical pattern, duplicated rather than shared since it's
+    /// the only piece these two otherwise-unrelated composition forms have in common.
+    @ViewBuilder
+    private func roleSection(
+        title: String,
+        isIncluded: Bool,
+        onToggle: @escaping (Bool) -> Void,
+        summary: String?,
+        @ViewBuilder picker: () -> some View
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(title, isOn: Binding(get: { isIncluded }, set: onToggle))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            if isIncluded {
+                picker()
+                if let summary {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(summary.hasSuffix("blank") ? .orange : .secondary)
+                } else {
+                    HStack(spacing: 4) {
+                        Text("No \(title.lowercased()) defined yet —")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Button("go to Equipment…") { selectSettingsTab(.equipment) }
+                            .buttonStyle(.link)
+                            .font(.caption)
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            Button(action: {
-                let nextSlot = (filterWheelSlots.map(\.slot).max() ?? 0) + 1
-                filterWheelSlots.append(FilterSlotEntry(slot: nextSlot, name: ""))
-            }) {
-                Label("Add Slot", systemImage: "plus")
-            }
-            .buttonStyle(.plain)
         }
     }
 
     private func load() {
-        name = imagingTrain?.name ?? ""
-        cameraMake = imagingTrain?.cameraMake ?? ""
-        cameraModel = imagingTrain?.cameraModel ?? ""
-        cameraDeviceName = imagingTrain?.cameraDeviceName
-        cameraCooled = imagingTrain?.cameraCooled ?? false
-        cameraPixelsX = imagingTrain?.cameraPixelsX
-        cameraPixelsY = imagingTrain?.cameraPixelsY
-        cameraPixelSizeMicron = imagingTrain?.cameraPixelSizeMicron
-        cameraBitDepth = imagingTrain?.cameraBitDepth
-
-        includesFilterWheel = imagingTrain?.hasFilterWheel ?? false
-        filterWheelMake = imagingTrain?.filterWheelMake ?? ""
-        filterWheelModel = imagingTrain?.filterWheelModel ?? ""
-        filterWheelDeviceName = imagingTrain?.filterWheelDeviceName
-        filterWheelSlots = imagingTrain?.filterWheelSlots ?? []
-
-        includesRotator = imagingTrain?.hasRotator ?? false
-        rotatorMake = imagingTrain?.rotatorMake ?? ""
-        rotatorModel = imagingTrain?.rotatorModel ?? ""
-        rotatorDeviceName = imagingTrain?.rotatorDeviceName
-
-        notes = imagingTrain?.notes ?? ""
+        isCameraIncluded = imagingTrain.camera != nil
+        isFilterWheelIncluded = imagingTrain.filterWheel != nil
+        isRotatorIncluded = imagingTrain.rotator != nil
     }
 
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
-        }
-        let trimmedCameraMake = cameraMake.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedCameraModel = cameraModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let trimmedFilterWheelMake = filterWheelMake.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedFilterWheelModel = filterWheelModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedFilterWheelMake = includesFilterWheel && !trimmedFilterWheelMake.isEmpty ? trimmedFilterWheelMake : nil
-        let resolvedFilterWheelModel = includesFilterWheel && !trimmedFilterWheelModel.isEmpty ? trimmedFilterWheelModel : nil
-        let resolvedFilterWheelDevice = includesFilterWheel ? filterWheelDeviceName : nil
-        let resolvedFilterWheelSlots = includesFilterWheel && !filterWheelSlots.isEmpty ? filterWheelSlots : nil
-
-        let trimmedRotatorMake = rotatorMake.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedRotatorModel = rotatorModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedRotatorMake = includesRotator && !trimmedRotatorMake.isEmpty ? trimmedRotatorMake : nil
-        let resolvedRotatorModel = includesRotator && !trimmedRotatorModel.isEmpty ? trimmedRotatorModel : nil
-        let resolvedRotatorDevice = includesRotator ? rotatorDeviceName : nil
-
-        let saved: ImagingTrainProfile
-        if let imagingTrain {
-            imagingTrain.name = trimmedName
-            imagingTrain.cameraMake = trimmedCameraMake.isEmpty ? nil : trimmedCameraMake
-            imagingTrain.cameraModel = trimmedCameraModel.isEmpty ? nil : trimmedCameraModel
-            imagingTrain.cameraDeviceName = cameraDeviceName
-            imagingTrain.cameraCooled = cameraCooled
-            imagingTrain.cameraPixelsX = cameraPixelsX
-            imagingTrain.cameraPixelsY = cameraPixelsY
-            imagingTrain.cameraPixelSizeMicron = cameraPixelSizeMicron
-            imagingTrain.cameraBitDepth = cameraBitDepth
-            imagingTrain.filterWheelMake = resolvedFilterWheelMake
-            imagingTrain.filterWheelModel = resolvedFilterWheelModel
-            imagingTrain.filterWheelDeviceName = resolvedFilterWheelDevice
-            imagingTrain.filterWheelSlots = resolvedFilterWheelSlots
-            imagingTrain.rotatorMake = resolvedRotatorMake
-            imagingTrain.rotatorModel = resolvedRotatorModel
-            imagingTrain.rotatorDeviceName = resolvedRotatorDevice
-            imagingTrain.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-            imagingTrain.modifiedAt = .now
-            saved = imagingTrain
-        } else {
-            let created = ImagingTrainProfile(
-                name: trimmedName,
-                cameraMake: trimmedCameraMake.isEmpty ? nil : trimmedCameraMake,
-                cameraModel: trimmedCameraModel.isEmpty ? nil : trimmedCameraModel,
-                cameraDeviceName: cameraDeviceName,
-                cameraCooled: cameraCooled,
-                cameraPixelsX: cameraPixelsX,
-                cameraPixelsY: cameraPixelsY,
-                cameraPixelSizeMicron: cameraPixelSizeMicron,
-                cameraBitDepth: cameraBitDepth,
-                filterWheelMake: resolvedFilterWheelMake,
-                filterWheelModel: resolvedFilterWheelModel,
-                filterWheelDeviceName: resolvedFilterWheelDevice,
-                filterWheelSlots: resolvedFilterWheelSlots,
-                rotatorMake: resolvedRotatorMake,
-                rotatorModel: resolvedRotatorModel,
-                rotatorDeviceName: resolvedRotatorDevice,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            modelContext.insert(created)
-            saved = created
-        }
-        try? modelContext.save()
-        onSaved(saved)
-        onFinished()
+    private func touch() {
+        imagingTrain.modifiedAt = .now
     }
+
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field — see `CameraLikeProfile.editableChangeKey`
+    /// for why the list is kept in one place.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(imagingTrain.name)
+        // Composed records identified by id: swapping which camera a train uses is an edit.
+        parts.append(imagingTrain.camera.map { "\($0.persistentModelID)" } ?? "")
+        parts.append(imagingTrain.filterWheel.map { "\($0.persistentModelID)" } ?? "")
+        parts.append(imagingTrain.rotator.map { "\($0.persistentModelID)" } ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
+
 }

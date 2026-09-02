@@ -8,207 +8,142 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `OpticalAssemblyProfile` (§4.3) — shared by the Rig editor's main
-/// optical assembly and guide optical assembly sections, which are ordinary, independently-
-/// reusable records distinguished only by `OpticalAssemblyPurpose` (§4.3). `purpose` is fixed by
-/// the caller (not user-editable here) so a record created from the "guide optical assembly"
-/// section can't accidentally end up `.mainImaging`-purposed or vice versa.
+/// Editor for one `OpticalAssemblyProfile` (§4.3) — shared by the main and guide optical assembly
+/// kinds, which are ordinary reusable records distinguished only by `OpticalAssemblyPurpose`.
+/// `purpose` is fixed when the record is created (the Equipment pane has a separate kind for each),
+/// so it isn't editable here and no longer needs passing in.
 ///
 /// The focuser fields are all optional together (`nil` for all of them means "no focuser" —
-/// `OpticalAssemblyProfile.hasFocuser`); `focuserDeviceName` is picker-only while connected
-/// (§4.2), matching `DevicePickerField`'s contract.
+/// `OpticalAssemblyProfile.hasFocuser`); `focuserDeviceName` is picker-only while connected (§4.2).
+/// See `MountEditForm` for the no-Save-button convention.
 struct OpticalAssemblyEditForm: View {
-    @Environment(\.modelContext) private var modelContext
-    let opticalAssembly: OpticalAssemblyProfile?
-    let purpose: OpticalAssemblyPurpose
-    var onSaved: (OpticalAssemblyProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
+    @Bindable var opticalAssembly: OpticalAssemblyProfile
 
-    @State private var name = ""
-    @State private var make = ""
-    @State private var model = ""
-    @State private var apertureMm: Double?
-    @State private var focalLengthMm: Double?
-    @State private var opticalDesign: OpticalDesign?
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
+    /// Mirrors `hasFocuser` but is tracked separately so toggling it off, clearing the fields, and
+    /// toggling back on doesn't fight the derived value mid-edit.
     @State private var includesFocuser = false
-    @State private var focuserMake = ""
-    @State private var focuserModel = ""
-    @State private var focuserDeviceName: String?
-    @State private var focuserMinPosition: Int?
-    @State private var focuserMaxPosition: Int?
-    @State private var notes = ""
-    @State private var validationError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(opticalAssembly == nil ? "Add Optical Assembly" : "Edit Optical Assembly")
-                .font(.headline)
+        SettingsDetailForm(title: opticalAssembly.displayName) {
+            LabeledField("Name") {
+                TextField("Esprit 100", text: $opticalAssembly.name)
+                        .focused($isNameFocused)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: 12) {
+                LabeledField("Make") {
+                    TextField("Sky-Watcher", text: Binding(nilAsEmpty: $opticalAssembly.make))
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Model") {
+                    TextField("Esprit 100", text: Binding(nilAsEmpty: $opticalAssembly.model))
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(spacing: 12) {
+                LabeledField("Aperture (mm)") {
+                    TextField("0", value: $opticalAssembly.apertureMm, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledField("Focal Length (mm)") {
+                    TextField("0", value: $opticalAssembly.focalLengthMm, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            LabeledField("Optical Design") {
+                Picker("Optical Design", selection: $opticalAssembly.opticalDesign) {
+                    Text("Unspecified").tag(OpticalDesign?.none)
+                    ForEach(OpticalDesign.allCases, id: \.self) { design in
+                        Text(design.displayName).tag(OpticalDesign?.some(design))
+                    }
+                }
+                .labelsHidden()
+            }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledField("Name") {
-                        TextField("Esprit 100", text: $name)
+            Divider()
+
+            Toggle("Has Focuser", isOn: Binding(
+                get: { includesFocuser },
+                set: { included in
+                    includesFocuser = included
+                    if !included { clearFocuser() }
+                    touch()
+                }
+            ))
+
+            if includesFocuser {
+                HStack(spacing: 12) {
+                    LabeledField("Focuser Make") {
+                        TextField("ZWO", text: Binding(nilAsEmpty: $opticalAssembly.focuserMake))
                             .textFieldStyle(.roundedBorder)
                     }
-                    HStack(spacing: 12) {
-                        LabeledField("Make") {
-                            TextField("Sky-Watcher", text: $make)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Model") {
-                            TextField("Esprit 100", text: $model)
-                                .textFieldStyle(.roundedBorder)
-                        }
+                    LabeledField("Focuser Model") {
+                        TextField("EAF", text: Binding(nilAsEmpty: $opticalAssembly.focuserModel))
+                            .textFieldStyle(.roundedBorder)
                     }
-                    HStack(spacing: 12) {
-                        LabeledField("Aperture (mm)") {
-                            TextField("0", value: $apertureMm, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        LabeledField("Focal Length (mm)") {
-                            TextField("0", value: $focalLengthMm, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
+                }
+                DevicePickerField(label: "Focuser INDI Device", deviceName: $opticalAssembly.focuserDeviceName)
+                HStack(spacing: 12) {
+                    LabeledField("Min Position") {
+                        TextField("0", value: $opticalAssembly.focuserMinPosition, format: .number)
+                            .textFieldStyle(.roundedBorder)
                     }
-                    LabeledField("Optical Design") {
-                        Picker("Optical Design", selection: $opticalDesign) {
-                            Text("Unspecified").tag(OpticalDesign?.none)
-                            ForEach(OpticalDesign.allCases, id: \.self) { design in
-                                Text(design.displayName).tag(OpticalDesign?.some(design))
-                            }
-                        }
-                        .labelsHidden()
-                    }
-
-                    Divider()
-
-                    Toggle("Has Focuser", isOn: $includesFocuser)
-
-                    if includesFocuser {
-                        HStack(spacing: 12) {
-                            LabeledField("Focuser Make") {
-                                TextField("ZWO", text: $focuserMake)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Focuser Model") {
-                                TextField("EAF", text: $focuserModel)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                        DevicePickerField(label: "Focuser INDI Device", deviceName: $focuserDeviceName)
-                        HStack(spacing: 12) {
-                            LabeledField("Min Position") {
-                                TextField("0", value: $focuserMinPosition, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            LabeledField("Max Position") {
-                                TextField("0", value: $focuserMaxPosition, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                    }
-
-                    LabeledField("Notes") {
-                        TextField("Optional notes", text: $notes)
+                    LabeledField("Max Position") {
+                        TextField("0", value: $opticalAssembly.focuserMaxPosition, format: .number)
                             .textFieldStyle(.roundedBorder)
                     }
                 }
             }
 
-            if let validationError {
-                Text(validationError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+            LabeledField("Notes") {
+                TextField("Optional notes", text: Binding(nilAsEmpty: $opticalAssembly.notes))
+                    .textFieldStyle(.roundedBorder)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            name = opticalAssembly?.name ?? ""
-            make = opticalAssembly?.make ?? ""
-            model = opticalAssembly?.model ?? ""
-            apertureMm = opticalAssembly?.apertureMm
-            focalLengthMm = opticalAssembly?.focalLengthMm
-            opticalDesign = opticalAssembly?.opticalDesign
-            includesFocuser = opticalAssembly?.hasFocuser ?? false
-            focuserMake = opticalAssembly?.focuserMake ?? ""
-            focuserModel = opticalAssembly?.focuserModel ?? ""
-            focuserDeviceName = opticalAssembly?.focuserDeviceName
-            focuserMinPosition = opticalAssembly?.focuserMinPosition
-            focuserMaxPosition = opticalAssembly?.focuserMaxPosition
-            notes = opticalAssembly?.notes ?? ""
+            if opticalAssembly.name.isEmpty { isNameFocused = true }
+            includesFocuser = opticalAssembly.hasFocuser
         }
+        .onChange(of: changeKey) { touch() }
     }
 
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
-        }
-        let trimmedMake = make.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedFocuserMake = focuserMake.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedFocuserModel = focuserModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// "Has Focuser" off clears every focuser field together, matching
+    /// `OpticalAssemblyProfile.hasFocuser`'s "all optional together" contract.
+    private func clearFocuser() {
+        opticalAssembly.focuserMake = nil
+        opticalAssembly.focuserModel = nil
+        opticalAssembly.focuserDeviceName = nil
+        opticalAssembly.focuserMinPosition = nil
+        opticalAssembly.focuserMaxPosition = nil
+    }
 
-        // "Has Focuser" toggled off clears every focuser field together, matching
-        // `OpticalAssemblyProfile.hasFocuser`'s "all optional together" contract.
-        let resolvedFocuserMake = includesFocuser && !trimmedFocuserMake.isEmpty ? trimmedFocuserMake : nil
-        let resolvedFocuserModel = includesFocuser && !trimmedFocuserModel.isEmpty ? trimmedFocuserModel : nil
-        let resolvedFocuserDevice = includesFocuser ? focuserDeviceName : nil
-        let resolvedFocuserMin = includesFocuser ? focuserMinPosition : nil
-        let resolvedFocuserMax = includesFocuser ? focuserMaxPosition : nil
+    /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
+    /// single `.onChange` rather than one per field — see `CameraLikeProfile.editableChangeKey`
+    /// for why the list is kept in one place.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(opticalAssembly.name)
+        parts.append(opticalAssembly.make ?? "")
+        parts.append(opticalAssembly.model ?? "")
+        parts.append(opticalAssembly.apertureMm.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.focalLengthMm.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.opticalDesign?.rawValue ?? "")
+        parts.append(opticalAssembly.focuserMake ?? "")
+        parts.append(opticalAssembly.focuserModel ?? "")
+        parts.append(opticalAssembly.focuserDeviceName ?? "")
+        parts.append(opticalAssembly.focuserMinPosition.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.focuserMaxPosition.map { "\($0)" } ?? "")
+        parts.append(opticalAssembly.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
 
-        let saved: OpticalAssemblyProfile
-        if let opticalAssembly {
-            opticalAssembly.name = trimmedName
-            opticalAssembly.make = trimmedMake.isEmpty ? nil : trimmedMake
-            opticalAssembly.model = trimmedModel.isEmpty ? nil : trimmedModel
-            opticalAssembly.apertureMm = apertureMm
-            opticalAssembly.focalLengthMm = focalLengthMm
-            opticalAssembly.opticalDesign = opticalDesign
-            opticalAssembly.purpose = purpose
-            opticalAssembly.focuserMake = resolvedFocuserMake
-            opticalAssembly.focuserModel = resolvedFocuserModel
-            opticalAssembly.focuserDeviceName = resolvedFocuserDevice
-            opticalAssembly.focuserMinPosition = resolvedFocuserMin
-            opticalAssembly.focuserMaxPosition = resolvedFocuserMax
-            opticalAssembly.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-            opticalAssembly.modifiedAt = .now
-            saved = opticalAssembly
-        } else {
-            let created = OpticalAssemblyProfile(
-                name: trimmedName,
-                make: trimmedMake.isEmpty ? nil : trimmedMake,
-                model: trimmedModel.isEmpty ? nil : trimmedModel,
-                apertureMm: apertureMm,
-                focalLengthMm: focalLengthMm,
-                opticalDesign: opticalDesign,
-                purpose: purpose,
-                focuserMake: resolvedFocuserMake,
-                focuserModel: resolvedFocuserModel,
-                focuserDeviceName: resolvedFocuserDevice,
-                focuserMinPosition: resolvedFocuserMin,
-                focuserMaxPosition: resolvedFocuserMax,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            modelContext.insert(created)
-            saved = created
-        }
-        try? modelContext.save()
-        onSaved(saved)
-        onFinished()
+    private func touch() {
+        opticalAssembly.modifiedAt = .now
     }
 }
 
@@ -223,4 +158,6 @@ extension OpticalDesign {
         case .other: return "Other"
         }
     }
+
+
 }

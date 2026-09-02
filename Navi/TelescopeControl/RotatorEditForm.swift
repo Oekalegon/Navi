@@ -1,19 +1,17 @@
 //
-//  MountEditForm.swift
+//  RotatorEditForm.swift
 //  Navi
 //
-//  See docs/design/INDI-MCP-Integration.md §4.2/§4.3.
+//  See docs/design/INDI-MCP-Integration.md §4.2/§4.3. NAVI-85 follow-up.
 //
 
 import SwiftUI
 import SwiftData
 
-/// Editor for one `MountProfile` (§4.3's equipment library). Edits bind straight to the record and
-/// take effect immediately — macOS Settings treats any edit as committed, so there's no Save/Cancel
-/// pair and no local `@State` mirror. A blank record is inserted by the pane's "+" and edited in
-/// place. `deviceName` is picker-only while connected (§4.2).
-struct MountEditForm: View {
-    @Bindable var mount: MountProfile
+/// Editor for one `RotatorProfile` (§4.3). See `MountEditForm`'s doc comment for the
+/// bind-directly-to-the-record, no-Save-button convention.
+struct RotatorEditForm: View {
+    @Bindable var rotator: RotatorProfile
 
     /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
     /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
@@ -21,30 +19,30 @@ struct MountEditForm: View {
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
-        SettingsDetailForm(title: mount.displayName) {
+        SettingsDetailForm(title: rotator.displayName) {
             LabeledField("Name") {
-                TextField("EQ6-R Pro", text: $mount.name)
+                TextField("Falcon Rotator", text: $rotator.name)
                         .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 12) {
                 LabeledField("Make") {
-                    TextField("Sky-Watcher", text: Binding(nilAsEmpty: $mount.make))
+                    TextField("Pegasus", text: Binding(nilAsEmpty: $rotator.make))
                         .textFieldStyle(.roundedBorder)
                 }
                 LabeledField("Model") {
-                    TextField("EQ6-R Pro", text: Binding(nilAsEmpty: $mount.model))
+                    TextField("Falcon Rotator", text: Binding(nilAsEmpty: $rotator.model))
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            DevicePickerField(label: "INDI Device", deviceName: $mount.deviceName)
+            DevicePickerField(label: "INDI Device", deviceName: $rotator.deviceName)
             LabeledField("Notes") {
-                TextField("Optional notes", text: Binding(nilAsEmpty: $mount.notes))
+                TextField("Optional notes", text: Binding(nilAsEmpty: $rotator.notes))
                     .textFieldStyle(.roundedBorder)
             }
         }
-        .onAppear { if mount.name.isEmpty { isNameFocused = true } }
-        .onChange(of: changeKey) { mount.modifiedAt = .now }
+        .onAppear { if rotator.name.isEmpty { isNameFocused = true } }
+        .onChange(of: changeKey) { rotator.modifiedAt = .now }
     }
 
     /// Every editable field folded into one comparable value, so `modifiedAt` is stamped from a
@@ -54,11 +52,11 @@ struct MountEditForm: View {
     /// to spot than ten separate handlers anyone could forget to extend.
     private var changeKey: String {
         var parts: [String] = []
-        parts.append(mount.name)
-        parts.append(mount.make ?? "")
-        parts.append(mount.model ?? "")
-        parts.append(mount.deviceName ?? "")
-        parts.append(mount.notes ?? "")
+        parts.append(rotator.name)
+        parts.append(rotator.make ?? "")
+        parts.append(rotator.model ?? "")
+        parts.append(rotator.deviceName ?? "")
+        parts.append(rotator.notes ?? "")
         return parts.joined(separator: "\u{1F}")
     }
 

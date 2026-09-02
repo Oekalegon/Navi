@@ -10,8 +10,8 @@
 import SwiftUI
 
 struct SettingsRootView: View {
-    private enum Tab: Hashable {
-        case general, apiKey, servers, observatories, rigs
+    enum Tab: Hashable {
+        case general, apiKey, servers, observatories, equipment, imagingTrain, rigs
     }
 
     // NAVI-77: an explicit selection binding + `.tag()` per tab, rather than relying on
@@ -41,11 +41,29 @@ struct SettingsRootView: View {
                 .tabItem { Label("Observatories", systemImage: "location") }
                 .tag(Tab.observatories)
 
+            // NAVI-85: Equipment sits before Rigs (not after Observatories) since a rig is
+            // composed *from* equipment, but has nothing to do with Observatories.
+            EquipmentSettingsPane()
+                .id(Tab.equipment)
+                .tabItem { Label("Equipment", systemImage: "wrench.and.screwdriver") }
+                .tag(Tab.equipment)
+
+            // Composition of equipment (Camera/Filter Wheel/Rotator), not equipment itself — its
+            // own tab rather than a section in Equipment, the same reasoning Rigs already follows.
+            ImagingTrainSettingsPane()
+                .id(Tab.imagingTrain)
+                .tabItem { Label("Imaging Train", systemImage: "camera.on.rectangle") }
+                .tag(Tab.imagingTrain)
+
             RigSettingsPane()
                 .id(Tab.rigs)
                 .tabItem { Label("Rigs", systemImage: "scope") }
                 .tag(Tab.rigs)
         }
         .frame(width: 900, height: 640)
+        // NAVI-85: lets RigEditForm's empty-equipment-library message jump straight to the
+        // Equipment tab, without RigEditForm needing to know anything about `Tab` beyond the one
+        // case it asks for — see `SettingsTabNavigation.swift`.
+        .environment(\.selectSettingsTab, { selectedTab = $0 })
     }
 }

@@ -8,98 +8,77 @@
 import SwiftUI
 import SwiftData
 
-/// Add/edit form for one `ServerProfile`. `server == nil` means "creating a new one" — saving
-/// inserts it; otherwise saving mutates the passed-in record in place.
+/// Editor for one `ServerProfile` (§4.2) — a named INDI-MCP endpoint. See `MountEditForm` for the
+/// bind-directly-to-the-record, no-Save-button convention.
 ///
-/// NAVI-63: saving never blocks on reachability — a server can be registered while offline.
-/// `onSaved` is where the caller (`ServerSettingsPane`) attempts to actually connect to it and
-/// surfaces a warning if that fails, since that's also where the live connect/disconnect state
-/// lives (`TelescopeSessionManager`); this form itself stays a plain, synchronous save.
+/// The URL is the one field that can't bind straight through: `ServerProfile.url` is a
+/// non-optional `URL`, and a half-typed address doesn't parse. So the text is held locally and
+/// written to the record only once it parses, with a hint shown meanwhile — the record keeps its
+/// last good URL rather than being cleared mid-keystroke.
+///
+/// There's deliberately no connect-on-save any more: that fired from the old Save button, and with
+/// continuous editing there's no equivalent moment (a half-typed host would trigger it). Each row
+/// in `ServerSettingsPane` has an explicit Connect/Disconnect button (NAVI-63), which is the
+/// discoverable place for it.
 struct ServerEditForm: View {
-    @Environment(\.modelContext) private var modelContext
-    let server: ServerProfile?
-    /// Called with the saved (inserted-or-mutated) server, so a caller like `RigEditForm` can
-    /// adopt it as this rig's `defaultServer` right away, or `ServerSettingsPane` can attempt to
-    /// connect to it.
-    var onSaved: (ServerProfile) -> Void = { _ in }
-    /// See `MountEditForm.onFinished`'s doc comment (NAVI-77).
-    var onFinished: () -> Void = {}
+    @Bindable var server: ServerProfile
 
-    @State private var name = ""
+    /// "+" inserts a blank record and selects it, so the editor opens on something with no name.
+    /// Focusing the name field means the next keystroke names it, rather than leaving a row reading
+    /// "Untitled Camera" that's indistinguishable from the next one someone adds.
+    @FocusState private var isNameFocused: Bool
+
     @State private var urlString = ""
-    @State private var validationError: String?
+    @State private var urlError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(server == nil ? "Add Server" : "Edit Server")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Name")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("Observatory Pi", text: $name)
+        SettingsDetailForm(title: server.name.isEmpty ? "Untitled Server" : server.name) {
+            LabeledField("Name") {
+                TextField("Observatory Pi", text: $server.name)
+                        .focused($isNameFocused)
                     .textFieldStyle(.roundedBorder)
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("URL")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            LabeledField("URL") {
                 TextField("http://telescope.local:8000/mcp", text: $urlString)
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
             }
-
-            if let validationError {
-                Text(validationError)
+            if let urlError {
+                Text(urlError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.orange)
             }
-
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { onFinished() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+            LabeledField("Notes") {
+                TextField("Optional notes", text: Binding(nilAsEmpty: $server.notes))
+                    .textFieldStyle(.roundedBorder)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            name = server?.name ?? ""
-            urlString = server?.url.absoluteString ?? ""
+            if server.name.isEmpty { isNameFocused = true }
+            urlString = server.url.absoluteString
         }
+        .onChange(of: urlString) { commitURL() }
+        .onChange(of: changeKey) { server.modifiedAt = .now }
     }
 
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            validationError = "Name is required."
-            return
-        }
-        guard let url = URL(string: urlString), url.scheme != nil, url.host != nil else {
-            validationError = "Enter a valid URL, e.g. http://telescope.local:8000/mcp"
-            return
-        }
+    /// Name and notes only — the URL stamps `modifiedAt` itself in `commitURL()`, since it's
+    /// written to the record only once the typed text parses.
+    private var changeKey: String {
+        var parts: [String] = []
+        parts.append(server.name)
+        parts.append(server.notes ?? "")
+        return parts.joined(separator: "\u{1F}")
+    }
 
-        let saved: ServerProfile
-        if let server {
-            server.name = trimmedName
-            server.url = url
-            server.modifiedAt = .now
-            saved = server
-        } else {
-            let created = ServerProfile(name: trimmedName, url: url)
-            modelContext.insert(created)
-            saved = created
+    private func commitURL() {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme != nil, url.host != nil else {
+            urlError = "Not a valid URL yet — e.g. http://telescope.local:8000/mcp"
+            return
         }
-        try? modelContext.save()
-        onSaved(saved)
-        onFinished()
+        urlError = nil
+        guard url != server.url else { return }
+        server.url = url
+        server.modifiedAt = .now
     }
 }

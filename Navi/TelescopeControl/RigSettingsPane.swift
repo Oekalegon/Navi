@@ -28,6 +28,14 @@ struct RigSettingsPane: View {
     @State private var selection: Selection?
     @State private var rigPendingDeletion: RigProfile?
 
+    private var selectedRigID: PersistentIdentifier? {
+        if case .existing(let id) = selection { return id }
+        return nil
+    }
+    private var selectedRig: RigProfile? {
+        selectedRigID.flatMap { id in rigs.first { $0.persistentModelID == id } }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -59,7 +67,10 @@ struct RigSettingsPane: View {
             SettingsPaneHeader(
                 title: "Rigs",
                 addHelp: "Add Rig",
-                onAdd: { selection = .new }
+                onAdd: { selection = .new },
+                isRemoveDisabled: selectedRigID == nil,
+                removeHelp: "Remove the selected rig",
+                onRemove: { if let rig = selectedRig { rigPendingDeletion = rig } }
             )
             Divider()
             if rigs.isEmpty {
@@ -71,6 +82,8 @@ struct RigSettingsPane: View {
                             .tag(Selection.existing(rig.persistentModelID))
                     }
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -80,13 +93,13 @@ struct RigSettingsPane: View {
         switch selection {
         case .existing(let id):
             if let rig = rigs.first(where: { $0.persistentModelID == id }) {
-                RigEditForm(rig: rig, onFinished: { selection = nil })
+                RigEditForm(rig: rig, onSaved: { selection = .existing($0.persistentModelID) })
                     .id(id)
             } else {
                 placeholder
             }
         case .new:
-            RigEditForm(rig: nil, onFinished: { selection = nil })
+            RigEditForm(rig: nil, onSaved: { selection = .existing($0.persistentModelID) })
         case nil:
             placeholder
         }
@@ -130,12 +143,6 @@ struct RigSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(action: { rigPendingDeletion = rig }) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Delete Rig")
         }
     }
 
@@ -146,7 +153,8 @@ struct RigSettingsPane: View {
         if rig.guideOpticalAssembly != nil { parts.append("Guide OTA") }
         if rig.imagingTrain != nil { parts.append("Imaging Train") }
         if rig.guideCamera != nil { parts.append("Guide Camera") }
-        if !rig.standaloneComponents.isEmpty { parts.append("\(rig.standaloneComponents.count) other") }
+        let standaloneCount = [rig.powerHub, rig.flatScreen, rig.dewHeater, rig.observatoryControl].compactMap { $0 }.count
+        if standaloneCount > 0 { parts.append("\(standaloneCount) other") }
         return parts.isEmpty ? "No components yet" : parts.joined(separator: " · ")
     }
 
