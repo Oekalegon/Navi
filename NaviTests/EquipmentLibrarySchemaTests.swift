@@ -8,6 +8,12 @@ import Foundation
 import SwiftData
 @testable import Navi
 
+/// `.serialized` because this suite builds real `ModelContainer`s — including a file-backed one
+/// walked through the full migration plan. Swift Testing runs tests in parallel by default, and
+/// concurrent container creation against SwiftData's process-wide state made the *whole* suite
+/// intermittently crash and take unrelated tests down with it (reproduced locally: 0, 62 and 15
+/// failures across three consecutive runs of an otherwise unchanged tree).
+@Suite(.serialized)
 struct EquipmentLibrarySchemaTests {
 
     private func makeInMemoryContainer() throws -> ModelContainer {

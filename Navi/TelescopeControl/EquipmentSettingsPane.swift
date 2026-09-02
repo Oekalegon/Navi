@@ -280,12 +280,17 @@ struct EquipmentSettingsPane: View {
     private func instanceRow(for instance: Instance) -> some View {
         HStack {
             Text(instance.name)
-                // Indented past the chevron column to sit under its kind's title.
-                .padding(.leading, 20)
+                .padding(.leading, Self.instanceIndent)
             Spacer()
         }
         .tag(Selection.existing(instance.id))
     }
+
+    /// Lines a record's name up with its kind's *title* rather than its icon: the chevron column
+    /// (12) plus the row's spacing (4) plus the `Label`'s icon and its own internal spacing (~24).
+    /// Sitting under the icon — which a smaller inset gives — leaves the two levels looking almost
+    /// flush and the hierarchy hard to read.
+    private static let instanceIndent: CGFloat = 40
 
     @ViewBuilder
     private var detail: some View {
