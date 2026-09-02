@@ -422,9 +422,9 @@ struct RigEditForm: View {
     private func flush() {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         // Components are computed *before* the decision but used only by the push. `buildComponents`
-        // returning nil is not a reason to skip the local write — see `rigFlushOutcome`.
+        // returning nil is not a reason to skip the local write — see `recordFlushOutcome`.
         let components = buildComponents()
-        switch rigFlushOutcome(
+        switch recordFlushOutcome(
             isDirty: isDirty,
             trimmedName: trimmedName,
             isConnected: isConnected,

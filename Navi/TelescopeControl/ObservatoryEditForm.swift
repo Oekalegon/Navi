@@ -125,9 +125,53 @@ struct ObservatoryEditForm: View {
         }
     }
 
+    /// Local write first, push second — the same ordering `RigEditForm` uses, and for the same
+    /// reason: previously the local cache was only updated *after* a successful `saveObservatory`,
+    /// so a push that failed (connection dropped as the window closed, server rejected it) lost the
+    /// user's edit outright. Writing locally first means the worst case is a local record that's
+    /// ahead of the server, which is recoverable, rather than an edit that's simply gone.
+    ///
+    /// `isDirty` is false until a baseline exists, and a baseline only exists after a successful
+    /// `getObservatory` (or for a brand-new record) — which doubles as the guard against pushing a
+    /// summary-only cache entry. `listObservatories` seeds the cache with id and name only, leaving
+    /// coordinates at 0, so pushing an unhydrated record would replace the observatory's real
+    /// location with 0/0/0.
     private func flush() {
-        guard isDirty, isConnected, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        Task { await save() }
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        switch recordFlushOutcome(isDirty: isDirty, trimmedName: trimmedName, isConnected: isConnected) {
+        case .skip:
+            return
+        case .persistOnly:
+            persistLocally(id: observatoryID ?? IDSlug.make(from: trimmedName), name: trimmedName)
+        case .persistAndPush:
+            persistLocally(id: observatoryID ?? IDSlug.make(from: trimmedName), name: trimmedName)
+            Task { await save() }
+        }
+    }
+
+    /// Writes the edited values straight into the local `ObservatoryProfile`, creating it if this is
+    /// a new observatory. Mirrors `upsertLocalCache(with:)` but sourced from the form rather than
+    /// from a server response, so it doesn't need the push to have happened.
+    private func persistLocally(id: String, name: String) {
+        let descriptor = FetchDescriptor<ObservatoryProfile>(
+            predicate: #Predicate { $0.serverObservatoryID == id }
+        )
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.name = name
+            existing.latitudeDeg = latitudeDeg
+            existing.longitudeDeg = longitudeDeg
+            existing.elevationMeters = elevationMeters
+            existing.cachedAt = .now
+        } else {
+            modelContext.insert(ObservatoryProfile(
+                serverObservatoryID: id,
+                name: name,
+                latitudeDeg: latitudeDeg,
+                longitudeDeg: longitudeDeg,
+                elevationMeters: elevationMeters
+            ))
+        }
+        try? modelContext.save()
     }
 
     private func load() async {
