@@ -497,17 +497,35 @@ struct RigEditForm: View {
 
     private func push(components: [Component], profile: RigProfile) async {
         errorMessage = nil
+        let payload = Rig(id: profile.serverRigID, name: profile.name, components: components)
+        let digest = PayloadDigest.of(payload)
+
+        // Nothing to send: the server already has exactly this.
+        if let digest, digest == profile.lastPushedDigest { return }
+
+        // Drift check. Only meaningful once this rig has been pushed before — without a stored
+        // digest there's nothing to compare against, and a first push is legitimately creating it.
+        if let lastPushed = profile.lastPushedDigest {
+            if let serverCopy = try? await telescope.getRig(id: profile.serverRigID),
+               let serverDigest = PayloadDigest.of(serverCopy),
+               serverDigest != lastPushed {
+                telescope.errorMessage = """
+                    \(profile.name) changed on the server since Navi last pushed it — \
+                    your local edits were kept but not sent, so the server copy is untouched.
+                    """
+                return
+            }
+        }
+
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await telescope.saveRig(
-                Rig(id: profile.serverRigID, name: profile.name, components: components),
-                overwrite: true
-            )
+            let saved = try await telescope.saveRig(payload, overwrite: true)
             // Only now is the server in step with the local record, which is what
             // `hasStaleLibraryReferences` compares against — so a rig edited offline correctly
             // shows as stale until the push actually lands.
             profile.lastResyncedAt = .now
+            profile.lastPushedDigest = PayloadDigest.of(saved) ?? digest
             try? modelContext.save()
         } catch {
             // Same reasoning as `buildComponents`: this runs after teardown, so the toolbar's

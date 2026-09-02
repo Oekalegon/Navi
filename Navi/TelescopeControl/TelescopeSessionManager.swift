@@ -380,6 +380,14 @@ final class TelescopeSessionManager {
         return try await client.saveObservatory(observatory, overwrite: overwrite)
     }
 
+    /// The full definition of one rig as the server currently holds it. Used for NAVI-86's drift
+    /// check — comparing the server's copy against the digest Navi stored at its last push, so an
+    /// edit made by another client (or directly on the Pi) isn't silently overwritten.
+    func getRig(id: String) async throws -> Rig {
+        guard let client else { throw TelescopeSessionError.notConnected }
+        return try await client.getRig(id: id)
+    }
+
     /// Saves a rig definition (§4.2's Rig pane, built by `RigProfile.makeComponents()`).
     /// `overwrite` matches `INDIMCPClient.saveRig` — required to replace an existing one, so a
     /// reused id can't silently destroy a prior save.

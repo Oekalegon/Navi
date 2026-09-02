@@ -33,6 +33,11 @@ struct ObservatoryEditForm: View {
     @State private var latitudeDeg: Double = 0
     @State private var longitudeDeg: Double = 0
     @State private var elevationMeters: Double = 0
+    /// Carried through untouched from `load()` to `save()`. Navi has no editor for it yet (§4.2
+    /// wants `.hzn` import), but `saveObservatory` replaces the whole record — so constructing the
+    /// payload without it, as this form did, silently wiped any horizon obstruction data the server
+    /// held for the observatory on every single save.
+    @State private var horizonProfile: [HorizonPoint]?
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -190,6 +195,7 @@ struct ObservatoryEditForm: View {
             latitudeDeg = observatory.latitudeDeg
             longitudeDeg = observatory.longitudeDeg
             elevationMeters = observatory.elevationMeters
+            horizonProfile = observatory.horizonProfile
             loadedSnapshot = currentSnapshot
         } catch {
             errorMessage = TelescopeSessionManager.describe(error)
@@ -208,11 +214,39 @@ struct ObservatoryEditForm: View {
             name: trimmedName,
             latitudeDeg: latitudeDeg,
             longitudeDeg: longitudeDeg,
-            elevationMeters: elevationMeters
+            elevationMeters: elevationMeters,
+            horizonProfile: horizonProfile
         )
+
+        let digest = PayloadDigest.of(observatory)
+        let profile = localProfile(id: id)
+
+        // Nothing to send: the server already has exactly this.
+        if let digest, digest == profile?.lastPushedDigest { return }
+
+        // Drift check. Only meaningful once we've pushed this record before — without a stored
+        // digest there's nothing to compare the server's copy against, and a first push is
+        // legitimately creating or adopting the record.
+        if observatoryID != nil, let lastPushed = profile?.lastPushedDigest {
+            if let serverCopy = try? await telescope.getObservatory(id: id),
+               let serverDigest = PayloadDigest.of(serverCopy),
+               serverDigest != lastPushed {
+                telescope.errorMessage = """
+                    \(trimmedName) changed on the server since Navi last pushed it — \
+                    your local edits were kept but not sent, so the server copy is untouched.
+                    """
+                return
+            }
+        }
+
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
             upsertLocalCache(with: saved)
+            if let profile = localProfile(id: saved.id) {
+                profile.lastPushedDigest = PayloadDigest.of(saved) ?? digest
+                profile.detailsFetchedAt = .now
+                try? modelContext.save()
+            }
             loadedSnapshot = currentSnapshot
         } catch {
             // `flush()` calls this during teardown, so `errorMessage` — this view's own @State —
@@ -223,6 +257,13 @@ struct ObservatoryEditForm: View {
             errorMessage = described
             telescope.errorMessage = "\(trimmedName): \(described)"
         }
+    }
+
+    private func localProfile(id: String) -> ObservatoryProfile? {
+        let descriptor = FetchDescriptor<ObservatoryProfile>(
+            predicate: #Predicate { $0.serverObservatoryID == id }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 
     private func upsertLocalCache(with observatory: Observatory) {
