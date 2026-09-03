@@ -371,10 +371,10 @@ struct RigEditForm: View {
             if let serverCopy = try? await telescope.getRig(id: profile.serverRigID),
                let serverDigest = PayloadDigest.of(serverCopy),
                serverDigest != lastPushed {
-                telescope.errorMessage = """
-                    \(profile.name) changed on the server since Navi last pushed it — \
-                    your local edits were kept but not sent, so the server copy is untouched.
-                    """
+                telescope.pendingConflict = PendingConflict.forRig(
+                    profile: profile, payload: payload, digest: digest,
+                    telescope: telescope, modelContext: modelContext
+                )
                 return
             }
         }

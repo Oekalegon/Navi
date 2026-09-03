@@ -259,17 +259,23 @@ struct ObservatoryEditForm: View {
         // Drift check. Only meaningful once we've pushed this record before — without a stored
         // digest there's nothing to compare the server's copy against, and a first push is
         // legitimately creating or adopting the record.
-        if let lastPushed = profile?.lastPushedDigest,
+        let digest = PayloadDigest.ofObservatoryFields(
+            id: id, name: trimmedName, latitudeDeg: latitudeDeg,
+            longitudeDeg: longitudeDeg, elevationMeters: elevationMeters
+        )
+
+        if let profile, let lastPushed = profile.lastPushedDigest,
            let serverCopy,
            let serverDigest = PayloadDigest.ofObservatoryFields(
                id: serverCopy.id, name: serverCopy.name, latitudeDeg: serverCopy.latitudeDeg,
                longitudeDeg: serverCopy.longitudeDeg, elevationMeters: serverCopy.elevationMeters
            ),
            serverDigest != lastPushed {
-            telescope.errorMessage = """
-                \(trimmedName) changed on the server since Navi last pushed it — \
-                your local edits were kept but not sent, so the server copy is untouched.
-                """
+            telescope.pendingConflict = PendingConflict.forObservatory(
+                profile: profile, latitudeDeg: latitudeDeg, longitudeDeg: longitudeDeg,
+                elevationMeters: elevationMeters, horizonProfile: horizonProfile ?? serverCopy.horizonProfile,
+                digest: digest, telescope: telescope, modelContext: modelContext
+            )
             return
         }
 
@@ -282,10 +288,6 @@ struct ObservatoryEditForm: View {
             // Prefer what this form loaded; fall back to the server's, so a record edited offline
             // doesn't lose its horizon data on the eventual push.
             horizonProfile: horizonProfile ?? serverCopy?.horizonProfile
-        )
-        let digest = PayloadDigest.ofObservatoryFields(
-            id: id, name: trimmedName, latitudeDeg: latitudeDeg,
-            longitudeDeg: longitudeDeg, elevationMeters: elevationMeters
         )
 
         // Nothing to send: the server already has exactly this.

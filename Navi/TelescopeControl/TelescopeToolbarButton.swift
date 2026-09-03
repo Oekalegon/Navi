@@ -38,6 +38,7 @@ struct TelescopeToolbarButton: View {
 
             connectButton
             TelescopeErrorIndicator()
+            TelescopeConflictIndicator()
         }
         .sheet(isPresented: $showingSelection) {
             TelescopeSelectionSheet()

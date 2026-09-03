@@ -48,6 +48,13 @@ final class TelescopeSessionManager {
     /// or `.alert()` sheets.
     var errorMessage: String?
 
+    /// A Rig or Observatory that changed on the server since Navi last pushed it (NAVI-86's drift
+    /// detection). Follows the same convention as `errorMessage` — a single, always-reachable slot
+    /// rather than a stack, since only one push runs at a time and a second conflict overwriting
+    /// this one simply means the user gets to the newer conflict first, which is the more useful
+    /// order regardless of which pane or background sync produced it.
+    var pendingConflict: PendingConflict?
+
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
 

@@ -48,13 +48,16 @@ enum PendingPushSync {
             let payload = Rig(id: rig.serverRigID, name: rig.name, components: components)
             guard let digest = PayloadDigest.of(payload), digest != rig.lastPushedDigest else { continue }
 
-            if await serverChangedUnderneath(
-                telescope: telescope,
-                lastPushed: rig.lastPushedDigest,
-                fetch: { try await telescope.getRig(id: rig.serverRigID) },
-                digest: { PayloadDigest.of($0) },
-                name: rig.name
-            ) { continue }
+            if let lastPushed = rig.lastPushedDigest,
+               let serverCopy = try? await telescope.getRig(id: rig.serverRigID),
+               let serverDigest = PayloadDigest.of(serverCopy),
+               serverDigest != lastPushed {
+                telescope.pendingConflict = PendingConflict.forRig(
+                    profile: rig, payload: payload, digest: digest,
+                    telescope: telescope, modelContext: modelContext
+                )
+                continue
+            }
 
             do {
                 let saved = try await telescope.saveRig(payload, overwrite: true)
@@ -94,10 +97,12 @@ enum PendingPushSync {
                    longitudeDeg: serverCopy.longitudeDeg, elevationMeters: serverCopy.elevationMeters
                ),
                serverDigest != lastPushed {
-                telescope.errorMessage = """
-                    \(observatory.name) changed on the server since Navi last pushed it — \
-                    your local edits were kept but not sent, so the server copy is untouched.
-                    """
+                telescope.pendingConflict = PendingConflict.forObservatory(
+                    profile: observatory, latitudeDeg: observatory.latitudeDeg,
+                    longitudeDeg: observatory.longitudeDeg, elevationMeters: observatory.elevationMeters,
+                    horizonProfile: serverCopy.horizonProfile, digest: digest,
+                    telescope: telescope, modelContext: modelContext
+                )
                 continue
             }
 
@@ -123,27 +128,4 @@ enum PendingPushSync {
         }
     }
 
-    /// Shared drift check. Returns `true` when the server's copy differs from what Navi last
-    /// pushed, meaning the caller should leave it alone.
-    @MainActor
-    private static func serverChangedUnderneath<Payload>(
-        telescope: TelescopeSessionManager,
-        lastPushed: String?,
-        fetch: () async throws -> Payload,
-        digest: (Payload) -> String?,
-        name: String
-    ) async -> Bool {
-        guard let lastPushed else { return false }
-        guard let serverCopy = try? await fetch(), let serverDigest = digest(serverCopy) else {
-            // Couldn't read the server's copy — say nothing rather than guessing. The push that
-            // follows will fail on its own if the connection is genuinely gone.
-            return false
-        }
-        guard serverDigest != lastPushed else { return false }
-        telescope.errorMessage = """
-            \(name) changed on the server since Navi last pushed it — \
-            your local edits were kept but not sent, so the server copy is untouched.
-            """
-        return true
-    }
 }
