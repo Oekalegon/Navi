@@ -34,7 +34,14 @@ struct SettingsPaneHeader<TrailingContent: View>: View {
             trailingContent()
             if let onAdd {
                 Button(action: onAdd) {
+                    // `.frame` + `.contentShape` on the glyph, not just the Button: with
+                    // `.buttonStyle(.plain)` the tappable region is the label's own bounds, and an
+                    // `Image(systemName:)` at this size renders only a few points of actual glyph —
+                    // without this, hitting the button meant clicking the ink itself, not just
+                    // somewhere near it.
                     Image(systemName: "plus")
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isAddDisabled)
@@ -43,6 +50,8 @@ struct SettingsPaneHeader<TrailingContent: View>: View {
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "minus")
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isRemoveDisabled)
