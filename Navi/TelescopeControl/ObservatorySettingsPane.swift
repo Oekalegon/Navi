@@ -43,7 +43,7 @@ struct ObservatorySettingsPane: View {
                 .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
             Divider()
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         // Keyed on `telescope.state`, not a plain `.task { }` — this pane's `.id(Tab.observatories)`
         // keeps it alive across tab switches, so a one-shot `.task` would only ever refresh once and
