@@ -71,6 +71,7 @@ struct EquipmentLibrarySchemaTests {
     // If a future version needs to support a store that's skipped two or more schema versions
     // since it was last opened, re-verify this limitation before shipping — it may need an
     // intermediate release that opens (and thereby upgrades) the store one stage at a time.
+    // Tracked as NAVI-88.
     @Test func aStoreStampedAtV5MigratesForwardToTheCurrentSchema() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("EquipmentLibraryMigration-\(UUID().uuidString)")

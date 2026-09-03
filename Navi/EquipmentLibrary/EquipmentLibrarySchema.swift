@@ -1005,7 +1005,9 @@ enum EquipmentLibrarySchemaV5: VersionedSchema {
 /// "Duplicate version checksums detected" (an uncatchable `NSException`, not a thrown `Error`) —
 /// two schemas claiming the identical version number with different checksums, reproduced and
 /// confirmed by bumping just the minor number, which made the crash disappear with no other
-/// change. Whichever of the two branches merges second must renumber to avoid this permanently.
+/// change. Whichever of the two branches merges second must renumber to avoid this permanently —
+/// tracked as NAVI-89. Separately, staged migrations spanning 2+ lightweight stages to reach this
+/// version have their own, unrelated crash — tracked as NAVI-88.
 enum EquipmentLibrarySchemaV6: VersionedSchema {
     static let versionIdentifier = Schema.Version(6, 1, 0)
 

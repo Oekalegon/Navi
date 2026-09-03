@@ -44,22 +44,35 @@ final class ServerDiscoveryModel {
     /// Host comparison is case-insensitive: `DiscoveredServer.host` is always a resolved literal
     /// address, but `ServerProfile.url.host` may have been typed by hand (e.g. a `.local`
     /// hostname), so this only reliably matches servers whose `url` was itself filled in from a
-    /// discovery (``add(_:)`` does this) rather than typed manually.
+    /// discovery — `ServerSettingsPane.addDiscovered(_:)` and `TelescopeToolbarButton.
+    /// connectToDiscovered(_:)` both do this — rather than typed manually.
     func isDiscovered(_ server: ServerProfile) -> Bool {
-        discoveredServers.contains { isMatch(server, $0) }
+        Self.isDiscovered(server, among: discoveredServers)
     }
 
     /// Discovered servers with no matching configured `ServerProfile` — the "Discovered" section
     /// shown below configured servers in both `ServerSettingsPane` and the toolbar's server menu.
     func unconfiguredServers(among servers: [ServerProfile]) -> [DiscoveredServer] {
-        discoveredServers.filter { discovered in
-            !servers.contains { isMatch($0, discovered) }
+        Self.unconfiguredServers(among: servers, discovered: discoveredServers)
+    }
+
+    // The `static` variants below take `discovered`/`servers` explicitly rather than reading
+    // `self.discoveredServers` — pure functions, directly unit-testable without a real `NWBrowser`
+    // (which the instance methods above would otherwise require standing up).
+
+    nonisolated static func isDiscovered(_ server: ServerProfile, among discovered: [DiscoveredServer]) -> Bool {
+        discovered.contains { isMatch(server, $0) }
+    }
+
+    nonisolated static func unconfiguredServers(among servers: [ServerProfile], discovered: [DiscoveredServer]) -> [DiscoveredServer] {
+        discovered.filter { entry in
+            !servers.contains { isMatch($0, entry) }
         }
     }
 
     /// `false` whenever `server.url` has no explicit port — a discovered server's port is always
     /// the real listening port, so there's no sensible implicit default to compare it against.
-    private func isMatch(_ server: ServerProfile, _ discovered: DiscoveredServer) -> Bool {
+    nonisolated static func isMatch(_ server: ServerProfile, _ discovered: DiscoveredServer) -> Bool {
         guard let port = server.url.port else { return false }
         return server.url.host?.lowercased() == discovered.host.lowercased() && port == discovered.port
     }
