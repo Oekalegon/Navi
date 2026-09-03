@@ -20,9 +20,14 @@ struct TelescopeErrorIndicator: View {
     var body: some View {
         if let message = telescope.errorMessage {
             Button(action: { showingPopover = true }) {
+                // See `SettingsPaneHeader`'s "+"/"−" for why: `.buttonStyle(.plain)` hit-tests the
+                // label's own bounds, and a bare glyph's bounds are a few points of ink, not a
+                // comfortable click target — easy to miss in a toolbar with everything else around.
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .controlSize(.small)

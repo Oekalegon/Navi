@@ -18,9 +18,12 @@ struct TelescopeConflictIndicator: View {
     var body: some View {
         if let conflict = telescope.pendingConflict {
             Button(action: { showingPopover = true }) {
+                // See `TelescopeErrorIndicator`/`SettingsPaneHeader`'s "+"/"−" for why.
                 Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .controlSize(.small)
