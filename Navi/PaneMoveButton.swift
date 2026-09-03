@@ -26,6 +26,8 @@ struct PaneMoveButton: View {
             } label: {
                 Image(systemName: "inset.filled.toptrailing.rectangle")
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.button)
             .buttonStyle(.plain)

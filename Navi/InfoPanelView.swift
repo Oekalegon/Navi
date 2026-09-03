@@ -562,6 +562,8 @@ private struct VersionRow: View {
                     Image(systemName: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showDiff, arrowEdge: .trailing) {
@@ -601,6 +603,8 @@ private struct VersionLinkRow: View {
                     Image(systemName: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showDiff, arrowEdge: .trailing) {
