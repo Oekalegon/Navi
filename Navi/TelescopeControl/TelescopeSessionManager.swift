@@ -7,6 +7,7 @@
 
 import Foundation
 import INDIMCPKit
+import SwiftData
 
 /// Disambiguating alias for call sites (e.g. `ObservatoryDashboardView`) that need both this
 /// package's `Observatory` and AstroKit's — each package also shadows its own module name with
@@ -130,6 +131,7 @@ final class TelescopeSessionManager {
             nextSessionID += 1
             connectionSessionID = nextSessionID
             state = .connected
+            Self.recordConnection(to: server)
             startLiveness(client: client)
             await resumeActiveCaptureIfNeeded(rig: rig, client: client)
             Task { await CaptureImportManager.shared.reconcile(rig: rig, client: client) }
@@ -169,6 +171,7 @@ final class TelescopeSessionManager {
             nextSessionID += 1
             connectionSessionID = nextSessionID
             state = .connected
+            Self.recordConnection(to: server)
             startLiveness(client: client)
         } catch {
             await client.disconnect()
@@ -176,6 +179,16 @@ final class TelescopeSessionManager {
             errorMessage = Self.describe(error)
             state = .disconnected
         }
+    }
+
+    /// NAVI-68: stamps `server.lastConnectedAt` the moment a connect actually succeeds — the one
+    /// choke point both `connect(server:rigID:)` and `connect(server:)` funnel through, so every
+    /// entry point (the toolbar, Settings' bare Connect, `ArmedRigConnector`/`BareServerConnector`)
+    /// updates it the same way. `server` is a live SwiftData model, so this mutates it in place and
+    /// saves via its own `modelContext` rather than needing one threaded through here.
+    private static func recordConnection(to server: ServerProfile) {
+        server.lastConnectedAt = .now
+        try? server.modelContext?.save()
     }
 
     /// The deliberate, symmetric "shut it down" action (§4.4): stops every device this session

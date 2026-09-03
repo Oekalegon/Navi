@@ -51,45 +51,53 @@ struct EquipmentLibrarySchemaTests {
         _ = ModelContext(container)
     }
 
-    // Walks a real, file-backed store stamped at an *older* version forward through every
-    // migration stage — the gap that let a "Duplicate version checksums"/"unknown model version"
-    // crash reach a running binary during NAVI-85 rather than being caught here.
+    // Walks a real, file-backed store stamped at an *older* version forward through the migration
+    // plan — the gap that let a "Duplicate version checksums"/"unknown model version" crash reach
+    // a running binary during NAVI-85 rather than being caught here.
     // `migrationPlanBuildsWithoutDuplicateVersionChecksums` above only validates that the plan's
     // *declarations* are self-consistent; it builds against a URL that never existed, so it never
     // exercises the staged-migration path that actually broke.
     //
-    // This also guards the freezing convention itself: constructing the fixture through
-    // `EquipmentLibrarySchemaV3`'s own nested snapshot only compiles while V3 still describes the
-    // shape V3 shipped with (`preferredDriverLabel` included, removed from the live types in V5).
-    // If someone later repoints a frozen version at a live type, this stops compiling.
-    @Test func aStoreStampedAtV3MigratesForwardToTheCurrentSchema() throws {
+    // NAVI-68 + NAVI-86: this fixture starts at V5 and reopens under the real, full plan — V6 now
+    // combines both branches' additions (ServerProfile.lastConnectedAt, RigProfile/
+    // ObservatoryProfile.lastPushedDigest, ObservatoryProfile.detailsFetchedAt) into one version
+    // rather than two consecutive ones, specifically because reopening a real store crashes
+    // CoreData outright with "Duplicate version checksums across stages detected" once the plan
+    // accumulates too many total registered `VersionedSchema` versions — reproduced directly with
+    // a seven-version plan (this repo briefly had one, mid-merge) failing even a single-stage
+    // migration that an otherwise-identical six-version plan handles fine. Not a hop-distance
+    // issue by itself — see `EquipmentLibrarySchemaV6`'s own doc comment for the full reasoning,
+    // and NAVI-88 for the separate, still-unresolved multi-hop-migration crash this is distinct
+    // from. If a future version needs to support a store that's fallen multiple versions behind,
+    // re-verify both limitations before shipping.
+    @Test func aStoreStampedAtV5MigratesForwardToTheCurrentSchema() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("EquipmentLibraryMigration-\(UUID().uuidString)")
             .appendingPathExtension("store")
         defer { try? FileManager.default.removeItem(at: storeURL) }
 
-        // Write rows under V3's schema, then close it.
+        // Write rows under V5's schema, then close it.
         do {
-            let v3 = Schema(versionedSchema: EquipmentLibrarySchemaV3.self)
+            let v5 = Schema(versionedSchema: EquipmentLibrarySchemaV5.self)
             let container = try ModelContainer(
-                for: v3,
-                configurations: [ModelConfiguration(schema: v3, url: storeURL)]
+                for: v5,
+                configurations: [ModelConfiguration(schema: v5, url: storeURL)]
             )
             let context = ModelContext(container)
-            let mount = EquipmentLibrarySchemaV3.MountProfile(
-                name: "EQ6-R",
-                deviceName: "EQMod Mount",
-                preferredDriverLabel: "EQMod Mount"
-            )
-            context.insert(EquipmentLibrarySchemaV3.RigProfile(
-                serverRigID: "rig-v3",
-                name: "V3 Rig",
+            let mount = MountProfile(name: "EQ6-R", deviceName: "EQMod Mount")
+            context.insert(RigProfile(
+                serverRigID: "rig-v5",
+                name: "V5 Rig",
                 mount: mount
+            ))
+            context.insert(ObservatoryProfile(
+                serverObservatoryID: "obs-v5", name: "V5 Observatory",
+                latitudeDeg: 52.1, longitudeDeg: 4.3, elevationMeters: 12
             ))
             try context.save()
         }
 
-        // Reopen the same file under the full plan — V3 -> V4 -> V5.
+        // Reopen the same file under the full plan — V5 -> V6.
         let current = Schema(EquipmentLibrarySchema.models)
         let migrated = try ModelContainer(
             for: current,
@@ -101,54 +109,16 @@ struct EquipmentLibrarySchemaTests {
         let rigs = try context.fetch(FetchDescriptor<RigProfile>())
         #expect(rigs.count == 1)
         let rig = try #require(rigs.first)
-        #expect(rig.serverRigID == "rig-v3")
-        // Fields that outlive the migration must survive it; only preferredDriverLabel is dropped.
+        #expect(rig.serverRigID == "rig-v5")
+        // Fields that outlive the migration must survive it.
         #expect(rig.mount?.name == "EQ6-R")
         #expect(rig.mount?.deviceName == "EQMod Mount")
-    }
-
-    /// The V5 -> V6 hop specifically, on top of the existing V3 walk: V6 freezes RigProfile and
-    /// ObservatoryProfile in V5 and adds `lastPushedDigest` (plus `detailsFetchedAt`), and a store
-    /// stamped at V5 has to carry its rows across that.
-    @Test func aStoreStampedAtV5MigratesForwardToTheCurrentSchema() throws {
-        let storeURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("EquipmentLibraryV5Migration-\(UUID().uuidString)")
-            .appendingPathExtension("store")
-        defer { try? FileManager.default.removeItem(at: storeURL) }
-
-        do {
-            let v5 = Schema(versionedSchema: EquipmentLibrarySchemaV5.self)
-            let container = try ModelContainer(
-                for: v5,
-                configurations: [ModelConfiguration(schema: v5, url: storeURL)]
-            )
-            let context = ModelContext(container)
-            context.insert(EquipmentLibrarySchemaV5.RigProfile(serverRigID: "rig-v5", name: "V5 Rig"))
-            context.insert(EquipmentLibrarySchemaV5.ObservatoryProfile(
-                serverObservatoryID: "obs-v5", name: "V5 Observatory",
-                latitudeDeg: 52.1, longitudeDeg: 4.3, elevationMeters: 12
-            ))
-            try context.save()
-        }
-
-        let current = Schema(EquipmentLibrarySchema.models)
-        let migrated = try ModelContainer(
-            for: current,
-            migrationPlan: EquipmentLibraryMigrationPlan.self,
-            configurations: [ModelConfiguration(schema: current, url: storeURL)]
-        )
-        let context = ModelContext(migrated)
-
-        let rig = try #require(try context.fetch(FetchDescriptor<RigProfile>()).first)
-        #expect(rig.serverRigID == "rig-v5")
         // Both new fields are additions, so an existing row arrives with them unset — which reads
-        // as "never pushed from this install" and "coordinates never fetched", the conservative
-        // interpretation in both cases.
+        // as "never connected"/"never pushed from this install", the conservative interpretation.
         #expect(rig.lastPushedDigest == nil)
 
         let observatory = try #require(try context.fetch(FetchDescriptor<ObservatoryProfile>()).first)
         #expect(observatory.name == "V5 Observatory")
-        // Values that predate the migration must survive it.
         #expect(observatory.latitudeDeg == 52.1)
         #expect(observatory.elevationMeters == 12)
         #expect(observatory.lastPushedDigest == nil)

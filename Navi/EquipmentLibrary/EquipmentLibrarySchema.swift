@@ -59,6 +59,29 @@ enum EquipmentLibrarySchemaV1: VersionedSchema {
         ]
     }
 
+    /// Frozen ahead of NAVI-68's `lastConnectedAt` addition — `ServerProfile` had stayed live
+    /// (unchanged) through V2/V3/V4/V5, so each needed its own frozen copy in the same commit
+    /// (V2 cross-references this one directly, matching its existing `RigProfile` precedent; V3/
+    /// V4/V5 each declare an independent, identically-shaped nested copy instead, matching how
+    /// e.g. `MountProfile` is redeclared per version even when unchanged — a version's checksum is
+    /// computed from whatever a *live* type currently looks like, so a live reference can't be left
+    /// as-is once the type it points at is about to change shape; see `EquipmentLibrarySchemaV3`'s
+    /// doc comment for the general rule).
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
     @Model
     final class MountProfile {
         var name: String
@@ -266,7 +289,7 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
             EquipmentLibrarySchemaV1.OpticalAssemblyProfile.self,
             EquipmentLibrarySchemaV1.ImagingTrainProfile.self,
             EquipmentLibrarySchemaV1.GuideCameraProfile.self,
-            ServerProfile.self,
+            EquipmentLibrarySchemaV1.ServerProfile.self,
             EquipmentLibrarySchemaV1.RigProfile.self,
             ObservatoryProfile.self,
         ]
@@ -295,8 +318,9 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
 /// like *right now*, so a version pointing at a live type silently rewrites its own history the
 /// next time that type changes. All eight models below are frozen: V4 changes `ImagingTrainProfile`
 /// (flat fields to a composition) and therefore `RigProfile`'s `imagingTrain` relationship target,
-/// and V5 removes `preferredDriverLabel` from the rest. `ServerProfile`/`ObservatoryProfile` stay
-/// live because neither has changed since V3.
+/// and V5 removes `preferredDriverLabel` from the rest. `ObservatoryProfile` stays live because it
+/// hasn't changed since V3; `ServerProfile` gets its own independent frozen copy here too, ahead
+/// of NAVI-68's `lastConnectedAt` addition (V6).
 enum EquipmentLibrarySchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(3, 0, 0)
 
@@ -311,6 +335,21 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
             ObservatoryProfile.self,
             StandaloneEquipmentProfile.self,
         ]
+    }
+
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
     }
 
     @Model
@@ -558,7 +597,8 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
 /// Every model is frozen here (see `EquipmentLibrarySchemaV3`'s doc comment for the naming
 /// convention and the rule about *when* to freeze): V5 removes `preferredDriverLabel` from all of
 /// them, and the three new types plus `ImagingTrainProfile`/`RigProfile` are only this shape as of
-/// V4. `ServerProfile`/`ObservatoryProfile` stay live — neither has changed since V2.
+/// V4. `ObservatoryProfile` stays live — it hasn't changed since V2; `ServerProfile` gets its own
+/// independent frozen copy here too (NAVI-68), not live.
 enum EquipmentLibrarySchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
 
@@ -576,6 +616,21 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
             FilterWheelProfile.self,
             RotatorProfile.self,
         ]
+    }
+
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
     }
 
     @Model
@@ -893,11 +948,29 @@ enum EquipmentLibrarySchemaV5: VersionedSchema {
         ]
     }
 
-    /// `RigProfile` and `ObservatoryProfile` are frozen here (NAVI-86): V6 gives both a
-    /// `lastPushedDigest`, and `ObservatoryProfile` a `detailsFetchedAt`. The other nine models
-    /// don't change in V6, so V5 keeps referencing them live — the same reasoning `V3` uses for its
-    /// own unchanged models. Snapshots keep the live class's exact name (see
-    /// `EquipmentLibrarySchemaV3`'s doc comment for why that matters).
+    /// `ServerProfile`, `RigProfile`, and `ObservatoryProfile` are all frozen here, ahead of V6's
+    /// combined `lastConnectedAt`/`lastPushedDigest`/`detailsFetchedAt` additions (NAVI-68 +
+    /// NAVI-86, merged together into one version rather than two consecutive ones — see V6's own
+    /// doc comment for why). `ServerProfile`'s own shape is changing, so it's frozen directly (see
+    /// `EquipmentLibrarySchemaV3`'s doc comment for the general rule); `RigProfile` has to be
+    /// frozen too even though *its* shape doesn't change here, because it holds a relationship to
+    /// `ServerProfile` (`defaultServer`) that would otherwise resolve to the live (about to change)
+    /// type. `ObservatoryProfile`'s own shape is also changing (gains both new fields), so it's
+    /// frozen directly for the same reason as `ServerProfile`.
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
 
     @Model
     final class RigProfile {
@@ -966,18 +1039,37 @@ enum EquipmentLibrarySchemaV5: VersionedSchema {
     }
 }
 
-/// Version 6 (NAVI-86) — the source-of-truth inversion. Both records Navi pushes to the server gain
-/// `lastPushedDigest`: a fingerprint of the payload as it was last accepted. One field serves two
-/// jobs — "does this need pushing" is *current digest != lastPushedDigest*, and "did someone else
-/// change it underneath us" is *the server's current digest != lastPushedDigest* — which is why
-/// this isn't a plain `needsPush` flag.
+/// Version 6 (NAVI-68 + NAVI-86, merged together) — `ServerProfile` gains `lastConnectedAt`
+/// (NAVI-68); `RigProfile`/`ObservatoryProfile` gain `lastPushedDigest`, and `ObservatoryProfile`
+/// also gains `detailsFetchedAt` (NAVI-86's source-of-truth inversion — one field serves two jobs:
+/// "does this need pushing" is *current digest != lastPushedDigest*, and "did someone else change
+/// it underneath us" is *the server's current digest != lastPushedDigest*, which is why this isn't
+/// a plain `needsPush` flag; `detailsFetchedAt` marks whether a cache entry holds real coordinates
+/// — `listObservatories` returns summaries only, so a record seeded from it has latitude/longitude/
+/// elevation left at 0, and without this there'd be no way to tell that apart from a genuinely-
+/// zeroed observatory, which would let an offline edit silently push 0/0/0 over the real location).
 ///
-/// `ObservatoryProfile.detailsFetchedAt` marks whether a cache entry holds real coordinates.
-/// `listObservatories` returns summaries, so a record seeded from it has id and name only with
-/// latitude/longitude/elevation left at 0; without a way to tell that apart from a genuinely-zeroed
-/// observatory, editing one offline and pushing it would replace the real location with 0/0/0.
+/// These three unrelated changes are combined into *one* version rather than two consecutive ones
+/// (NAVI-68's, then NAVI-86's) because reopening a real, existing store crashes CoreData outright
+/// with "Duplicate version checksums across stages detected" (an uncatchable `NSException`, not a
+/// thrown `Error`) once the migration plan accumulates too many total registered `VersionedSchema`
+/// versions — reproduced directly: a plan scoped to just two adjacent versions reopens the exact
+/// same store fine, while the real, full plan (which at the time had grown to seven versions)
+/// crashes on that identical store. Not a hop-distance issue (a single-stage migration crashes
+/// exactly the same as a multi-stage one once the plan is long enough) — a genuine SwiftData/
+/// CoreData scaling limit on this SDK (confirmed macOS 26.2), independent of and in addition to
+/// the *separate* multi-hop-migration crash tracked as NAVI-88. Collapsing two versions back into
+/// one is the workaround for now; there is currently no known plan-shortening trick beyond "don't
+/// add more versions than strictly necessary."
+///
+/// This version's checksum is *not* what either NAVI-68 or NAVI-86 shipped independently — it was
+/// briefly `(6, 1, 0)` on the NAVI-68 side (matching `develop` after NAVI-68 merged alone) and
+/// `(6, 0, 0)` on the NAVI-86 side; this merged version is `(6, 2, 0)` so neither of those stays
+/// silently "valid" for a shape that no longer matches. Any local store already stamped at either
+/// of those checksums needs a one-time reset — accepted, matching this schema's existing tradeoff
+/// for pre-release local data (see `EquipmentLibraryMigrationPlan`'s stage comments below).
 enum EquipmentLibrarySchemaV6: VersionedSchema {
-    static let versionIdentifier = Schema.Version(6, 0, 0)
+    static let versionIdentifier = Schema.Version(6, 2, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -1000,8 +1092,7 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self,
-            EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self,
-            EquipmentLibrarySchemaV6.self,
+            EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self, EquipmentLibrarySchemaV6.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -1020,10 +1111,12 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
             // Dropping `preferredDriverLabel` is a pure field removal — lightweight migration
             // handles this without any value loss elsewhere.
             .lightweight(fromVersion: EquipmentLibrarySchemaV4.self, toVersion: EquipmentLibrarySchemaV5.self),
-            // Pure additions (both new fields are optional), so nothing is lost. An existing record
-            // migrates with lastPushedDigest == nil, which correctly reads as "never pushed from
-            // this install" — conservative, since it makes the first push look like a fresh one
-            // rather than claiming the server is in step.
+            // Pure additions (every new field across all three models is optional), so nothing is
+            // lost. An existing record migrates with lastConnectedAt/lastPushedDigest/
+            // detailsFetchedAt == nil, which correctly reads as "never connected"/"never pushed
+            // from this install"/"coordinates never fetched" — conservative in every case, since it
+            // makes the first push or connect look like a fresh one rather than claiming anything
+            // is already in step.
             .lightweight(fromVersion: EquipmentLibrarySchemaV5.self, toVersion: EquipmentLibrarySchemaV6.self),
         ]
     }
