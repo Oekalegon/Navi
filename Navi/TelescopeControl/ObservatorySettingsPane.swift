@@ -105,26 +105,7 @@ struct ObservatorySettingsPane: View {
                 placeholder
             }
         case .new:
-            // Same quick-create the toolbar's rig/observatory picker offers (§4.1) — reused rather
-            // than reimplemented, so there's one place that fetches a location, prompts for a name,
-            // and saves it. Shown above the blank form as an alternative to authoring one by hand;
-            // picking it jumps straight to the created observatory.
-            if CurrentLocationFetcher.isAvailable {
-                VStack(alignment: .leading, spacing: 0) {
-                    CurrentLocationQuickCreateRow(
-                        isConnected: isConnected,
-                        observatories: observatories,
-                        onObservatorySelected: { selection = .existing($0) }
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    Divider()
-                        .padding(.top, 8)
-                    ObservatoryEditForm(observatoryID: nil)
-                }
-            } else {
-                ObservatoryEditForm(observatoryID: nil)
-            }
+            ObservatoryEditForm(observatoryID: nil)
         case nil:
             placeholder
         }

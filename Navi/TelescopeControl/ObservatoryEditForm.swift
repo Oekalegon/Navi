@@ -9,6 +9,7 @@ import SwiftUI
 import AppKit
 import SwiftData
 import INDIMCPKit
+import CoreLocation
 
 /// Add/edit form for one `Observatory` (§4.2's full CRUD editor). Unlike `ServerEditForm`,
 /// `Observatory` isn't a local SwiftData model — it lives server-side — so this form only works
@@ -41,6 +42,15 @@ struct ObservatoryEditForm: View {
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    /// "Use Current Location" (new observatories only) fills `latitudeDeg`/`longitudeDeg`/
+    /// `elevationMeters` directly into the form — no separate save-immediately flow the way the
+    /// toolbar picker's `CurrentLocationQuickCreateRow` works, so the fetched values land in the
+    /// same editable fields and follow the same local-first autosave every other field already
+    /// does. Doesn't require a connection: fetching a location is a device capability, and a new
+    /// observatory is already editable offline (its baseline is set synchronously in `load()`).
+    @State private var locationFetcher = CurrentLocationFetcher()
+    @State private var isFetchingLocation = false
+    @State private var locationErrorMessage: String?
     /// The field values as last loaded from (or pushed to) the server. `isDirty` is derived by
     /// comparing against it rather than being latched by per-field `.onChange` handlers, because
     /// `load()` assigns to exactly those fields — so merely *opening* an observatory latched the
@@ -98,6 +108,25 @@ struct ObservatoryEditForm: View {
             LabeledField("Name") {
                 TextField("Home Backyard", text: $name)
                     .textFieldStyle(.roundedBorder)
+            }
+
+            if observatoryID == nil && CurrentLocationFetcher.isAvailable {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await useCurrentLocation() }
+                    } label: {
+                        Label("Use Current Location", systemImage: "location.fill")
+                    }
+                    .disabled(isFetchingLocation)
+                    if isFetchingLocation {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                if let locationErrorMessage {
+                    Text(locationErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
 
             HStack(spacing: 12) {
@@ -313,6 +342,20 @@ struct ObservatoryEditForm: View {
             let described = TelescopeSessionManager.describe(error)
             errorMessage = described
             telescope.errorMessage = "\(trimmedName): \(described)"
+        }
+    }
+
+    private func useCurrentLocation() async {
+        isFetchingLocation = true
+        defer { isFetchingLocation = false }
+        do {
+            let location = try await locationFetcher.requestCurrentLocation()
+            locationErrorMessage = nil
+            latitudeDeg = location.coordinate.latitude
+            longitudeDeg = location.coordinate.longitude
+            elevationMeters = location.altitude
+        } catch {
+            locationErrorMessage = (error as? CurrentLocationFetcher.FetchError)?.description ?? error.localizedDescription
         }
     }
 
