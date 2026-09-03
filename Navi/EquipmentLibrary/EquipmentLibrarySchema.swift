@@ -35,6 +35,29 @@ enum EquipmentLibrarySchemaV1: VersionedSchema {
         ]
     }
 
+    /// Frozen ahead of NAVI-68's `lastConnectedAt` addition — `ServerProfile` had stayed live
+    /// (unchanged) through V2/V3/V4/V5, so each needed its own frozen copy in the same commit
+    /// (V2 cross-references this one directly, matching its existing `RigProfile` precedent; V3/
+    /// V4/V5 each declare an independent, identically-shaped nested copy instead, matching how
+    /// e.g. `MountProfile` is redeclared per version even when unchanged — a version's checksum is
+    /// computed from whatever a *live* type currently looks like, so a live reference can't be left
+    /// as-is once the type it points at is about to change shape; see `EquipmentLibrarySchemaV3`'s
+    /// doc comment for the general rule).
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
     @Model
     final class MountProfile {
         var name: String
@@ -242,7 +265,7 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
             EquipmentLibrarySchemaV1.OpticalAssemblyProfile.self,
             EquipmentLibrarySchemaV1.ImagingTrainProfile.self,
             EquipmentLibrarySchemaV1.GuideCameraProfile.self,
-            ServerProfile.self,
+            EquipmentLibrarySchemaV1.ServerProfile.self,
             EquipmentLibrarySchemaV1.RigProfile.self,
             ObservatoryProfile.self,
         ]
@@ -271,8 +294,9 @@ enum EquipmentLibrarySchemaV2: VersionedSchema {
 /// like *right now*, so a version pointing at a live type silently rewrites its own history the
 /// next time that type changes. All eight models below are frozen: V4 changes `ImagingTrainProfile`
 /// (flat fields to a composition) and therefore `RigProfile`'s `imagingTrain` relationship target,
-/// and V5 removes `preferredDriverLabel` from the rest. `ServerProfile`/`ObservatoryProfile` stay
-/// live because neither has changed since V3.
+/// and V5 removes `preferredDriverLabel` from the rest. `ObservatoryProfile` stays live because it
+/// hasn't changed since V3; `ServerProfile` gets its own independent frozen copy here too, ahead
+/// of NAVI-68's `lastConnectedAt` addition (V6).
 enum EquipmentLibrarySchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(3, 0, 0)
 
@@ -287,6 +311,21 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
             ObservatoryProfile.self,
             StandaloneEquipmentProfile.self,
         ]
+    }
+
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
     }
 
     @Model
@@ -534,7 +573,8 @@ enum EquipmentLibrarySchemaV3: VersionedSchema {
 /// Every model is frozen here (see `EquipmentLibrarySchemaV3`'s doc comment for the naming
 /// convention and the rule about *when* to freeze): V5 removes `preferredDriverLabel` from all of
 /// them, and the three new types plus `ImagingTrainProfile`/`RigProfile` are only this shape as of
-/// V4. `ServerProfile`/`ObservatoryProfile` stay live — neither has changed since V2.
+/// V4. `ObservatoryProfile` stays live — it hasn't changed since V2; `ServerProfile` gets its own
+/// independent frozen copy here too (NAVI-68), not live.
 enum EquipmentLibrarySchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
 
@@ -552,6 +592,21 @@ enum EquipmentLibrarySchemaV4: VersionedSchema {
             FilterWheelProfile.self,
             RotatorProfile.self,
         ]
+    }
+
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
     }
 
     @Model
@@ -868,13 +923,116 @@ enum EquipmentLibrarySchemaV5: VersionedSchema {
             RotatorProfile.self,
         ]
     }
+
+    @Model
+    final class ServerProfile {
+        var name: String
+        var url: URL
+        var notes: String?
+        var modifiedAt: Date
+
+        init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+            self.name = name
+            self.url = url
+            self.notes = notes
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    // NAVI-68: unlike every other model in this version's `models` list (all live/unqualified,
+    // correctly picking up V5's real final shape since only `ServerProfile` is about to change),
+    // `RigProfile` has to be frozen here too — it *holds a relationship* to `ServerProfile`
+    // (`defaultServer`), and the live production `RigProfile` (RigProfile.swift) declares that
+    // relationship as bare `ServerProfile?`, which resolves to the *live* `ServerProfile` (i.e.
+    // gains `lastConnectedAt` the moment that lands) rather than the frozen copy this version's
+    // `models` list actually declares as its `ServerProfile` entity. Reproduced and confirmed as
+    // "Duplicate version checksums detected" at `ModelContainer` init before adding this freeze —
+    // any entity with a relationship into a changing type needs freezing too, not just the type
+    // whose own shape changes.
+    @Model
+    final class RigProfile {
+        @Attribute(.unique) var serverRigID: String
+        var name: String
+        @Relationship(deleteRule: .nullify) var mount: MountProfile?
+        @Relationship(deleteRule: .nullify) var opticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var guideOpticalAssembly: OpticalAssemblyProfile?
+        @Relationship(deleteRule: .nullify) var imagingTrain: ImagingTrainProfile?
+        @Relationship(deleteRule: .nullify) var guideCamera: GuideCameraProfile?
+        @Relationship(deleteRule: .nullify) var powerHub: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var flatScreen: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var dewHeater: StandaloneEquipmentProfile?
+        @Relationship(deleteRule: .nullify) var observatoryControl: StandaloneEquipmentProfile?
+        var defaultObservatoryID: String?
+        @Relationship(deleteRule: .nullify) var defaultServer: ServerProfile?
+        var lastResyncedAt: Date
+
+        init(
+            serverRigID: String, name: String, mount: MountProfile? = nil,
+            opticalAssembly: OpticalAssemblyProfile? = nil,
+            guideOpticalAssembly: OpticalAssemblyProfile? = nil,
+            imagingTrain: ImagingTrainProfile? = nil, guideCamera: GuideCameraProfile? = nil,
+            powerHub: StandaloneEquipmentProfile? = nil, flatScreen: StandaloneEquipmentProfile? = nil,
+            dewHeater: StandaloneEquipmentProfile? = nil,
+            observatoryControl: StandaloneEquipmentProfile? = nil, defaultObservatoryID: String? = nil,
+            defaultServer: ServerProfile? = nil, lastResyncedAt: Date = .now
+        ) {
+            self.serverRigID = serverRigID
+            self.name = name
+            self.mount = mount
+            self.opticalAssembly = opticalAssembly
+            self.guideOpticalAssembly = guideOpticalAssembly
+            self.imagingTrain = imagingTrain
+            self.guideCamera = guideCamera
+            self.powerHub = powerHub
+            self.flatScreen = flatScreen
+            self.dewHeater = dewHeater
+            self.observatoryControl = observatoryControl
+            self.defaultObservatoryID = defaultObservatoryID
+            self.defaultServer = defaultServer
+            self.lastResyncedAt = lastResyncedAt
+        }
+    }
+}
+
+/// Version 6 (NAVI-68) — adds `ServerProfile.lastConnectedAt`, so `ServerProfile` becomes live
+/// again here after each of V1-V5 froze their own independent, identically-shaped copy of it (see
+/// `EquipmentLibrarySchemaV3`'s doc comment). Every other model is unchanged since V5 and stays
+/// live/unqualified, matching V5's own list.
+///
+/// `versionIdentifier` is `(6, 1, 0)`, not the "next" `(6, 0, 0)` — a concurrently in-flight
+/// branch (NAVI-86) also defines its own, differently-shaped `(6, 0, 0)`. Reopening a store this
+/// machine had already opened under that other `(6, 0, 0)` crashed outright with CoreData's
+/// "Duplicate version checksums detected" (an uncatchable `NSException`, not a thrown `Error`) —
+/// two schemas claiming the identical version number with different checksums, reproduced and
+/// confirmed by bumping just the minor number, which made the crash disappear with no other
+/// change. Whichever of the two branches merges second must renumber to avoid this permanently —
+/// tracked as NAVI-89. Separately, staged migrations spanning 2+ lightweight stages to reach this
+/// version have their own, unrelated crash — tracked as NAVI-88.
+enum EquipmentLibrarySchemaV6: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 1, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            MountProfile.self,
+            OpticalAssemblyProfile.self,
+            ImagingTrainProfile.self,
+            GuideCameraProfile.self,
+            ServerProfile.self,
+            RigProfile.self,
+            ObservatoryProfile.self,
+            StandaloneEquipmentProfile.self,
+            CameraProfile.self,
+            FilterWheelProfile.self,
+            RotatorProfile.self,
+        ]
+    }
 }
 
 enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             EquipmentLibrarySchemaV1.self, EquipmentLibrarySchemaV2.self, EquipmentLibrarySchemaV3.self,
-            EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self,
+            EquipmentLibrarySchemaV4.self, EquipmentLibrarySchemaV5.self, EquipmentLibrarySchemaV6.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -893,6 +1051,8 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
             // Dropping `preferredDriverLabel` is a pure field removal — lightweight migration
             // handles this without any value loss elsewhere.
             .lightweight(fromVersion: EquipmentLibrarySchemaV4.self, toVersion: EquipmentLibrarySchemaV5.self),
+            // Adding an optional `lastConnectedAt` is a pure field addition — no value loss.
+            .lightweight(fromVersion: EquipmentLibrarySchemaV5.self, toVersion: EquipmentLibrarySchemaV6.self),
         ]
     }
 }
@@ -901,5 +1061,5 @@ enum EquipmentLibraryMigrationPlan: SchemaMigrationPlan {
 /// tests build their `Schema`/`ModelConfiguration` from, without every call site needing to know
 /// which `VersionedSchema` is current.
 enum EquipmentLibrarySchema {
-    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV5.models }
+    static var models: [any PersistentModel.Type] { EquipmentLibrarySchemaV6.models }
 }

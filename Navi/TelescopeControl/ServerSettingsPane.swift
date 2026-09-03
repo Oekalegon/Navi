@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import INDIMCPKit
 
 /// The Settings "Server pane" (§4.2): a plain list of named INDI-MCP servers (name + URL) in the
 /// local equipment library, shown as a master-detail layout (NAVI-77) — the sidebar list on the
@@ -41,6 +42,8 @@ struct ServerSettingsPane: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @State private var telescope = TelescopeSessionManager.shared
+    /// NAVI-68: Bonjour/mDNS discovery, refcounted app-wide — see `beginObserving()`'s doc comment.
+    @State private var discoveryModel = ServerDiscoveryModel.shared
 
     /// No `.new` case: "+" inserts a blank server and selects it, so there's no draft state.
     private enum Selection: Hashable {
@@ -80,6 +83,8 @@ struct ServerSettingsPane: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { discoveryModel.beginObserving() }
+        .onDisappear { discoveryModel.endObserving() }
         .confirmationDialog(
             "Delete “\(serverPendingDeletion?.name ?? "")”?",
             isPresented: Binding(
@@ -120,7 +125,7 @@ struct ServerSettingsPane: View {
                 onRemove: { if let server = selectedServer { serverPendingDeletion = server } }
             )
             Divider()
-            if servers.isEmpty {
+            if servers.isEmpty && discoveredUnconfigured.isEmpty {
                 emptyState
             } else {
                 List(selection: $selection) {
@@ -128,11 +133,26 @@ struct ServerSettingsPane: View {
                         row(for: server)
                             .tag(Selection.existing(server.persistentModelID))
                     }
+                    // NAVI-68: INDI-MCP servers seen on the local network via Bonjour that don't
+                    // match any configured `ServerProfile` yet — not part of `selection`'s tagging
+                    // scheme, since picking one adds it rather than showing detail for it.
+                    if !discoveredUnconfigured.isEmpty {
+                        Section("Discovered") {
+                            ForEach(discoveredUnconfigured) { discovered in
+                                discoveredRow(for: discovered)
+                                    .selectionDisabled()
+                            }
+                        }
+                    }
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
             }
         }
+    }
+
+    private var discoveredUnconfigured: [DiscoveredServer] {
+        discoveryModel.unconfiguredServers(among: servers)
     }
 
     @ViewBuilder
@@ -187,6 +207,12 @@ struct ServerSettingsPane: View {
 
     private func row(for server: ServerProfile) -> some View {
         let connectionState = connectionState(for: server)
+        // NAVI-68: "Online"/"Offline" is independent of `connectionState` — it's whether the
+        // server is currently live on the network at all (via Bonjour, or because it's the one
+        // this session is actually talking to right now), not whether *this* row's session owns
+        // it. A server another rig is connected to still reads "Online" here.
+        let online = connectionState == .connected || connectionState == .connecting
+            || discoveryModel.isDiscovered(server)
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name)
@@ -194,6 +220,9 @@ struct ServerSettingsPane: View {
                 Text(server.url.absoluteString)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text(online ? "Online" : "Offline")
+                    .font(.caption2)
+                    .foregroundStyle(online ? .green : .secondary)
             }
             Spacer()
             // Status only — the Connect/Disconnect *action* lives in the detail pane, so the row
@@ -212,6 +241,39 @@ struct ServerSettingsPane: View {
                 EmptyView()
             }
         }
+    }
+
+    /// A discovered-but-unconfigured server's row — always "Online" (it's in this list *because*
+    /// it was just seen on the network), with a "+" that adds it as a real `ServerProfile` (name/
+    /// URL prefilled from the discovery) and selects it, mirroring `insert()`'s blank-server flow.
+    private func discoveredRow(for discovered: DiscoveredServer) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(discovered.name)
+                    .font(.body)
+                Text(discovered.endpoint.absoluteString)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Online")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
+            Spacer()
+            Button {
+                addDiscovered(discovered)
+            } label: {
+                Image(systemName: "plus.circle")
+            }
+            .buttonStyle(.plain)
+            .help("Add this server")
+        }
+    }
+
+    private func addDiscovered(_ discovered: DiscoveredServer) {
+        let new = ServerProfile(name: discovered.name, url: discovered.endpoint)
+        modelContext.insert(new)
+        try? modelContext.save()
+        selection = .existing(new.persistentModelID)
     }
 
     private enum RowConnectionState {

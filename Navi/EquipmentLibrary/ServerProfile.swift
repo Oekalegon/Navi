@@ -21,10 +21,17 @@ final class ServerProfile {
     /// Updated whenever this record is saved; drives the §4.3 "Resync all" stale-Rig detection.
     var modifiedAt: Date
 
-    init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now) {
+    /// NAVI-68: set by `TelescopeSessionManager` the moment a connect to this server actually
+    /// succeeds (both the bare and rig-bound paths funnel through it) — `nil` until it's ever been
+    /// connected to. Lets `ServerSettingsPane`/the toolbar dropdown sort or badge recently/
+    /// frequently used servers ahead of ones only ever added and never used.
+    var lastConnectedAt: Date?
+
+    init(name: String, url: URL, notes: String? = nil, modifiedAt: Date = .now, lastConnectedAt: Date? = nil) {
         self.name = name
         self.url = url
         self.notes = notes
         self.modifiedAt = modifiedAt
+        self.lastConnectedAt = lastConnectedAt
     }
 }
