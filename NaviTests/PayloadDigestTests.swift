@@ -28,6 +28,13 @@ struct PayloadDigestTests {
         )
     }
 
+    private func fieldsDigest(_ o: Observatory) -> String? {
+        PayloadDigest.ofObservatoryFields(
+            id: o.id, name: o.name, latitudeDeg: o.latitudeDeg,
+            longitudeDeg: o.longitudeDeg, elevationMeters: o.elevationMeters
+        )
+    }
+
     // MARK: - Stability
 
     @Test func theSameValueDigestsIdenticallyAcrossCalls() {
@@ -54,11 +61,31 @@ struct PayloadDigestTests {
         #expect(PayloadDigest.of(observatory(id: "other")) != baseline)
     }
 
-    @Test func aFieldNaviDoesNotEditStillChangesTheDigest() {
-        // horizonProfile has no editor in Navi, but it round-trips through save — and a change to
-        // it made elsewhere is exactly the drift worth reporting, so it must not be excluded.
+    @Test func everyNaviEditedFieldChangesTheOwnedSubsetDigest() {
+        // The subset digest is what actually gates pushing, so each editable field must move it.
+        let baseline = fieldsDigest(observatory())
+        #expect(baseline != nil)
+        #expect(fieldsDigest(observatory(name: "Renamed")) != baseline)
+        #expect(fieldsDigest(observatory(lat: 52.2)) != baseline)
+        #expect(fieldsDigest(observatory(lon: 4.4)) != baseline)
+        #expect(fieldsDigest(observatory(elevation: 13)) != baseline)
+        #expect(fieldsDigest(observatory(id: "other")) != baseline)
+        // And an unchanged record must not, or every reconnect would re-push everything.
+        #expect(fieldsDigest(observatory()) == baseline)
+    }
+
+    @Test func observatoryFieldsDigestIgnoresHorizonProfile() {
+        // Deliberately excluded, for two reasons (see PayloadDigest's doc comment): Navi has no
+        // editor for it and preserves whatever the server holds, so a change there survives a push
+        // anyway and would only produce a conflict Navi could resolve itself — and "does this need
+        // pushing" has to be answerable offline, where the local record has no horizonProfile to
+        // digest at all.
+        let plain = observatory()
         let withHorizon = observatory(horizon: [HorizonPoint(azimuthDeg: 0, altitudeDeg: 10)])
-        #expect(PayloadDigest.of(withHorizon) != PayloadDigest.of(observatory()))
+        #expect(fieldsDigest(plain) == fieldsDigest(withHorizon))
+        // The whole-payload digest still distinguishes them — it's only the owned-subset one that
+        // deliberately doesn't.
+        #expect(PayloadDigest.of(plain) != PayloadDigest.of(withHorizon))
     }
 
     @Test func aSmallNumericChangeIsNotRoundedAway() {

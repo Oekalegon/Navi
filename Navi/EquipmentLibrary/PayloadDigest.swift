@@ -15,12 +15,39 @@ import CryptoKit
 /// stored one, and someone else changed it underneath us when the *server's* digest differs from
 /// the stored one.
 ///
-/// Derived from the encoded payload rather than a hand-listed set of fields, so a field added to
-/// `Rig`/`Observatory` later is covered without anyone remembering to extend a list — the same
-/// hazard that made `modifiedAt` stamping fragile. That does mean the digest covers *everything*
-/// the payload carries, including anything Navi doesn't itself edit; that's deliberate, since a
-/// server-side change to such a field is exactly the drift worth reporting.
+/// A rig digests its whole payload — Navi owns every field of one, so nothing is excluded and a
+/// field added to `Rig` later is covered without anyone remembering to extend a list.
+///
+/// An observatory digests only the fields Navi actually edits, via `ofObservatoryFields`. Two
+/// reasons. Its payload also carries `horizonProfile`, which Navi preserves but has no editor for —
+/// and since a push reuses whatever the server currently holds for it, a change made there survives
+/// regardless, so treating it as drift would only produce conflicts Navi could have resolved by
+/// itself. More practically, "does this need pushing" has to be answerable *offline*, and the local
+/// record doesn't store `horizonProfile`, so a whole-payload digest couldn't be computed without a
+/// round trip — which defeats the point of a reconnect sync.
 enum PayloadDigest {
+    /// The Navi-owned subset of an observatory. Hand-listed deliberately — see the type's doc
+    /// comment for why an observatory can't digest its whole payload.
+    static func ofObservatoryFields(
+        id: String,
+        name: String,
+        latitudeDeg: Double,
+        longitudeDeg: Double,
+        elevationMeters: Double
+    ) -> String? {
+        struct OwnedFields: Encodable {
+            let id: String
+            let name: String
+            let latitudeDeg: Double
+            let longitudeDeg: Double
+            let elevationMeters: Double
+        }
+        return of(OwnedFields(
+            id: id, name: name, latitudeDeg: latitudeDeg,
+            longitudeDeg: longitudeDeg, elevationMeters: elevationMeters
+        ))
+    }
+
     /// `nil` only if the value can't be encoded, which for these payloads would be a programming
     /// error rather than a runtime condition — callers treat it as "can't compare, don't claim
     /// anything", never as "unchanged".

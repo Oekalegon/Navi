@@ -18,6 +18,9 @@ enum BareServerConnector {
         await telescope.connect(server: server)
         guard telescope.state == .connected else { return }
         await RigAutoMatcher.matchAndUpgrade(telescope: telescope, modelContext: modelContext, server: server)
+        // See ArmedRigConnector — same reason, and placed after matchAndUpgrade since that may
+        // disconnect and reconnect on its way to a rig-bound session.
+        await PendingPushSync.pushPending(telescope: telescope, modelContext: modelContext)
         // matchAndUpgrade disconnects-then-reconnects when it finds a match — guard again in
         // case that reconnect itself failed, rather than assuming the earlier bare connect's
         // success still holds.

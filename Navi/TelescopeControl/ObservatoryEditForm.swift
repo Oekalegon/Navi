@@ -261,7 +261,10 @@ struct ObservatoryEditForm: View {
         // legitimately creating or adopting the record.
         if let lastPushed = profile?.lastPushedDigest,
            let serverCopy,
-           let serverDigest = PayloadDigest.of(serverCopy),
+           let serverDigest = PayloadDigest.ofObservatoryFields(
+               id: serverCopy.id, name: serverCopy.name, latitudeDeg: serverCopy.latitudeDeg,
+               longitudeDeg: serverCopy.longitudeDeg, elevationMeters: serverCopy.elevationMeters
+           ),
            serverDigest != lastPushed {
             telescope.errorMessage = """
                 \(trimmedName) changed on the server since Navi last pushed it — \
@@ -280,7 +283,10 @@ struct ObservatoryEditForm: View {
             // doesn't lose its horizon data on the eventual push.
             horizonProfile: horizonProfile ?? serverCopy?.horizonProfile
         )
-        let digest = PayloadDigest.of(observatory)
+        let digest = PayloadDigest.ofObservatoryFields(
+            id: id, name: trimmedName, latitudeDeg: latitudeDeg,
+            longitudeDeg: longitudeDeg, elevationMeters: elevationMeters
+        )
 
         // Nothing to send: the server already has exactly this.
         if let digest, digest == profile?.lastPushedDigest { return }
@@ -289,7 +295,10 @@ struct ObservatoryEditForm: View {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)
             upsertLocalCache(with: saved)
             if let profile = localProfile(id: saved.id) {
-                profile.lastPushedDigest = PayloadDigest.of(saved) ?? digest
+                profile.lastPushedDigest = PayloadDigest.ofObservatoryFields(
+                    id: saved.id, name: saved.name, latitudeDeg: saved.latitudeDeg,
+                    longitudeDeg: saved.longitudeDeg, elevationMeters: saved.elevationMeters
+                ) ?? digest
                 profile.detailsFetchedAt = .now
                 try? modelContext.save()
             }

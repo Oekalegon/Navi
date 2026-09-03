@@ -23,6 +23,9 @@ enum ArmedRigConnector {
         }
         await telescope.connect(server: server, rigID: rigID)
         if telescope.state == .connected {
+            // Anything edited while offline reaches the server now, rather than waiting for the
+            // user to happen to reopen its editor while connected (NAVI-86).
+            await PendingPushSync.pushPending(telescope: telescope, modelContext: modelContext)
             paneManager?.showObservatoryDashboard()
         }
     }

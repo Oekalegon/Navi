@@ -320,6 +320,8 @@ struct ServerSettingsPane: View {
             // automatically rather than leaving the toolbar showing "Select Rig…" despite
             // already being connected.
             await RigAutoMatcher.matchAndUpgrade(telescope: telescope, modelContext: modelContext, server: server)
+            // See ArmedRigConnector — offline edits sync once there's a connection again.
+            await PendingPushSync.pushPending(telescope: telescope, modelContext: modelContext)
         }
     }
 
