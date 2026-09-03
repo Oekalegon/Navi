@@ -28,6 +28,7 @@ struct ObservatorySettingsPane: View {
         case new
     }
     @State private var selection: Selection?
+    @State private var isRefreshing = false
 
     private var selectedObservatory: ObservatoryProfile? {
         guard case .existing(let id) = selection else { return nil }
@@ -44,6 +45,18 @@ struct ObservatorySettingsPane: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // Keyed on `telescope.state`, not a plain `.task { }` — this pane's `.id(Tab.observatories)`
+        // keeps it alive across tab switches, so a one-shot `.task` would only ever refresh once and
+        // never again after a later connect. Previously nothing in this pane ever called
+        // `listObservatories()` at all — the cache only filled in if the toolbar's rig/observatory
+        // picker happened to have been opened first, which a local store reset makes obvious is
+        // wrong: Settings should be able to populate its own list.
+        .task(id: telescope.state) {
+            guard isConnected else { return }
+            isRefreshing = true
+            await ObservatoryCacheRefresher.refresh(telescope: telescope, modelContext: modelContext)
+            isRefreshing = false
+        }
     }
 
     private var sidebar: some View {
@@ -57,7 +70,9 @@ struct ObservatorySettingsPane: View {
                 removeHelp: "Remove from this local list",
                 onRemove: { if let observatory = selectedObservatory { remove(observatory) } }
             ) {
-                if !isConnected {
+                if isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else if !isConnected {
                     Text("Connect to add or edit")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -90,7 +105,26 @@ struct ObservatorySettingsPane: View {
                 placeholder
             }
         case .new:
-            ObservatoryEditForm(observatoryID: nil)
+            // Same quick-create the toolbar's rig/observatory picker offers (§4.1) — reused rather
+            // than reimplemented, so there's one place that fetches a location, prompts for a name,
+            // and saves it. Shown above the blank form as an alternative to authoring one by hand;
+            // picking it jumps straight to the created observatory.
+            if CurrentLocationFetcher.isAvailable {
+                VStack(alignment: .leading, spacing: 0) {
+                    CurrentLocationQuickCreateRow(
+                        isConnected: isConnected,
+                        observatories: observatories,
+                        onObservatorySelected: { selection = .existing($0) }
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                    Divider()
+                        .padding(.top, 8)
+                    ObservatoryEditForm(observatoryID: nil)
+                }
+            } else {
+                ObservatoryEditForm(observatoryID: nil)
+            }
         case nil:
             placeholder
         }
