@@ -302,7 +302,7 @@ struct ObservatoryEditForm: View {
            serverDigest != lastPushed {
             telescope.pendingConflict = PendingConflict.forObservatory(
                 profile: profile, latitudeDeg: latitudeDeg, longitudeDeg: longitudeDeg,
-                elevationMeters: elevationMeters, horizonProfile: horizonProfile ?? serverCopy.horizonProfile,
+                elevationMeters: elevationMeters, horizonProfile: serverCopy.horizonProfile ?? horizonProfile,
                 digest: digest, telescope: telescope, modelContext: modelContext
             )
             return
@@ -314,9 +314,12 @@ struct ObservatoryEditForm: View {
             latitudeDeg: latitudeDeg,
             longitudeDeg: longitudeDeg,
             elevationMeters: elevationMeters,
-            // Prefer what this form loaded; fall back to the server's, so a record edited offline
-            // doesn't lose its horizon data on the eventual push.
-            horizonProfile: horizonProfile ?? serverCopy?.horizonProfile
+            // Prefer the copy just fetched from the server — it's the freshest available, and
+            // using it over what this form loaded earlier avoids clobbering a horizonProfile
+            // change made by another client in between. Fall back to what this form loaded only
+            // when the fetch itself failed or never happened (a brand-new observatory, or an
+            // edit made offline and pushed on reconnect).
+            horizonProfile: serverCopy?.horizonProfile ?? horizonProfile
         )
 
         // Nothing to send: the server already has exactly this.
