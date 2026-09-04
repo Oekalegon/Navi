@@ -23,11 +23,13 @@ import INDIMCPKit
 struct PendingConflict: Identifiable {
     let id = UUID()
     let recordName: String
-    /// Overwrites the server with Navi's local version.
-    let pushMine: () async -> Void
+    /// Overwrites the server with Navi's local version. Throwing, not swallowed internally — see
+    /// `TelescopeConflictIndicator.resolve(_:)`'s doc comment for why a failure here must reach the
+    /// caller rather than be treated as done.
+    let pushMine: () async throws -> Void
     /// Observatory: replaces the local record with the server's. Rig: adopts the server's digest
     /// as the new baseline without changing the local composition — see the type's doc comment.
-    let acceptServer: () async -> Void
+    let acceptServer: () async throws -> Void
     let acceptServerDescription: String
 }
 
@@ -45,6 +47,12 @@ extension PendingConflict {
         PendingConflict(
             recordName: profile.name,
             pushMine: {
+                // Deliberately not caught here — `TelescopeConflictIndicator.resolve(_:)` needs to
+                // know whether this actually succeeded before it clears `pendingConflict`, since
+                // clearing it on a failed push would tell the user their edit was sent when it
+                // wasn't. It's still mirrored onto `telescope.errorMessage` (I-4's convention) so a
+                // background `PendingPushSync` resolution failure is visible even with no view
+                // watching the thrown error.
                 do {
                     let saved = try await telescope.saveRig(payload, overwrite: true)
                     profile.lastResyncedAt = .now
@@ -52,16 +60,16 @@ extension PendingConflict {
                     try? modelContext.save()
                 } catch {
                     telescope.errorMessage = "\(profile.name): \(TelescopeSessionManager.describe(error))"
+                    throw error
                 }
             },
             acceptServer: {
                 // No server payload to adopt into the local composition — see the type's doc
                 // comment. This only stops treating the edit as pending; the composition and the
                 // server's copy are left to differ until the rig is edited again.
-                if let serverCopy = try? await telescope.getRig(id: profile.serverRigID) {
-                    profile.lastPushedDigest = PayloadDigest.of(serverCopy)
-                    try? modelContext.save()
-                }
+                let serverCopy = try await telescope.getRig(id: profile.serverRigID)
+                profile.lastPushedDigest = PayloadDigest.of(serverCopy)
+                try? modelContext.save()
             },
             acceptServerDescription: "Stops asking about this change, without sending your edit — "
                 + "Navi's copy and the server's will keep differing until you edit this rig again."
@@ -103,12 +111,13 @@ extension PendingConflict {
                     try? modelContext.save()
                 } catch {
                     telescope.errorMessage = "\(name): \(TelescopeSessionManager.describe(error))"
+                    throw error
                 }
             },
             acceptServer: {
                 // Unlike a Rig, an Observatory payload is every field there is — the server's copy
                 // genuinely can replace the local record.
-                guard let serverCopy = try? await telescope.getObservatory(id: id) else { return }
+                let serverCopy = try await telescope.getObservatory(id: id)
                 profile.name = serverCopy.name
                 profile.latitudeDeg = serverCopy.latitudeDeg
                 profile.longitudeDeg = serverCopy.longitudeDeg

@@ -359,24 +359,36 @@ struct RigEditForm: View {
 
     private func push(components: [Component], profile: RigProfile) async {
         errorMessage = nil
-        let payload = Rig(id: profile.serverRigID, name: profile.name, components: components)
-        let digest = PayloadDigest.of(payload)
+        let recordID = profile.serverRigID
+        // See `TelescopeSessionManager.pushesInFlight`'s doc comment: without this, a background
+        // `PendingPushSync` pass reaching this same rig while this push is also mid-flight could
+        // save from two different snapshots and silently overwrite whichever one landed second.
+        guard telescope.beginPush(recordID: recordID) else { return }
+        defer { telescope.endPush(recordID: recordID) }
 
-        // Nothing to send: the server already has exactly this.
-        if let digest, digest == profile.lastPushedDigest { return }
+        let payload = Rig(id: recordID, name: profile.name, components: components)
+        let digest = PayloadDigest.of(payload)
 
         // Drift check. Only meaningful once this rig has been pushed before — without a stored
         // digest there's nothing to compare against, and a first push is legitimately creating it.
-        if let lastPushed = profile.lastPushedDigest {
-            if let serverCopy = try? await telescope.getRig(id: profile.serverRigID),
-               let serverDigest = PayloadDigest.of(serverCopy),
-               serverDigest != lastPushed {
-                telescope.pendingConflict = PendingConflict.forRig(
-                    profile: profile, payload: payload, digest: digest,
-                    telescope: telescope, modelContext: modelContext
-                )
-                return
-            }
+        var serverDigest: String?
+        if profile.lastPushedDigest != nil, let serverCopy = try? await telescope.getRig(id: recordID) {
+            serverDigest = PayloadDigest.of(serverCopy)
+        }
+
+        switch recordPushDecision(
+            currentDigest: digest, lastPushedDigest: profile.lastPushedDigest, serverDigest: serverDigest
+        ) {
+        case .nothingToSend:
+            return
+        case .conflict:
+            telescope.pendingConflict = PendingConflict.forRig(
+                profile: profile, payload: payload, digest: digest,
+                telescope: telescope, modelContext: modelContext
+            )
+            return
+        case .push:
+            break
         }
 
         isSaving = true

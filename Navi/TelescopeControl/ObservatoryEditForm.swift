@@ -65,7 +65,12 @@ struct ObservatoryEditForm: View {
 
     private var currentSnapshot: String {
         var parts: [String] = []
-        parts.append(name)
+        // Trimmed, matching `save()`'s digest — otherwise a pure whitespace edit (type a trailing
+        // space, then delete it) marks the form dirty here but produces an unchanged digest there,
+        // so `save()`'s "nothing to send" branch returns without updating `loadedSnapshot`, leaving
+        // the form stuck dirty (and re-attempting a no-op push on every subsequent teardown) until
+        // the editor is closed and reopened.
+        parts.append(name.trimmingCharacters(in: .whitespacesAndNewlines))
         parts.append("\(latitudeDeg)")
         parts.append("\(longitudeDeg)")
         parts.append("\(elevationMeters)")
@@ -274,38 +279,59 @@ struct ObservatoryEditForm: View {
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
-        isSaving = true
-        defer { isSaving = false }
 
         let id = observatoryID ?? IDSlug.make(from: trimmedName)
         let profile = localProfile(id: id)
-
-        // One fetch of the server's current copy serves two purposes: the drift check, and
-        // recovering `horizonProfile` when this form never loaded it (an edit made offline, then
-        // pushed on reconnect, would otherwise send nil and wipe it).
-        let serverCopy = observatoryID == nil ? nil : try? await telescope.getObservatory(id: id)
-
-        // Drift check. Only meaningful once we've pushed this record before — without a stored
-        // digest there's nothing to compare the server's copy against, and a first push is
-        // legitimately creating or adopting the record.
         let digest = PayloadDigest.ofObservatoryFields(
             id: id, name: trimmedName, latitudeDeg: latitudeDeg,
             longitudeDeg: longitudeDeg, elevationMeters: elevationMeters
         )
 
-        if let profile, let lastPushed = profile.lastPushedDigest,
-           let serverCopy,
-           let serverDigest = PayloadDigest.ofObservatoryFields(
-               id: serverCopy.id, name: serverCopy.name, latitudeDeg: serverCopy.latitudeDeg,
-               longitudeDeg: serverCopy.longitudeDeg, elevationMeters: serverCopy.elevationMeters
-           ),
-           serverDigest != lastPushed {
+        // Nothing to send: the server already has exactly this — checked before claiming the
+        // in-flight guard or fetching the server's copy, so a repeated no-op save (e.g. `flush()`
+        // re-running on every teardown) doesn't cost a round-trip. `loadedSnapshot` still needs
+        // updating here (see `currentSnapshot`'s doc comment) or the form stays stuck dirty.
+        if let digest, digest == profile?.lastPushedDigest {
+            loadedSnapshot = currentSnapshot
+            return
+        }
+
+        // See `TelescopeSessionManager.pushesInFlight`'s doc comment: without this, a background
+        // `PendingPushSync` pass reaching this same observatory while this save is also mid-flight
+        // could save from two different snapshots and silently overwrite whichever landed second.
+        guard telescope.beginPush(recordID: id) else { return }
+        defer { telescope.endPush(recordID: id) }
+
+        isSaving = true
+        defer { isSaving = false }
+
+        // One fetch of the server's current copy serves two purposes: the drift check, and
+        // recovering `horizonProfile` when this form never loaded it (an edit made offline, then
+        // pushed on reconnect, would otherwise send nil and wipe it).
+        let serverCopy = observatoryID == nil ? nil : try? await telescope.getObservatory(id: id)
+        let serverDigest = serverCopy.flatMap {
+            PayloadDigest.ofObservatoryFields(
+                id: $0.id, name: $0.name, latitudeDeg: $0.latitudeDeg,
+                longitudeDeg: $0.longitudeDeg, elevationMeters: $0.elevationMeters
+            )
+        }
+
+        switch recordPushDecision(
+            currentDigest: digest, lastPushedDigest: profile?.lastPushedDigest, serverDigest: serverDigest
+        ) {
+        case .nothingToSend:
+            loadedSnapshot = currentSnapshot
+            return
+        case .conflict:
+            guard let profile else { return }
             telescope.pendingConflict = PendingConflict.forObservatory(
                 profile: profile, latitudeDeg: latitudeDeg, longitudeDeg: longitudeDeg,
-                elevationMeters: elevationMeters, horizonProfile: serverCopy.horizonProfile ?? horizonProfile,
+                elevationMeters: elevationMeters, horizonProfile: serverCopy?.horizonProfile ?? horizonProfile,
                 digest: digest, telescope: telescope, modelContext: modelContext
             )
             return
+        case .push:
+            break
         }
 
         let observatory = Observatory(
@@ -321,9 +347,6 @@ struct ObservatoryEditForm: View {
             // edit made offline and pushed on reconnect).
             horizonProfile: serverCopy?.horizonProfile ?? horizonProfile
         )
-
-        // Nothing to send: the server already has exactly this.
-        if let digest, digest == profile?.lastPushedDigest { return }
 
         do {
             let saved = try await telescope.saveObservatory(observatory, overwrite: observatoryID != nil)

@@ -48,15 +48,30 @@ enum PendingPushSync {
             let payload = Rig(id: rig.serverRigID, name: rig.name, components: components)
             guard let digest = PayloadDigest.of(payload), digest != rig.lastPushedDigest else { continue }
 
-            if let lastPushed = rig.lastPushedDigest,
-               let serverCopy = try? await telescope.getRig(id: rig.serverRigID),
-               let serverDigest = PayloadDigest.of(serverCopy),
-               serverDigest != lastPushed {
+            // See `TelescopeSessionManager.pushesInFlight`'s doc comment: skips a rig some other
+            // push (e.g. its own editor closing at the same moment) is already mid-flight for,
+            // rather than racing it to write `lastPushedDigest` from a different snapshot.
+            guard telescope.beginPush(recordID: rig.serverRigID) else { continue }
+            defer { telescope.endPush(recordID: rig.serverRigID) }
+
+            var serverDigest: String?
+            if rig.lastPushedDigest != nil, let serverCopy = try? await telescope.getRig(id: rig.serverRigID) {
+                serverDigest = PayloadDigest.of(serverCopy)
+            }
+
+            switch recordPushDecision(
+                currentDigest: digest, lastPushedDigest: rig.lastPushedDigest, serverDigest: serverDigest
+            ) {
+            case .nothingToSend:
+                continue
+            case .conflict:
                 telescope.pendingConflict = PendingConflict.forRig(
                     profile: rig, payload: payload, digest: digest,
                     telescope: telescope, modelContext: modelContext
                 )
                 continue
+            case .push:
+                break
             }
 
             do {
@@ -86,24 +101,36 @@ enum PendingPushSync {
                 elevationMeters: observatory.elevationMeters
             ), digest != observatory.lastPushedDigest else { continue }
 
+            // See `TelescopeSessionManager.pushesInFlight`'s doc comment.
+            guard telescope.beginPush(recordID: observatory.serverObservatoryID) else { continue }
+            defer { telescope.endPush(recordID: observatory.serverObservatoryID) }
+
             // Fetched for two reasons at once, as in `ObservatoryEditForm.save()`: the drift check,
             // and recovering `horizonProfile`, which the local record doesn't store — pushing
             // without it would wipe the server's horizon data.
             let serverCopy = try? await telescope.getObservatory(id: observatory.serverObservatoryID)
-            if let lastPushed = observatory.lastPushedDigest,
-               let serverCopy,
-               let serverDigest = PayloadDigest.ofObservatoryFields(
-                   id: serverCopy.id, name: serverCopy.name, latitudeDeg: serverCopy.latitudeDeg,
-                   longitudeDeg: serverCopy.longitudeDeg, elevationMeters: serverCopy.elevationMeters
-               ),
-               serverDigest != lastPushed {
+            let serverDigest = serverCopy.flatMap {
+                PayloadDigest.ofObservatoryFields(
+                    id: $0.id, name: $0.name, latitudeDeg: $0.latitudeDeg,
+                    longitudeDeg: $0.longitudeDeg, elevationMeters: $0.elevationMeters
+                )
+            }
+
+            switch recordPushDecision(
+                currentDigest: digest, lastPushedDigest: observatory.lastPushedDigest, serverDigest: serverDigest
+            ) {
+            case .nothingToSend:
+                continue
+            case .conflict:
                 telescope.pendingConflict = PendingConflict.forObservatory(
                     profile: observatory, latitudeDeg: observatory.latitudeDeg,
                     longitudeDeg: observatory.longitudeDeg, elevationMeters: observatory.elevationMeters,
-                    horizonProfile: serverCopy.horizonProfile, digest: digest,
+                    horizonProfile: serverCopy?.horizonProfile, digest: digest,
                     telescope: telescope, modelContext: modelContext
                 )
                 continue
+            case .push:
+                break
             }
 
             let payload = Observatory(

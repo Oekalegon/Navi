@@ -14,10 +14,14 @@ struct TelescopeConflictIndicator: View {
     @State private var telescope = TelescopeSessionManager.shared
     @State private var showingPopover = false
     @State private var isResolving = false
+    @State private var resolveError: String?
 
     var body: some View {
         if let conflict = telescope.pendingConflict {
-            Button(action: { showingPopover = true }) {
+            Button(action: {
+                resolveError = nil
+                showingPopover = true
+            }) {
                 // See `TelescopeErrorIndicator`/`SettingsPaneHeader`'s "+"/"−" for why.
                 Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
@@ -73,6 +77,12 @@ struct TelescopeConflictIndicator: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    if let resolveError {
+                        Text(resolveError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding()
                 .frame(maxWidth: 320, alignment: .leading)
@@ -81,13 +91,23 @@ struct TelescopeConflictIndicator: View {
         }
     }
 
-    private func resolve(_ action: @escaping () async -> Void) {
+    /// `action` is throwing, not swallowed — `pendingConflict` (and the popover) must only clear
+    /// on an actual success. Clearing it unconditionally, the way this used to work, told the user
+    /// their edit was resolved even when e.g. the connection dropped mid-resolve and nothing
+    /// actually reached the server: the indicator would just silently disappear, leaving the real
+    /// drift unresolved with no sign anything went wrong.
+    private func resolve(_ action: @escaping () async throws -> Void) {
         isResolving = true
+        resolveError = nil
         Task {
-            await action()
-            telescope.pendingConflict = nil
+            do {
+                try await action()
+                telescope.pendingConflict = nil
+                showingPopover = false
+            } catch {
+                resolveError = TelescopeSessionManager.describe(error)
+            }
             isResolving = false
-            showingPopover = false
         }
     }
 }

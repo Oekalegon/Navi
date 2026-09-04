@@ -51,10 +51,36 @@ final class TelescopeSessionManager {
 
     /// A Rig or Observatory that changed on the server since Navi last pushed it (NAVI-86's drift
     /// detection). Follows the same convention as `errorMessage` — a single, always-reachable slot
-    /// rather than a stack, since only one push runs at a time and a second conflict overwriting
-    /// this one simply means the user gets to the newer conflict first, which is the more useful
-    /// order regardless of which pane or background sync produced it.
+    /// rather than a stack; two records can each have a conflict raised in short succession (e.g.
+    /// `PendingPushSync` walking several records after a reconnect), and the second one overwriting
+    /// this slot just means the user gets to the newer conflict first, which is fine — each raise
+    /// happens after `beginPush(recordID:)` has already confirmed no push for *that* record is
+    /// still in flight, so this isn't racing against a stale conflict from the same record.
     var pendingConflict: PendingConflict?
+
+    /// Server record IDs (a `RigProfile.serverRigID` or `ObservatoryProfile.serverObservatoryID`)
+    /// with a push currently in flight — `RigEditForm.push`, `ObservatoryEditForm.save`, and
+    /// `PendingPushSync`'s two loops all call `beginPush(recordID:)`/`endPush(recordID:)` around
+    /// their drift-check-then-save sequence, so a record being edited-and-closed while a background
+    /// sync pass is also mid-flight for the same record can't have two `saveRig`/`saveObservatory`
+    /// calls racing to write `lastPushedDigest` from two different snapshots — whichever call loses
+    /// `beginPush` just skips, leaving the other's save (and the local edit it already persisted
+    /// via `persistLocally`) to be picked up by the *next* push attempt instead of silently
+    /// overwritten by a stale one.
+    private var pushesInFlight: Set<String> = []
+
+    /// Claims `recordID` for a push, returning `false` (doing nothing) if another push for the same
+    /// record is already in flight — see `pushesInFlight`'s doc comment. Always pair with
+    /// `endPush(recordID:)`, ideally via `defer`.
+    @MainActor
+    func beginPush(recordID: String) -> Bool {
+        pushesInFlight.insert(recordID).inserted
+    }
+
+    @MainActor
+    func endPush(recordID: String) {
+        pushesInFlight.remove(recordID)
+    }
 
     private(set) var currentServer: ServerProfile?
     private(set) var currentRig: Rig?
