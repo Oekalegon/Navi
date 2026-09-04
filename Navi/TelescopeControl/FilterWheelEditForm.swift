@@ -81,7 +81,12 @@ struct FilterWheelEditForm: View {
                         filterWheel.slots = updated.isEmpty ? nil : updated
                         touch()
                     }) {
+                        // See `SettingsPaneHeader`'s "+"/"−" for why: `.buttonStyle(.plain)` hit-
+                        // tests the label's own bounds, and a bare glyph's bounds are a few points
+                        // of ink, not a comfortable click target.
                         Image(systemName: "minus.circle")
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }

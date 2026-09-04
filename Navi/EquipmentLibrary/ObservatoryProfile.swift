@@ -35,13 +35,25 @@ final class ObservatoryProfile {
     var elevationMeters: Double
     var cachedAt: Date
 
+    /// See `RigProfile.lastPushedDigest` (NAVI-86).
+    var lastPushedDigest: String?
+
+    /// When this record's *coordinates* were last fetched from the server, or `nil` if they never
+    /// were. `listObservatories` returns summaries — a record seeded from it holds id and name only,
+    /// with latitude/longitude/elevation left at 0 — so without this there's no way to tell a
+    /// summary-only entry from an observatory genuinely at 0/0/0, and pushing the former would
+    /// replace its real location with zeros.
+    var detailsFetchedAt: Date?
+
     init(
         serverObservatoryID: String,
         name: String,
         latitudeDeg: Double = 0,
         longitudeDeg: Double = 0,
         elevationMeters: Double = 0,
-        cachedAt: Date = .now
+        cachedAt: Date = .now,
+        lastPushedDigest: String? = nil,
+        detailsFetchedAt: Date? = nil
     ) {
         self.serverObservatoryID = serverObservatoryID
         self.name = name
@@ -49,5 +61,7 @@ final class ObservatoryProfile {
         self.longitudeDeg = longitudeDeg
         self.elevationMeters = elevationMeters
         self.cachedAt = cachedAt
+        self.lastPushedDigest = lastPushedDigest
+        self.detailsFetchedAt = detailsFetchedAt
     }
 }

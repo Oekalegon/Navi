@@ -81,7 +81,7 @@ struct ServerSettingsPane: View {
                 .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
             Divider()
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear { discoveryModel.beginObserving() }
         .onDisappear { discoveryModel.endObserving() }
@@ -382,6 +382,8 @@ struct ServerSettingsPane: View {
             // automatically rather than leaving the toolbar showing "Select Rig…" despite
             // already being connected.
             await RigAutoMatcher.matchAndUpgrade(telescope: telescope, modelContext: modelContext, server: server)
+            // See ArmedRigConnector — offline edits sync once there's a connection again.
+            await PendingPushSync.pushPending(telescope: telescope, modelContext: modelContext)
         }
     }
 

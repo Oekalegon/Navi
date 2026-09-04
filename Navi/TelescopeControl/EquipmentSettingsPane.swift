@@ -190,7 +190,7 @@ struct EquipmentSettingsPane: View {
                 .frame(minWidth: 240, idealWidth: 260, maxWidth: 320, maxHeight: .infinity)
             Divider()
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .confirmationDialog(
             "Delete \u{201C}\(pendingDeletion?.name ?? "")\u{201D}?",

@@ -33,6 +33,8 @@ struct APIKeySettingsPane: View {
                 }
                 Button(action: { showingKey.toggle() }) {
                     Image(systemName: showingKey ? "eye.slash" : "eye")
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

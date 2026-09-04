@@ -42,7 +42,7 @@ struct RigSettingsPane: View {
                 .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
             Divider()
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .confirmationDialog(
             "Delete “\(rigPendingDeletion?.name ?? "")”?",

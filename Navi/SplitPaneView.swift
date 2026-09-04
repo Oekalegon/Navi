@@ -269,6 +269,8 @@ struct PaneCloseButton: View {
         Button { paneManager.closePane(ofType: paneType) } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 12))
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Close pane")

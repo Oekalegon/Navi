@@ -27,8 +27,13 @@ struct AIAssistantView: View {
                     .font(.headline)
                 Spacer()
                 Button(action: { viewModel.clearConversation() }) {
+                    // `.buttonStyle(.plain)` hit-tests the label's own rendered bounds, and a bare
+                    // glyph's bounds are only a few points of actual ink — this gives it a real
+                    // click target without changing how it looks.
                     Image(systemName: "trash")
                         .font(.system(size: 12))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Clear conversation")
@@ -142,6 +147,8 @@ struct AIAssistantView: View {
                     Button(action: { viewModel.sendMessage() }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 24))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(settings.apiKey.isEmpty ||

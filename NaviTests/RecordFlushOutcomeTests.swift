@@ -1,5 +1,5 @@
 //
-//  RigFlushOutcomeTests.swift
+//  RecordFlushOutcomeTests.swift
 //  NaviTests
 //
 
@@ -11,7 +11,7 @@ import Testing
 /// list, so a rig whose main and guide optical assemblies both carry a focuser (they collide on
 /// `.focuser`) silently lost the user's whole edit — the local write included — with no feedback,
 /// because the error was reported onto a view that was already being torn down.
-struct RigFlushOutcomeTests {
+struct RecordFlushOutcomeTests {
 
     // MARK: - The invariant that was broken
 
@@ -19,21 +19,21 @@ struct RigFlushOutcomeTests {
         // The regression case. Navi holds the richer record; failing to flatten it for the server
         // is a reason not to push, never a reason not to save.
         #expect(
-            rigFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: true, canProject: false)
+            recordFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: true, canProject: false)
                 == .persistOnly
         )
     }
 
     @Test func beingDisconnectedStillPersistsLocally() {
         #expect(
-            rigFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: false, canProject: true)
+            recordFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: false, canProject: true)
                 == .persistOnly
         )
     }
 
     @Test func neitherConnectedNorProjectableStillPersistsLocally() {
         #expect(
-            rigFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: false, canProject: false)
+            recordFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: false, canProject: false)
                 == .persistOnly
         )
     }
@@ -42,7 +42,7 @@ struct RigFlushOutcomeTests {
 
     @Test func dirtyNamedConnectedAndProjectablePushes() {
         #expect(
-            rigFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: true, canProject: true)
+            recordFlushOutcome(isDirty: true, trimmedName: "Backyard Rig", isConnected: true, canProject: true)
                 == .persistAndPush
         )
     }
@@ -52,7 +52,7 @@ struct RigFlushOutcomeTests {
     @Test func aCleanFormWritesNothing() {
         // Merely *viewing* a rig must never re-push it, whatever else is true.
         #expect(
-            rigFlushOutcome(isDirty: false, trimmedName: "Backyard Rig", isConnected: true, canProject: true)
+            recordFlushOutcome(isDirty: false, trimmedName: "Backyard Rig", isConnected: true, canProject: true)
                 == .skip
         )
     }
@@ -60,7 +60,7 @@ struct RigFlushOutcomeTests {
     @Test func anUnnamedRigWritesNothing() {
         // serverRigID is slugified from the name, so a blank name has nothing stable to key on.
         #expect(
-            rigFlushOutcome(isDirty: true, trimmedName: "", isConnected: true, canProject: true)
+            recordFlushOutcome(isDirty: true, trimmedName: "", isConnected: true, canProject: true)
                 == .skip
         )
     }
@@ -71,11 +71,11 @@ struct RigFlushOutcomeTests {
         for isConnected in [true, false] {
             for canProject in [true, false] {
                 #expect(
-                    rigFlushOutcome(isDirty: false, trimmedName: "Rig", isConnected: isConnected, canProject: canProject)
+                    recordFlushOutcome(isDirty: false, trimmedName: "Rig", isConnected: isConnected, canProject: canProject)
                         == .skip
                 )
                 #expect(
-                    rigFlushOutcome(isDirty: true, trimmedName: "", isConnected: isConnected, canProject: canProject)
+                    recordFlushOutcome(isDirty: true, trimmedName: "", isConnected: isConnected, canProject: canProject)
                         == .skip
                 )
             }
@@ -87,7 +87,7 @@ struct RigFlushOutcomeTests {
         // and something to key it on, local persistence always happens.
         for isConnected in [true, false] {
             for canProject in [true, false] {
-                let outcome = rigFlushOutcome(
+                let outcome = recordFlushOutcome(
                     isDirty: true, trimmedName: "Rig", isConnected: isConnected, canProject: canProject
                 )
                 #expect(outcome != .skip)

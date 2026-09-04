@@ -105,19 +105,31 @@ struct CurrentLocationQuickCreateRow: View {
         )
         do {
             let saved = try await telescope.saveObservatory(observatory)
+            // A record created here has real coordinates and has just been pushed — both
+            // detailsFetchedAt and lastPushedDigest need setting (NAVI-86), or this observatory
+            // would look un-hydrated (blocking offline editing) and permanently "dirty" (forcing a
+            // redundant push the next time anything syncs) despite being fully in step already.
+            let digest = PayloadDigest.ofObservatoryFields(
+                id: saved.id, name: saved.name, latitudeDeg: saved.latitudeDeg,
+                longitudeDeg: saved.longitudeDeg, elevationMeters: saved.elevationMeters
+            )
             if let existing = observatories.first(where: { $0.serverObservatoryID == saved.id }) {
                 existing.name = saved.name
                 existing.latitudeDeg = saved.latitudeDeg
                 existing.longitudeDeg = saved.longitudeDeg
                 existing.elevationMeters = saved.elevationMeters
                 existing.cachedAt = .now
+                existing.detailsFetchedAt = .now
+                existing.lastPushedDigest = digest
             } else {
                 modelContext.insert(ObservatoryProfile(
                     serverObservatoryID: saved.id,
                     name: saved.name,
                     latitudeDeg: saved.latitudeDeg,
                     longitudeDeg: saved.longitudeDeg,
-                    elevationMeters: saved.elevationMeters
+                    elevationMeters: saved.elevationMeters,
+                    lastPushedDigest: digest,
+                    detailsFetchedAt: .now
                 ))
             }
             try modelContext.save()

@@ -32,6 +32,8 @@ struct WindowTabBarView: View {
             Button(action: onAdd) {
                 Image(systemName: "plus")
                     .font(.system(size: 11))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .controlSize(.small)
@@ -66,6 +68,8 @@ struct WindowTabBarView: View {
                 Button(action: { onClose(tab.id) }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .opacity(hoveredTabID == tab.id ? 1 : 0.5)

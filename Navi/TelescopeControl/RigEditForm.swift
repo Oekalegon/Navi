@@ -100,55 +100,22 @@ struct RigEditForm: View {
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    roleSection(
-                        title: "Mount",
-                        isIncluded: isMountIncluded,
-                        onToggle: { included in
-                            isMountIncluded = included
-                            mount = included ? (mount ?? mounts.first) : nil
-                        },
-                        summary: mount.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Mount", selection: $mount) {
-                                Text("None").tag(MountProfile?.none)
-                                ForEach(mounts) { Text($0.name).tag(MountProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Mount", selection: $mount, isIncluded: $isMountIncluded,
+                        options: mounts, displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
-                    roleSection(
-                        title: "Optical Assembly",
-                        isIncluded: isOpticalAssemblyIncluded,
-                        onToggle: { included in
-                            isOpticalAssemblyIncluded = included
-                            opticalAssembly = included ? (opticalAssembly ?? mainOpticalAssemblies.first) : nil
-                        },
-                        summary: opticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
-                        picker: {
-                            Picker("Optical Assembly", selection: $opticalAssembly) {
-                                Text("None").tag(OpticalAssemblyProfile?.none)
-                                ForEach(mainOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Optical Assembly", selection: $opticalAssembly, isIncluded: $isOpticalAssemblyIncluded,
+                        options: mainOpticalAssemblies, displayName: \.displayName,
+                        deviceSummary: { $0.hasFocuser ? $0.focuserDeviceName : nil }, deviceLabel: "Focuser"
                     )
 
-                    roleSection(
-                        title: "Guide Optical Assembly",
-                        isIncluded: isGuideOpticalAssemblyIncluded,
-                        onToggle: { included in
-                            isGuideOpticalAssemblyIncluded = included
-                            guideOpticalAssembly = included ? (guideOpticalAssembly ?? guideOpticalAssemblies.first) : nil
-                        },
-                        summary: guideOpticalAssembly.map { roleSummary(name: $0.name, deviceName: $0.hasFocuser ? $0.focuserDeviceName : nil, deviceLabel: "Focuser") },
-                        picker: {
-                            Picker("Guide Optical Assembly", selection: $guideOpticalAssembly) {
-                                Text("None").tag(OpticalAssemblyProfile?.none)
-                                ForEach(guideOpticalAssemblies) { Text($0.name).tag(OpticalAssemblyProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Guide Optical Assembly", selection: $guideOpticalAssembly, isIncluded: $isGuideOpticalAssemblyIncluded,
+                        options: guideOpticalAssemblies, displayName: \.displayName,
+                        deviceSummary: { $0.hasFocuser ? $0.focuserDeviceName : nil }, deviceLabel: "Focuser"
                     )
                     if opticalAssembly?.hasFocuser == true && guideOpticalAssembly?.hasFocuser == true {
                         Label(
@@ -159,108 +126,42 @@ struct RigEditForm: View {
                         .foregroundStyle(.orange)
                     }
 
-                    roleSection(
-                        title: "Imaging Train",
-                        isIncluded: isImagingTrainIncluded,
-                        onToggle: { included in
-                            isImagingTrainIncluded = included
-                            imagingTrain = included ? (imagingTrain ?? imagingTrains.first) : nil
-                        },
-                        summary: imagingTrain.map { roleSummary(name: $0.name, deviceName: $0.camera?.deviceName, deviceLabel: "Camera") },
-                        picker: {
-                            Picker("Imaging Train", selection: $imagingTrain) {
-                                Text("None").tag(ImagingTrainProfile?.none)
-                                ForEach(imagingTrains) { Text($0.name).tag(ImagingTrainProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Imaging Train", selection: $imagingTrain, isIncluded: $isImagingTrainIncluded,
+                        options: imagingTrains, displayName: \.displayName,
+                        deviceSummary: { $0.camera?.deviceName }, deviceLabel: "Camera"
                     )
 
-                    roleSection(
-                        title: "Guide Camera",
-                        isIncluded: isGuideCameraIncluded,
-                        onToggle: { included in
-                            isGuideCameraIncluded = included
-                            guideCamera = included ? (guideCamera ?? guideCameras.first) : nil
-                        },
-                        summary: guideCamera.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Guide Camera", selection: $guideCamera) {
-                                Text("None").tag(GuideCameraProfile?.none)
-                                ForEach(guideCameras) { Text($0.name).tag(GuideCameraProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Guide Camera", selection: $guideCamera, isIncluded: $isGuideCameraIncluded,
+                        options: guideCameras, displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
                     Divider()
 
-                    roleSection(
-                        title: "Power Hub",
-                        isIncluded: isPowerHubIncluded,
-                        onToggle: { included in
-                            isPowerHubIncluded = included
-                            powerHub = included ? (powerHub ?? standaloneEquipment(for: .powerHub).first) : nil
-                        },
-                        summary: powerHub.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Power Hub", selection: $powerHub) {
-                                Text("None").tag(StandaloneEquipmentProfile?.none)
-                                ForEach(standaloneEquipment(for: .powerHub)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Power Hub", selection: $powerHub, isIncluded: $isPowerHubIncluded,
+                        options: standaloneEquipment(for: .powerHub), displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
-                    roleSection(
-                        title: "Flat Screen",
-                        isIncluded: isFlatScreenIncluded,
-                        onToggle: { included in
-                            isFlatScreenIncluded = included
-                            flatScreen = included ? (flatScreen ?? standaloneEquipment(for: .flatScreen).first) : nil
-                        },
-                        summary: flatScreen.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Flat Screen", selection: $flatScreen) {
-                                Text("None").tag(StandaloneEquipmentProfile?.none)
-                                ForEach(standaloneEquipment(for: .flatScreen)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Flat Screen", selection: $flatScreen, isIncluded: $isFlatScreenIncluded,
+                        options: standaloneEquipment(for: .flatScreen), displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
-                    roleSection(
-                        title: "Dew Heater",
-                        isIncluded: isDewHeaterIncluded,
-                        onToggle: { included in
-                            isDewHeaterIncluded = included
-                            dewHeater = included ? (dewHeater ?? standaloneEquipment(for: .dewHeater).first) : nil
-                        },
-                        summary: dewHeater.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Dew Heater", selection: $dewHeater) {
-                                Text("None").tag(StandaloneEquipmentProfile?.none)
-                                ForEach(standaloneEquipment(for: .dewHeater)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Dew Heater", selection: $dewHeater, isIncluded: $isDewHeaterIncluded,
+                        options: standaloneEquipment(for: .dewHeater), displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
-                    roleSection(
-                        title: "Observatory Control",
-                        isIncluded: isObservatoryControlIncluded,
-                        onToggle: { included in
-                            isObservatoryControlIncluded = included
-                            observatoryControl = included ? (observatoryControl ?? standaloneEquipment(for: .observatoryControl).first) : nil
-                        },
-                        summary: observatoryControl.map { roleSummary(name: $0.name, deviceName: $0.deviceName) },
-                        picker: {
-                            Picker("Observatory Control", selection: $observatoryControl) {
-                                Text("None").tag(StandaloneEquipmentProfile?.none)
-                                ForEach(standaloneEquipment(for: .observatoryControl)) { Text($0.name).tag(StandaloneEquipmentProfile?.some($0)) }
-                            }
-                            .labelsHidden()
-                        }
+                    RigRoleSection(
+                        title: "Observatory Control", selection: $observatoryControl, isIncluded: $isObservatoryControlIncluded,
+                        options: standaloneEquipment(for: .observatoryControl), displayName: \.displayName,
+                        deviceSummary: \.deviceName
                     )
 
                     Divider()
@@ -341,46 +242,7 @@ struct RigEditForm: View {
         return cachedObservatories.map { ObservatorySummary(id: $0.serverObservatoryID, name: $0.name) }
     }
 
-    private func roleSummary(name: String, deviceName: String?, deviceLabel: String = "Device") -> String {
-        if let deviceName {
-            return "\(name) · \(deviceLabel): \(deviceName)"
-        }
-        return "\(name) · \(deviceLabel): blank"
-    }
 
-    /// NAVI-85: pure picking, no "New…"/"Edit…" — an empty library points the user at the
-    /// Equipment tab (`selectSettingsTab`) instead of drilling into a sub-editor from here.
-    @ViewBuilder
-    private func roleSection(
-        title: String,
-        isIncluded: Bool,
-        onToggle: @escaping (Bool) -> Void,
-        summary: String?,
-        @ViewBuilder picker: () -> some View
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(title, isOn: Binding(get: { isIncluded }, set: onToggle))
-                .font(.subheadline)
-                .fontWeight(.semibold)
-            if isIncluded {
-                picker()
-                if let summary {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(summary.hasSuffix("blank") ? .orange : .secondary)
-                } else {
-                    HStack(spacing: 4) {
-                        Text("No \(title.lowercased()) defined yet —")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                        Button("go to Equipment…") { selectSettingsTab(.equipment) }
-                            .buttonStyle(.link)
-                            .font(.caption)
-                    }
-                }
-            }
-        }
-    }
 
     private func load() {
         name = rig?.name ?? ""
@@ -422,9 +284,9 @@ struct RigEditForm: View {
     private func flush() {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         // Components are computed *before* the decision but used only by the push. `buildComponents`
-        // returning nil is not a reason to skip the local write — see `rigFlushOutcome`.
+        // returning nil is not a reason to skip the local write — see `recordFlushOutcome`.
         let components = buildComponents()
-        switch rigFlushOutcome(
+        switch recordFlushOutcome(
             isDirty: isDirty,
             trimmedName: trimmedName,
             isConnected: isConnected,
@@ -497,17 +359,47 @@ struct RigEditForm: View {
 
     private func push(components: [Component], profile: RigProfile) async {
         errorMessage = nil
+        let recordID = profile.serverRigID
+        // See `TelescopeSessionManager.pushesInFlight`'s doc comment: without this, a background
+        // `PendingPushSync` pass reaching this same rig while this push is also mid-flight could
+        // save from two different snapshots and silently overwrite whichever one landed second.
+        guard telescope.beginPush(recordID: recordID) else { return }
+        defer { telescope.endPush(recordID: recordID) }
+
+        let payload = Rig(id: recordID, name: profile.name, components: components)
+        let digest = PayloadDigest.of(payload)
+
+        // Drift check. Only meaningful once this rig has been pushed before — without a stored
+        // digest there's nothing to compare against, and a first push is legitimately creating it.
+        var serverDigest: String?
+        if profile.lastPushedDigest != nil, let serverCopy = try? await telescope.getRig(id: recordID) {
+            serverDigest = PayloadDigest.of(serverCopy)
+        }
+
+        switch recordPushDecision(
+            currentDigest: digest, lastPushedDigest: profile.lastPushedDigest, serverDigest: serverDigest
+        ) {
+        case .nothingToSend:
+            return
+        case .conflict:
+            telescope.pendingConflict = PendingConflict.forRig(
+                profile: profile, payload: payload, digest: digest,
+                telescope: telescope, modelContext: modelContext
+            )
+            return
+        case .push:
+            break
+        }
+
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await telescope.saveRig(
-                Rig(id: profile.serverRigID, name: profile.name, components: components),
-                overwrite: true
-            )
+            let saved = try await telescope.saveRig(payload, overwrite: true)
             // Only now is the server in step with the local record, which is what
             // `hasStaleLibraryReferences` compares against — so a rig edited offline correctly
             // shows as stale until the push actually lands.
             profile.lastResyncedAt = .now
+            profile.lastPushedDigest = PayloadDigest.of(saved) ?? digest
             try? modelContext.save()
         } catch {
             // Same reasoning as `buildComponents`: this runs after teardown, so the toolbar's

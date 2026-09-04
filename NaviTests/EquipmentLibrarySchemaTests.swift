@@ -58,27 +58,25 @@ struct EquipmentLibrarySchemaTests {
     // *declarations* are self-consistent; it builds against a URL that never existed, so it never
     // exercises the staged-migration path that actually broke.
     //
-    // NAVI-68: this fixture starts at V5, not the V3 this test used before V6 existed. Every store
-    // that actually exists right now (this app's real local install included) is already at V5 or
-    // later, so a V5-stamped fixture is the realistic case, and it does migrate to V6 correctly —
-    // a single lightweight stage. Deliberately *not* re-widened to start at V3 (or V1): a longer
-    // chain of *two or more* stages ending at V6 (V4→V5→V6, and the original V3→V4→V5→V6) crashes
-    // with CoreData's "Duplicate version checksums detected" — reproduced as a genuine SwiftData/
-    // CoreData staged-migration bug on this SDK (confirmed macOS 26.2), not a defect in this
-    // schema: reproduced even with a V6 that changes nothing at all and even with zero freezing
-    // anywhere, which rules out this schema's own modeling as the cause, and a crash of that kind
-    // can't be caught/asserted-against from a test (it aborts the process, not a thrown `Error`).
-    // If a future version needs to support a store that's skipped two or more schema versions
-    // since it was last opened, re-verify this limitation before shipping — it may need an
-    // intermediate release that opens (and thereby upgrades) the store one stage at a time.
-    // Tracked as NAVI-88.
+    // NAVI-68 + NAVI-86: this fixture starts at V5 and reopens under the real, full plan — V6 now
+    // combines both branches' additions (ServerProfile.lastConnectedAt, RigProfile/
+    // ObservatoryProfile.lastPushedDigest, ObservatoryProfile.detailsFetchedAt) into one version
+    // rather than two consecutive ones, specifically because reopening a real store crashes
+    // CoreData outright with "Duplicate version checksums across stages detected" once the plan
+    // accumulates too many total registered `VersionedSchema` versions — reproduced directly with
+    // a seven-version plan (this repo briefly had one, mid-merge) failing even a single-stage
+    // migration that an otherwise-identical six-version plan handles fine. Not a hop-distance
+    // issue by itself — see `EquipmentLibrarySchemaV6`'s own doc comment for the full reasoning,
+    // and NAVI-88 for the separate, still-unresolved multi-hop-migration crash this is distinct
+    // from. If a future version needs to support a store that's fallen multiple versions behind,
+    // re-verify both limitations before shipping.
     @Test func aStoreStampedAtV5MigratesForwardToTheCurrentSchema() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("EquipmentLibraryMigration-\(UUID().uuidString)")
             .appendingPathExtension("store")
         defer { try? FileManager.default.removeItem(at: storeURL) }
 
-        // Write a row under V5's schema, then close it.
+        // Write rows under V5's schema, then close it.
         do {
             let v5 = Schema(versionedSchema: EquipmentLibrarySchemaV5.self)
             let container = try ModelContainer(
@@ -91,6 +89,10 @@ struct EquipmentLibrarySchemaTests {
                 serverRigID: "rig-v5",
                 name: "V5 Rig",
                 mount: mount
+            ))
+            context.insert(ObservatoryProfile(
+                serverObservatoryID: "obs-v5", name: "V5 Observatory",
+                latitudeDeg: 52.1, longitudeDeg: 4.3, elevationMeters: 12
             ))
             try context.save()
         }
@@ -111,6 +113,16 @@ struct EquipmentLibrarySchemaTests {
         // Fields that outlive the migration must survive it.
         #expect(rig.mount?.name == "EQ6-R")
         #expect(rig.mount?.deviceName == "EQMod Mount")
+        // Both new fields are additions, so an existing row arrives with them unset — which reads
+        // as "never connected"/"never pushed from this install", the conservative interpretation.
+        #expect(rig.lastPushedDigest == nil)
+
+        let observatory = try #require(try context.fetch(FetchDescriptor<ObservatoryProfile>()).first)
+        #expect(observatory.name == "V5 Observatory")
+        #expect(observatory.latitudeDeg == 52.1)
+        #expect(observatory.elevationMeters == 12)
+        #expect(observatory.lastPushedDigest == nil)
+        #expect(observatory.detailsFetchedAt == nil)
     }
 
     @Test func schemaBuildsAndPersistsARig() throws {

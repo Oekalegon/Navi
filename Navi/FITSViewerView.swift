@@ -102,6 +102,8 @@ struct FITSViewerView: View {
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 12))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Adjust stretch")
@@ -122,6 +124,8 @@ struct FITSViewerView: View {
                 } label: {
                     Image(systemName: "arrow.down.backward.and.arrow.up.forward.square")
                         .font(.system(size: 12))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Reset zoom and pan")
@@ -138,6 +142,8 @@ struct FITSViewerView: View {
             } label: {
                 Image(systemName: "info.circle")
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")

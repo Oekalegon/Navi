@@ -113,6 +113,8 @@ struct ArchiveViewerView: View {
             Button { paneManager.archiveBack() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .medium))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!paneManager.canGoBack)
@@ -121,6 +123,8 @@ struct ArchiveViewerView: View {
             Button { paneManager.archiveForward() } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .medium))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!paneManager.canGoForward)
@@ -158,6 +162,8 @@ struct ArchiveViewerView: View {
                           : "line.3.horizontal.decrease.circle")
                         .font(.system(size: 12))
                         .foregroundStyle(isFilterActive ? Color.accentColor : Color.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(isFilterActive ? "Filter active — click to edit" : "Filter")
@@ -168,6 +174,8 @@ struct ArchiveViewerView: View {
                     Image(systemName: "tablecells")
                         .font(.system(size: 12))
                         .foregroundStyle(columnSettings.hiddenColumns.isEmpty ? Color.secondary : Color.accentColor)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Configure visible columns")
@@ -191,6 +199,8 @@ struct ArchiveViewerView: View {
             } label: {
                 Image(systemName: "info.circle")
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(paneManager.isInfoPanelVisible ? "Hide Info Panel" : "Show Info Panel")
@@ -200,6 +210,8 @@ struct ArchiveViewerView: View {
             } label: {
                 Image(systemName: "clock")
                     .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isLoadingRecent)
@@ -208,14 +220,18 @@ struct ArchiveViewerView: View {
             Button {
                 showImportPanel()
             } label: {
-                if isImporting {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 12))
+                Group {
+                    if isImporting {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12))
+                    }
                 }
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isImporting)
@@ -234,6 +250,8 @@ struct ArchiveViewerView: View {
                     Toggle(isOn: $showRaw) {
                         Image(systemName: "doc.plaintext")
                             .font(.system(size: 12))
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
                     .toggleStyle(.button)
                     .buttonStyle(.plain)
@@ -245,6 +263,8 @@ struct ArchiveViewerView: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 12))
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help("Copy raw content")

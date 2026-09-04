@@ -28,6 +28,7 @@ struct ObservatorySettingsPane: View {
         case new
     }
     @State private var selection: Selection?
+    @State private var isRefreshing = false
 
     private var selectedObservatory: ObservatoryProfile? {
         guard case .existing(let id) = selection else { return nil }
@@ -42,7 +43,19 @@ struct ObservatorySettingsPane: View {
                 .frame(minWidth: 220, idealWidth: 240, maxWidth: 300, maxHeight: .infinity)
             Divider()
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        // Keyed on `telescope.state`, not a plain `.task { }` — this pane's `.id(Tab.observatories)`
+        // keeps it alive across tab switches, so a one-shot `.task` would only ever refresh once and
+        // never again after a later connect. Previously nothing in this pane ever called
+        // `listObservatories()` at all — the cache only filled in if the toolbar's rig/observatory
+        // picker happened to have been opened first, which a local store reset makes obvious is
+        // wrong: Settings should be able to populate its own list.
+        .task(id: telescope.state) {
+            guard isConnected else { return }
+            isRefreshing = true
+            await ObservatoryCacheRefresher.refresh(telescope: telescope, modelContext: modelContext)
+            isRefreshing = false
         }
     }
 
@@ -57,7 +70,9 @@ struct ObservatorySettingsPane: View {
                 removeHelp: "Remove from this local list",
                 onRemove: { if let observatory = selectedObservatory { remove(observatory) } }
             ) {
-                if !isConnected {
+                if isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else if !isConnected {
                     Text("Connect to add or edit")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
