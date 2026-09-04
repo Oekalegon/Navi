@@ -169,7 +169,7 @@ struct CameraPanelView: View {
     // MARK: - Live state (read from the shared ObservableDevice, matching ObservatoryDashboardView)
 
     private var deviceProperties: [String: DeviceProperty] { cameraDevice?.properties ?? [:] }
-    private var isConnected: Bool { cameraDevice?.isConnected ?? false }
+    private var isConnected: Bool { cameraDevice?.liveIsConnected ?? false }
     private var isCoolerOn: Bool { Camera.coolerOn(from: deviceProperties) ?? false }
 
     // Camera's own doubleElement(_:_:from:) parsing helper is internal to INDIMCPKit, so these

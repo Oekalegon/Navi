@@ -238,13 +238,13 @@ struct ObservatoryDashboardView: View {
 
     private enum ComponentStatus { case connected, disconnected, error }
 
-    // ObservableDevice has no ready-made tri-state status enum: `isConnected: Bool?` is itself
+    // ObservableDevice has no ready-made tri-state status enum: `liveIsConnected: Bool?` is itself
     // tri-state (nil = not yet observed), and `lastError` is never cleared by a later success —
     // so `lastError != nil` alone isn't "currently erroring," only "something has failed at some
     // point." Treated here as: live-connected wins outright, otherwise a recorded failure reads
     // as an error state, otherwise disconnected (including "never observed yet").
     private static func status(for device: ObservableDevice) -> ComponentStatus {
-        if device.isConnected == true { return .connected }
+        if device.liveIsConnected == true { return .connected }
         if device.lastError != nil { return .error }
         return .disconnected
     }
